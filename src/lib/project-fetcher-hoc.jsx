@@ -23,6 +23,7 @@ import {
 import log from './log';
 import storage from './storage';
 import {ProjectUnsharedError, ProjectFetchError} from './tw-load-project-error';
+import {DOCUMENTATION_URL} from './brand.js';
 
 import VM from 'scratch-vm';
 import {fetchProjectMeta} from './tw-project-meta-fetcher-hoc.jsx';
@@ -47,7 +48,9 @@ const fetchProjectToken = async projectId => {
         return metadata.project_token;
     } catch (e) {
         log.error(e);
-        throw new ProjectUnsharedError('Cannot access project token. Project is probably unshared. See https://docs.turbowarp.org/unshared-projects');
+        throw new ProjectUnsharedError(
+            `Cannot access project token. Project is probably unshared. See ${DOCUMENTATION_URL}#unshared-projects`
+        );
     }
 };
 

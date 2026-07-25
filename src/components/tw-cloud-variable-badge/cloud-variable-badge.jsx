@@ -4,7 +4,7 @@ import {FormattedMessage} from 'react-intl';
 import cloudIcon from './clouddata.svg';
 import CloudServerButton from './cloud-server-button.jsx';
 import styles from './cloud-variable-badge.css';
-import {APP_NAME} from '../../lib/brand';
+import {APP_NAME, DOCUMENTATION_URL} from '../../lib/brand';
 
 const hosts = [
     {
@@ -109,7 +109,7 @@ const CloudVariableBadge = props => {
             <a
                 target="_blank"
                 rel="noreferrer"
-                href="https://docs.turbowarp.org/cloud-variables"
+                href={`${DOCUMENTATION_URL}#cloud-variables`}
             >
                 <FormattedMessage
                     defaultMessage="Learn more about cloud variables."

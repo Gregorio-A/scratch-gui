@@ -36,7 +36,7 @@ import TWFancyCheckbox from '../../components/tw-fancy-checkbox/checkbox.jsx';
 import styles from './settings.css';
 import {detectTheme} from '../../lib/themes/themePersistance.js';
 import {applyGuiColors} from '../../lib/themes/guiHelpers.js';
-import {APP_NAME} from '../../lib/brand.js';
+import {APP_NAME, SUPPORT_URL} from '../../lib/brand.js';
 import '../../lib/normalize.css';
 
 /* eslint-disable no-alert */
@@ -1104,7 +1104,7 @@ class AddonSettingsComponent extends React.Component {
                             />
                         </div>
                         <a
-                            href="https://scratch.mit.edu/users/GarboMuffin/#comments"
+                            href={SUPPORT_URL}
                             target="_blank"
                             rel="noreferrer"
                             className={styles.feedbackButtonOuter}

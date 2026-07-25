@@ -1,14 +1,56 @@
-scratch-gui modified for use in [TurboWarp](https://turbowarp.org/)
+# TextWarp scratch-gui
 
-## Setup
+Interface compartilhada do TextWarp para navegador e para o aplicativo Electron. Este repositório é a fonte principal
+do editor, da identidade visual e das funcionalidades que não dependem do sistema operacional.
 
-See https://docs.turbowarp.org/development/getting-started to setup the complete TurboWarp environment.
+English documentation: [TextWarp manual](TEXTWARP.en.md), [IDE guide](TEXTWARP_IDE.en.md),
+[block reference](TEXTWARP_BLOCOS.en.md), [priorities](TEXTWARP_PRIORIDADES.en.md) and
+[legal/compatibility policy](TEXTWARP_LEGAL.en.md). A interface usa português quando o locale começa com `pt` e
+inglês como fallback universal para os demais idiomas.
 
-If you just want to play with the GUI then it's the same process as upstream scratch-gui.
+O projeto é derivado do [TurboWarp scratch-gui](https://github.com/TurboWarp/scratch-gui) e do
+[Scratch GUI](https://github.com/scratchfoundation/scratch-gui). Não é afiliado, patrocinado ou endossado pelo
+TurboWarp, Scratch Team, MIT ou Scratch Foundation.
+
+## Desenvolvimento
+
+```bash
+npm ci
+npm start
+```
+
+O playground fica disponível em `http://localhost:8601/`. Para gerar simultaneamente o site estático e o pacote
+consumido pelo Desktop:
+
+```bash
+NODE_ENV=production BUILD_MODE=dist npm run build
+```
+
+Para gerar somente o site estático publicado em `/textwarp/`:
+
+```bash
+npm run build:textwarp:web
+```
+
+Integração local com o aplicativo:
+
+```bash
+npm link
+cd ../TextWarp-Turbowarp
+npm link scratch-gui
+npm run webpack:compile
+npm run electron:start
+```
 
 ## License
 
-TurboWarp's modifications to Scratch are licensed under the GNU General Public License v3.0. See LICENSE or https://www.gnu.org/licenses/ for details.
+As modificações do TextWarp e do TurboWarp nesta árvore são distribuídas sob GNU GPLv3. Consulte `LICENSE`.
+Distribuições web e desktop devem manter os avisos, oferecer o código-fonte correspondente e informar claramente
+que se trata de uma versão modificada.
+
+Extensões não possuem uma licença única: cada extensão conserva a licença declarada no próprio arquivo. Addons,
+imagens e dependências também mantêm seus avisos e atribuições originais. A política detalhada está em
+[TEXTWARP_LEGAL.md](TEXTWARP_LEGAL.md).
 
 The following is the original license for scratch-gui, which we are required to retain. This is NOT the license of this project.
 

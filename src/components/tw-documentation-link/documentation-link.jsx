@@ -1,9 +1,10 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import {DOCUMENTATION_URL} from '../../lib/brand';
 
 const DocumentationLink = ({slug, children}) => (
     <a
-        href={`https://docs.turbowarp.org/${slug}`}
+        href={`${DOCUMENTATION_URL}#${slug}`}
         target="_blank"
         rel="noopener noreferrer"
     >

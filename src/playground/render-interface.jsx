@@ -42,7 +42,13 @@ import AddonChannels from '../addons/channels';
 import {loadServiceWorker} from './load-service-worker';
 import runAddons from '../addons/entry';
 import InvalidEmbed from '../components/tw-invalid-embed/invalid-embed.jsx';
-import {APP_NAME} from '../lib/brand.js';
+import {
+    APP_NAME,
+    DOCUMENTATION_URL,
+    SOURCE_CODE_URL,
+    SUPPORT_URL,
+    WEBSITE_URL
+} from '../lib/brand.js';
 
 import styles from './interface.css';
 
@@ -52,14 +58,19 @@ const handleClickAddonSettings = addonId => {
     // addonId might be a string of the addon to focus on, undefined, or an event (treat like undefined)
     const path = process.env.ROUTING_STYLE === 'wildcard' ? 'addons' : 'addons.html';
     const url = `${process.env.ROOT}${path}${typeof addonId === 'string' ? `#${addonId}` : ''}`;
-    window.open(url);
+    window.open(url, '_blank', 'noopener,noreferrer');
+};
+
+const handleClickNewWindow = () => {
+    const path = process.env.ROUTING_STYLE === 'wildcard' ? 'editor' : 'editor.html';
+    window.open(`${process.env.ROOT}${path}`, '_blank', 'noopener,noreferrer');
 };
 
 const messages = defineMessages({
     defaultTitle: {
-        defaultMessage: 'Run Scratch projects faster',
-        description: 'Title of homepage',
-        id: 'tw.guiDefaultTitle'
+        defaultMessage: 'Text IDE compatible with Scratch and TurboWarp',
+        description: 'TextWarp editor title',
+        id: 'textwarp.guiDefaultTitle'
     }
 });
 
@@ -128,29 +139,28 @@ const Footer = () => (
                     </a>
                 </div>
                 <div className={styles.footerSection}>
-                    <a href="https://desktop.turbowarp.org/">
-                        {/* Do not translate */}
-                        {'TurboWarp Desktop'}
+                    <a href={WEBSITE_URL}>
+                        {'TextWarp Desktop'}
                     </a>
                     <a href="https://packager.turbowarp.org/">
                         {/* Do not translate */}
                         {'TurboWarp Packager'}
                     </a>
-                    <a href="https://docs.turbowarp.org/embedding">
+                    <a href={`${DOCUMENTATION_URL}#embedding`}>
                         <FormattedMessage
                             defaultMessage="Embedding"
                             description="Link in footer to embedding documentation for embedding link"
                             id="tw.footer.embed"
                         />
                     </a>
-                    <a href="https://docs.turbowarp.org/url-parameters">
+                    <a href={`${DOCUMENTATION_URL}#url-parameters`}>
                         <FormattedMessage
                             defaultMessage="URL Parameters"
                             description="Link in footer to URL parameters documentation"
                             id="tw.footer.parameters"
                         />
                     </a>
-                    <a href="https://docs.turbowarp.org/">
+                    <a href={DOCUMENTATION_URL}>
                         <FormattedMessage
                             defaultMessage="Documentation"
                             description="Link in footer to additional documentation"
@@ -159,14 +169,14 @@ const Footer = () => (
                     </a>
                 </div>
                 <div className={styles.footerSection}>
-                    <a href="https://scratch.mit.edu/users/GarboMuffin/#comments">
+                    <a href={SUPPORT_URL}>
                         <FormattedMessage
                             defaultMessage="Feedback & Bugs"
                             description="Link to feedback/bugs page"
                             id="tw.feedback"
                         />
                     </a>
-                    <a href="https://github.com/TurboWarp/">
+                    <a href={SOURCE_CODE_URL}>
                         <FormattedMessage
                             defaultMessage="Source Code"
                             description="Link to source code"
@@ -252,6 +262,7 @@ class Interface extends React.Component {
                 >
                     <GUI
                         onClickAddonSettings={handleClickAddonSettings}
+                        onClickNewWindow={handleClickNewWindow}
                         onUpdateProjectTitle={this.handleUpdateProjectTitle}
                         backpackVisible
                         backpackHost="_local_"
@@ -285,11 +296,11 @@ class Interface extends React.Component {
                                             values={{
                                                 link: (
                                                     <a
-                                                        href="https://docs.turbowarp.org/unshared-projects"
+                                                        href={`${DOCUMENTATION_URL}#unshared-projects`}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                     >
-                                                        {'https://docs.turbowarp.org/unshared-projects'}
+                                                        {`${DOCUMENTATION_URL}#unshared-projects`}
                                                     </a>
                                                 )
                                             }}

@@ -43,6 +43,7 @@ import {
 import AddonHooks from '../addons/hooks.js';
 import LoadScratchBlocksHOC from '../lib/tw-load-scratch-blocks-hoc.jsx';
 import {findTopBlock} from '../lib/backpack/code-payload.js';
+import {DOCUMENTATION_URL} from '../lib/brand.js';
 import {gentlyRequestPersistentStorage} from '../lib/tw-persistent-storage.js';
 
 // TW: Strings we add to scratch-blocks are localized here
@@ -192,7 +193,7 @@ class Blocks extends React.Component {
             }
         });
         toolboxWorkspace.registerButtonCallback('OPEN_RETURN_DOCS', () => {
-            window.open('https://docs.turbowarp.org/return', '_blank');
+            window.open(`${DOCUMENTATION_URL}#return`, '_blank', 'noopener,noreferrer');
         });
 
         // Store the xml of the toolbox that is actually rendered.

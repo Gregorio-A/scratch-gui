@@ -12,7 +12,8 @@ const postcssVars = require('postcss-simple-vars');
 const postcssImport = require('postcss-import');
 
 const STATIC_PATH = process.env.STATIC_PATH || '/static';
-const {APP_NAME} = require('./src/lib/brand');
+const brand = require('./src/lib/brand');
+const {APP_NAME} = brand;
 
 const root = process.env.ROOT || '';
 if (root.length > 0 && !root.endsWith('/')) {
@@ -22,7 +23,7 @@ if (root.length > 0 && !root.endsWith('/')) {
 const htmlWebpackPluginCommon = {
     root: root,
     meta: JSON.parse(process.env.EXTRA_META || '{}'),
-    APP_NAME
+    ...brand
 };
 
 // When this changes, the path for all JS files will change, bypassing any HTTP caches
@@ -72,6 +73,7 @@ const base = {
             include: [
                 path.resolve(__dirname, 'src'),
                 /node_modules[\\/]scratch-[^\\/]+[\\/]src/,
+                /node_modules[\\/]marked[\\/]/,
                 /node_modules[\\/]pify/,
                 /node_modules[\\/]@vernier[\\/]godirect/
             ],
@@ -111,6 +113,10 @@ const base = {
                     }
                 }
             }]
+        },
+        {
+            test: /\.md$/,
+            loader: 'raw-loader'
         }]
     },
     plugins: [
@@ -128,6 +134,10 @@ const base = {
                     from: 'src/lib/themes/blocks/high-contrast-media/blocks-media',
                     to: 'static/blocks-media/high-contrast',
                     force: true
+                },
+                {
+                    from: 'node_modules/monaco-editor/min/vs',
+                    to: 'static/monaco/vs'
                 }
             ]
         })
@@ -186,7 +196,7 @@ module.exports = [
                 chunks: ['editor'],
                 template: 'src/playground/index.ejs',
                 filename: 'editor.html',
-                title: `${APP_NAME} - Run Scratch projects faster`,
+                title: `${APP_NAME} - Text IDE compatible with Scratch and TurboWarp`,
                 isEditor: true,
                 ...htmlWebpackPluginCommon
             }),
@@ -194,35 +204,35 @@ module.exports = [
                 chunks: ['player'],
                 template: 'src/playground/index.ejs',
                 filename: 'index.html',
-                title: `${APP_NAME} - Run Scratch projects faster`,
+                title: `${APP_NAME} - Text IDE compatible with Scratch and TurboWarp`,
                 ...htmlWebpackPluginCommon
             }),
             new HtmlWebpackPlugin({
                 chunks: ['fullscreen'],
                 template: 'src/playground/index.ejs',
                 filename: 'fullscreen.html',
-                title: `${APP_NAME} - Run Scratch projects faster`,
+                title: `${APP_NAME} - Projeto em tela cheia`,
                 ...htmlWebpackPluginCommon
             }),
             new HtmlWebpackPlugin({
                 chunks: ['embed'],
                 template: 'src/playground/embed.ejs',
                 filename: 'embed.html',
-                title: `Embedded Project - ${APP_NAME}`,
+                title: `Projeto incorporado - ${APP_NAME}`,
                 ...htmlWebpackPluginCommon
             }),
             new HtmlWebpackPlugin({
                 chunks: ['addon-settings'],
                 template: 'src/playground/simple.ejs',
                 filename: 'addons.html',
-                title: `Addon Settings - ${APP_NAME}`,
+                title: `Configurações de Addons - ${APP_NAME}`,
                 ...htmlWebpackPluginCommon
             }),
             new HtmlWebpackPlugin({
                 chunks: ['credits'],
                 template: 'src/playground/simple.ejs',
                 filename: 'credits.html',
-                title: `${APP_NAME} Credits`,
+                title: `Créditos - ${APP_NAME}`,
                 ...htmlWebpackPluginCommon
             }),
             new CopyWebpackPlugin({
@@ -247,56 +257,68 @@ module.exports = [
 ].concat(
     process.env.NODE_ENV === 'production' || process.env.BUILD_MODE === 'dist' ? (
         // export as library
-        defaultsDeep({}, base, {
-            target: 'web',
-            entry: {
-                'scratch-gui': './src/index.js'
-            },
-            output: {
+        (() => {
+            const libraryConfig = defaultsDeep({}, base, {
+                target: 'web',
+                entry: {
+                    'scratch-gui': './src/index.js'
+                },
+                output: {
+                    libraryTarget: 'umd',
+                    filename: 'js/[name].js',
+                    chunkFilename: 'js/[name].js',
+                    path: path.resolve('dist'),
+                    publicPath: `${STATIC_PATH}/`
+                },
+                externals: {
+                    'react': 'react',
+                    'react-dom': 'react-dom'
+                },
+                module: {
+                    rules: base.module.rules.concat([
+                        {
+                            test: /\.(svg|png|wav|mp3|gif|jpg|woff2|hex)$/,
+                            loader: 'url-loader',
+                            options: {
+                                limit: 2048,
+                                outputPath: 'static/assets/',
+                                publicPath: `${STATIC_PATH}/assets/`,
+                                esModule: false
+                            }
+                        }
+                    ])
+                },
+                plugins: base.plugins.concat([
+                    new CopyWebpackPlugin({
+                        patterns: [
+                            {
+                                from: 'extension-worker.{js,js.map}',
+                                context: 'node_modules/scratch-vm/dist/web',
+                                noErrorOnMissing: true
+                            }
+                        ]
+                    }),
+                    // Include library JSON files for scratch-desktop to use for downloading
+                    new CopyWebpackPlugin({
+                        patterns: [
+                            {
+                                from: 'src/lib/libraries/*.json',
+                                to: 'libraries',
+                                flatten: true
+                            }
+                        ]
+                    })
+                ])
+            });
+            // defaultsDeep intentionally preserves base defaults. These values are the public package contract
+            // and must override the hashed filenames used by the standalone website.
+            Object.assign(libraryConfig.output, {
                 libraryTarget: 'umd',
-                filename: 'js/[name].js',
+                filename: '[name].js',
                 chunkFilename: 'js/[name].js',
                 path: path.resolve('dist'),
                 publicPath: `${STATIC_PATH}/`
-            },
-            externals: {
-                'react': 'react',
-                'react-dom': 'react-dom'
-            },
-            module: {
-                rules: base.module.rules.concat([
-                    {
-                        test: /\.(svg|png|wav|mp3|gif|jpg|woff2|hex)$/,
-                        loader: 'url-loader',
-                        options: {
-                            limit: 2048,
-                            outputPath: 'static/assets/',
-                            publicPath: `${STATIC_PATH}/assets/`,
-                            esModule: false
-                        }
-                    }
-                ])
-            },
-            plugins: base.plugins.concat([
-                new CopyWebpackPlugin({
-                    patterns: [
-                        {
-                            from: 'extension-worker.{js,js.map}',
-                            context: 'node_modules/scratch-vm/dist/web',
-                            noErrorOnMissing: true
-                        }
-                    ]
-                }),
-                // Include library JSON files for scratch-desktop to use for downloading
-                new CopyWebpackPlugin({
-                    patterns: [
-                        {
-                            from: 'src/lib/libraries/*.json',
-                            to: 'libraries',
-                            flatten: true
-                        }
-                    ]
-                })
-            ])
-        })) : []
+            });
+            return libraryConfig;
+        })()) : []
 );
