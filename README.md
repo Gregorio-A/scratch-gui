@@ -104,14 +104,19 @@ Run the TextWarp compiler, IDE, documentation, and runtime tests:
 ```bash
 npm run test:textwarp
 npm run docs:textwarp:check
+npx jest --runInBand test/unit/components/textwarp-monaco-editor.test.jsx
 ```
 
-Before committing, also validate the source and builds:
+Before committing, also validate the source, production Monaco assets, and browser integration:
 
 ```bash
 git diff --check
 npm run build:textwarp:web
+npx jest --runInBand test/integration/textwarp-monaco.test.js
 ```
+
+The browser smoke test uses the npm-managed ChromeDriver when available and otherwise reads
+`CHROMEDRIVER_PATH` (falling back to `/usr/bin/chromedriver` on Linux).
 
 ## License and attribution
 
