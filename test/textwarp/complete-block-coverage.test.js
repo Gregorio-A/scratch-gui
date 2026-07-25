@@ -11,6 +11,7 @@ const {blockRegistry, controlRegistry, eventRegistry, operatorRegistry} = requir
 const {compileText} = require('../../src/lib/textwarp/compiler');
 const {decompileTarget} = require('../../src/lib/textwarp/decompiler');
 const {buildExtensionCatalog, dynamicMetadata} = require('../../src/lib/textwarp/extension-catalog');
+const {getCompletions} = require('../../src/lib/textwarp/language-service');
 
 const actorOptions = {
     targetId: 'complete-coverage-sprite',
@@ -304,6 +305,16 @@ test('dynamic extension variants preserve their mutation-defined syntax without 
         }
     };
     const variant = dynamicMetadata(base, variantInfo);
+    assert.equal(variant.displayName, 'dynamic.configure');
+    assert.match(variant.semanticId, /^extension:dynamic:configure:1:dynamic:/);
+    assert.doesNotMatch(variant.documentation, /\.variant_/);
+    const completion = getCompletions('actor Player\n\non green_flag:\n    dyn', 4, 8, {
+        extensionCatalog: {[variant.canonicalName]: variant},
+        isStage: false
+    }).find(item => item.id === variant.semanticId);
+    assert.equal(completion.label, 'dynamic.configure');
+    assert.doesNotMatch(completion.detail, /\.variant_/);
+    assert.match(completion.insertText, /\.variant_/);
     const source = sourceForBlock(variant.canonicalName, variant);
     const options = Object.assign({}, actorOptions, {extensionCatalog: catalog});
     const compilation = compileText(source, options);

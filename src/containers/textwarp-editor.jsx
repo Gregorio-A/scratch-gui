@@ -62,6 +62,7 @@ import {
 import styles from '../components/textwarp-editor/text-editor.css';
 
 const AUTO_COMPILE_DELAY = 300;
+const ANALYSIS_DELAY = 120;
 const HISTORY_DELAY = 1200;
 const emptyWorkspace = () => ({modules: [], resources: [], editableFiles: [], generatedFiles: []});
 const DEFAULT_SHORTCUTS = Object.freeze({
@@ -212,6 +213,7 @@ class TextEditor extends React.Component {
             externalName: ''
         };
         this.compileTimer = null;
+        this.analysisTimer = null;
         this.debugController = null;
         this.unsubscribeDebugger = null;
         this.extensionCatalog = {};
@@ -221,6 +223,7 @@ class TextEditor extends React.Component {
         this.blockSyncTimer = null;
         this.historyTimer = null;
         this.secondaryCompileTimer = null;
+        this.secondaryAnalysisTimer = null;
         this.suppressBlockSyncUntil = 0;
         this.monacoEditor = null;
         this.secondaryMonacoEditor = null;
@@ -247,6 +250,10 @@ class TextEditor extends React.Component {
         this.handleExportPackage = this.handleExportPackage.bind(this);
         this.handlePackageFile = this.handlePackageFile.bind(this);
         this.handleToggleBreakpoint = this.handleToggleBreakpoint.bind(this);
+        this.handleBreakpointsChange = this.handleBreakpointsChange.bind(this);
+        this.handleSecondaryBreakpointsChange = this.handleSecondaryBreakpointsChange.bind(this);
+        this.handleInvalidShortcut = this.handleInvalidShortcut.bind(this);
+        this.handleWorkspaceModelChange = this.handleWorkspaceModelChange.bind(this);
         this.handleExtensionsChanged = this.handleExtensionsChanged.bind(this);
         this.handleInsertExtensionXml = this.handleInsertExtensionXml.bind(this);
         this.handleProjectChanged = this.handleProjectChanged.bind(this);
@@ -259,6 +266,10 @@ class TextEditor extends React.Component {
         this.openTarget = this.openTarget.bind(this);
         this.openLocation = this.openLocation.bind(this);
         this.openResource = this.openResource.bind(this);
+        this.setSecondaryTarget = this.setSecondaryTarget.bind(this);
+        this.handleNavigateResource = this.openResource;
+        this.handleOpenModel = this.openTarget;
+        this.handleSecondaryOpenModel = this.setSecondaryTarget;
         this.insertResource = this.insertResource.bind(this);
         this.restoreHistory = this.restoreHistory.bind(this);
         this.handleExternalFile = this.handleExternalFile.bind(this);
@@ -318,9 +329,11 @@ class TextEditor extends React.Component {
     componentWillUnmount () {
         this._isMounted = false;
         clearTimeout(this.compileTimer);
+        clearTimeout(this.analysisTimer);
         clearTimeout(this.blockSyncTimer);
         clearTimeout(this.historyTimer);
         clearTimeout(this.secondaryCompileTimer);
+        clearTimeout(this.secondaryAnalysisTimer);
         if (this.resizeObserver) this.resizeObserver.disconnect();
         window.removeEventListener('resize', this.handleWindowResize);
         window.removeEventListener('pointermove', this.handlePointerMove);
@@ -508,6 +521,7 @@ class TextEditor extends React.Component {
                 targetId: module.id,
                 source: module.id === targetId ? activeSource : module.source
             })),
+            workspaceId: this.getProjectStorageId(),
             targetId,
             targetName: target && target.getName ? target.getName() : '',
             isStage: Boolean(target && target.isStage)
@@ -1167,17 +1181,10 @@ class TextEditor extends React.Component {
         const target = this.getTarget();
         if (!target) return;
         saveTextSource(this.props.vm, target, source);
-        const compilation = compileText(source, this.getCompileOptions(target));
-        const errors = countErrors(compilation.diagnostics);
         this.setState({
             source,
-            diagnostics: compilation.diagnostics,
-            status: errors ?
-                (normalizeLocale(this.props.locale) === 'pt' ?
-                    `${errors} erro(s); a última versão válida continua executável.` :
-                    `${errors} error(s); the last valid version remains executable.`) :
-                this.t('analyzing'),
-            statusKind: errors ? 'error' : 'working',
+            status: this.t('analyzing'),
+            statusKind: 'working',
             saveState: 'salvando'
         });
         clearTimeout(this.historyTimer);
@@ -1193,13 +1200,35 @@ class TextEditor extends React.Component {
                 this.setState({history, saveState: 'salvo'}, () => this.refreshWorkspace());
             }
         }, HISTORY_DELAY);
+        clearTimeout(this.analysisTimer);
         clearTimeout(this.compileTimer);
-        if (compilation.success) {
-            const targetId = target.id;
-            this.compileTimer = setTimeout(() => {
-                if (this.props.editingTargetId === targetId) this.applyCompilation(compilation, target, false);
-            }, AUTO_COMPILE_DELAY);
-        }
+        const targetId = target.id;
+        this.analysisTimer = setTimeout(() => {
+            if (
+                !this._isMounted ||
+                this.props.editingTargetId !== targetId ||
+                this.state.source !== source
+            ) return;
+            const compilation = compileText(source, this.getCompileOptions(target));
+            const errors = countErrors(compilation.diagnostics);
+            this.setState({
+                diagnostics: compilation.diagnostics,
+                status: errors ?
+                    this.localized(
+                        `${errors} erro(s); a última versão válida continua executável.`,
+                        `${errors} error(s); the last valid version remains executable.`
+                    ) : this.t('analyzing'),
+                statusKind: errors ? 'error' : 'working'
+            });
+            if (compilation.success) {
+                this.compileTimer = setTimeout(() => {
+                    if (
+                        this.props.editingTargetId === targetId &&
+                        this.state.source === source
+                    ) this.applyCompilation(compilation, target, false);
+                }, AUTO_COMPILE_DELAY);
+            }
+        }, ANALYSIS_DELAY);
     }
 
     handleWorkspaceModelChange (targetId, source) {
@@ -1237,18 +1266,20 @@ class TextEditor extends React.Component {
         const target = this.state.secondaryTargetId &&
             this.props.vm.runtime.getTargetById(this.state.secondaryTargetId);
         if (!target) return;
-        const compilation = compileText(source, this.getCompileOptions(target));
         saveTextSource(this.props.vm, target, source);
         this.setState({
             secondarySource: source,
-            secondaryDiagnostics: compilation.diagnostics,
             saveState: 'salvando'
         });
+        clearTimeout(this.secondaryAnalysisTimer);
         clearTimeout(this.secondaryCompileTimer);
-        if (!compilation.success) return;
-        this.secondaryCompileTimer = setTimeout(() => {
-            this.suppressBlockSyncUntil = Date.now() + 750;
-            applyCompilation(this.props.vm, target, compilation);
+        this.secondaryAnalysisTimer = setTimeout(() => {
+            if (
+                !this._isMounted ||
+                this.state.secondaryTargetId !== target.id ||
+                this.state.secondarySource !== source
+            ) return;
+            const compilation = compileText(source, this.getCompileOptions(target));
             const history = saveHistorySnapshot(
                 this.getStorage(),
                 this.getProjectStorageId(),
@@ -1256,15 +1287,26 @@ class TextEditor extends React.Component {
                 source,
                 'dual editor autosave'
             );
-            if (this._isMounted && this.state.secondaryTargetId === target.id) {
-                this.setState({saveState: 'salvo'}, () => this.refreshWorkspace());
-                if (target.id === this.props.editingTargetId) this.setState({history});
-            }
-        }, AUTO_COMPILE_DELAY);
+            this.setState({secondaryDiagnostics: compilation.diagnostics, saveState: 'salvo'});
+            if (!compilation.success) return;
+            this.secondaryCompileTimer = setTimeout(() => {
+                if (
+                    this.state.secondaryTargetId !== target.id ||
+                    this.state.secondarySource !== source
+                ) return;
+                this.suppressBlockSyncUntil = Date.now() + 750;
+                applyCompilation(this.props.vm, target, compilation);
+                if (this._isMounted && this.state.secondaryTargetId === target.id) {
+                    this.setState({saveState: 'salvo'}, () => this.refreshWorkspace());
+                    if (target.id === this.props.editingTargetId) this.setState({history});
+                }
+            }, AUTO_COMPILE_DELAY);
+        }, ANALYSIS_DELAY);
     }
 
     compileSecondary (run) {
         clearTimeout(this.secondaryCompileTimer);
+        clearTimeout(this.secondaryAnalysisTimer);
         const target = this.state.secondaryTargetId &&
             this.props.vm.runtime.getTargetById(this.state.secondaryTargetId);
         if (!target) return;
@@ -1315,6 +1357,7 @@ class TextEditor extends React.Component {
 
     compileCurrent (run) {
         clearTimeout(this.compileTimer);
+        clearTimeout(this.analysisTimer);
         const target = this.getTarget();
         if (!target) return;
         this.refreshExtensionCatalog();
@@ -1532,11 +1575,36 @@ class TextEditor extends React.Component {
         const next = new Set(this.state.breakpoints);
         if (next.has(line)) next.delete(line);
         else next.add(line);
-        const breakpoints = Array.from(next).sort((left, right) => left - right);
+        this.handleBreakpointsChange(Array.from(next).sort((left, right) => left - right));
+    }
+
+    handleBreakpointsChange (breakpoints) {
+        const target = this.getTarget();
+        if (!target) return;
         saveBreakpoints(this.props.vm, target, breakpoints);
         this.debugController.setBreakpoints(target, breakpoints);
         this.debugController.setEnabled(this.state.debugOpen || this.debugController.hasBreakpoints());
         this.setState({breakpoints});
+    }
+
+    handleSecondaryBreakpointsChange (breakpoints) {
+        const target = this.state.secondaryTargetId &&
+            this.props.vm.runtime.getTargetById(this.state.secondaryTargetId);
+        if (!target) return;
+        saveBreakpoints(this.props.vm, target, breakpoints);
+        this.debugController.setBreakpoints(target, breakpoints);
+        this.debugController.setEnabled(this.state.debugOpen || this.debugController.hasBreakpoints());
+        this.refreshWorkspace();
+    }
+
+    handleInvalidShortcut (shortcut) {
+        this.setState({
+            status: this.localized(
+                `Atalho inválido ou duplicado: ${shortcut}. O padrão foi mantido.`,
+                `Invalid or duplicate shortcut: ${shortcut}. The default was kept.`
+            ),
+            statusKind: 'error'
+        });
     }
 
     toggleDebugger () {
@@ -2106,15 +2174,17 @@ class TextEditor extends React.Component {
                             visible={this.props.isVisible && ['code', 'split', 'dual'].includes(this.state.viewMode)}
                             onChange={this.handleChange}
                             onCompile={this.handleCompile}
-                            onNavigateResource={name => this.navigateResourceByName(name)}
-                            onOpenModel={this.openTarget}
+                            onInvalidShortcut={this.handleInvalidShortcut}
+                            onBreakpointsChange={this.handleBreakpointsChange}
+                            onNavigateResource={this.handleNavigateResource}
+                            onOpenModel={this.handleOpenModel}
                             onReady={editor => { this.monacoEditor = editor; }}
                             onRestart={this.handleRestart}
                             onRun={this.handleRun}
                             onRunSelection={this.handleRunSelection}
                             onStop={this.handleStop}
                             onToggleBreakpoint={this.handleToggleBreakpoint}
-                            onWorkspaceModelChange={(targetId, source) => this.handleWorkspaceModelChange(targetId, source)}
+                            onWorkspaceModelChange={this.handleWorkspaceModelChange}
                             shortcuts={this.state.shortcuts}
                         />
                     </div>
@@ -2156,10 +2226,12 @@ class TextEditor extends React.Component {
                                         shortcuts={this.state.shortcuts}
                                         value={this.state.secondarySource}
                                         visible={this.props.isVisible && this.state.viewMode === 'dual'}
-                                        workspaceModels={false}
                                         onChange={source => this.handleSecondaryChange(source)}
+                                        onBreakpointsChange={this.handleSecondaryBreakpointsChange}
                                         onCompile={() => this.compileSecondary(false)}
-                                        onNavigateResource={name => this.navigateResourceByName(name)}
+                                        onInvalidShortcut={this.handleInvalidShortcut}
+                                        onNavigateResource={this.handleNavigateResource}
+                                        onOpenModel={this.handleSecondaryOpenModel}
                                         onReady={editor => { this.secondaryMonacoEditor = editor; }}
                                         onRestart={() => {
                                             this.handleStop();
@@ -2167,6 +2239,7 @@ class TextEditor extends React.Component {
                                         }}
                                         onRun={() => this.compileSecondary(true)}
                                         onStop={this.handleStop}
+                                        onWorkspaceModelChange={this.handleWorkspaceModelChange}
                                     />
                                 </div>
                             </React.Fragment>

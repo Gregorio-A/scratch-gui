@@ -27,8 +27,8 @@ const targetResources = target => {
         });
     });
     const sprite = target.sprite || {};
-    (sprite.costumes || []).forEach(costume => values.push({
-        id: costume.assetId || costume.md5 || costume.name,
+    (sprite.costumes || []).forEach((costume, index) => values.push({
+        id: costume.id || costume.assetId || costume.md5 || `${target.id}:costume:${index}`,
         name: costume.name,
         kind: 'costume',
         kindLabel: 'Fantasia',
@@ -36,8 +36,8 @@ const targetResources = target => {
         ownerName,
         detail: `Fantasia de ${ownerName}.`
     }));
-    (sprite.sounds || []).forEach(sound => values.push({
-        id: sound.assetId || sound.md5 || sound.name,
+    (sprite.sounds || []).forEach((sound, index) => values.push({
+        id: sound.id || sound.assetId || sound.md5 || `${target.id}:sound:${index}`,
         name: sound.name,
         kind: 'sound',
         kindLabel: 'Som',
@@ -81,19 +81,24 @@ const buildWorkspace = vm => {
 };
 
 const searchWorkspace = (workspace, query) => {
-    const normalized = String(query || '').trim().toLocaleLowerCase();
-    if (!normalized) return [];
+    const needle = String(query || '').trim();
+    if (!needle) return [];
+    const pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
     const results = [];
     (workspace.modules || []).forEach(module => {
         String(module.source || '').split(/\r?\n/).forEach((text, index) => {
-            const column = text.toLocaleLowerCase().indexOf(normalized);
-            if (column !== -1) results.push({
-                targetId: module.id,
-                fileName: module.fileName,
-                line: index + 1,
-                column: column + 1,
-                text: text.trim()
-            });
+            pattern.lastIndex = 0;
+            let match;
+            while ((match = pattern.exec(text))) {
+                results.push({
+                    targetId: module.id,
+                    fileName: module.fileName,
+                    line: index + 1,
+                    column: match.index + 1,
+                    endColumn: match.index + match[0].length + 1,
+                    text: text.trim()
+                });
+            }
         });
     });
     return results;
@@ -102,7 +107,7 @@ const searchWorkspace = (workspace, query) => {
 const replaceWorkspace = (workspace, query, replacement) => {
     const needle = String(query || '');
     if (!needle) return {count: 0, modules: (workspace.modules || []).map(module => Object.assign({}, module))};
-    const pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
     let count = 0;
     const modules = (workspace.modules || []).map(module => {
         const source = String(module.source || '');

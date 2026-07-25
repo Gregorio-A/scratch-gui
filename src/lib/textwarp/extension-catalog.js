@@ -105,8 +105,13 @@ const dynamicMetadata = (baseMetadata, blockInfo) => {
     if (!baseMetadata || !baseMetadata.isDynamic || !blockInfo || typeof blockInfo !== 'object') return baseMetadata;
     const context = baseMetadata.argumentContext || {};
     const canonicalName = `${baseMetadata.canonicalName}.variant_${encodeSyntaxPayload(blockInfo)}`;
+    const displayName = baseMetadata.displayName || baseMetadata.canonicalName;
     return Object.assign({}, baseMetadata, {
         canonicalName,
+        displayName,
+        semanticId: `${baseMetadata.semanticId || baseMetadata.canonicalName}:dynamic:${
+            encodeSyntaxPayload(blockInfo)
+        }`,
         dynamicVariant: true,
         kind: blockTypeToKind(blockInfo.blockType) || baseMetadata.kind,
         terminal: Boolean(blockInfo.isTerminal || blockInfo.terminal),
@@ -121,7 +126,7 @@ const dynamicMetadata = (baseMetadata, blockInfo) => {
             children: [],
             blockInfo: JSON.stringify(blockInfo)
         },
-        documentation: `${canonicalName} — variante dinâmica de ${baseMetadata.canonicalName}`
+        documentation: `${displayName} — variante dinâmica de ${baseMetadata.canonicalName}`
     });
 };
 
@@ -183,6 +188,8 @@ const buildExtensionInventory = runtimeOrVm => {
             while (catalog[canonicalName]) canonicalName = `${candidateName}_${duplicate++}`;
             const metadata = {
                 canonicalName,
+                displayName: candidateName,
+                semanticId: `extension:${category.id}:${info.opcode}:${duplicate - 1}`,
                 extensionId: category.id,
                 extensionName: category.name || category.id,
                 extensionOpcode: info.opcode,

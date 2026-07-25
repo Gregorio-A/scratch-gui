@@ -4,12 +4,20 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+    createDocumentIndex,
     findDefinitions,
     findReferences,
     formatText,
     getCompletions,
+    getDefinitionLocations,
+    getDiagnosticSuggestion,
     getDocumentSymbols,
     getHover,
+    getInlayHints,
+    getReferenceLocations,
+    getRenamePlan,
+    getResourceAt,
+    getSemanticTokens,
     getSignatureHelp,
     renameEdits
 } = require('../../src/lib/textwarp/language-service');
@@ -51,6 +59,8 @@ test('language service exposes symbols, hover, definitions, references and safe 
     const hover = getHover(source, 11, 18);
     assert.equal(hover.title, 'Variável');
     assert.match(getHover(source, 7, 7).documentation, /altera x/i);
+    assert.ok(getSemanticTokens(source).some(token => token.type === 'namespace' && token.line === 1));
+    assert.ok(getSemanticTokens(source).some(token => token.type === 'event' && token.line === 10));
 });
 
 test('language service offers signatures and project-aware resources', () => {
@@ -58,9 +68,214 @@ test('language service offers signatures and project-aware resources', () => {
     const completions = getCompletions('actor Cat\n\non green_flag:\n    go_to_target(', 4, 18, context);
     assert.ok(completions.some(item => item.label === 'Enemy' && item.insertText === '"Enemy"'));
     const ownSignature = getSignatureHelp(source, 11, 20);
-    assert.equal(ownSignature.label, 'move_twice(amount)');
+    assert.equal(ownSignature.label, 'move_twice(amount: number)');
     const nativeSignature = getSignatureHelp('actor Cat\n\non green_flag:\n    glide_to(', 4, 14);
     assert.match(nativeSignature.label, /^glide_to\(/);
+    const overloaded = getSignatureHelp('actor Cat\n\non green_flag:\n    extension.mix(1, ', 4, 22, {
+        extensionCatalog: {
+            'extension.mix': {
+                kind: 'command',
+                documentation: 'Mix values.',
+                overloads: [{
+                    arguments: [{name: 'value', valueType: 'number'}]
+                }, {
+                    arguments: [
+                        {name: 'left', valueType: 'number'},
+                        {name: 'right', valueType: 'number', optional: true}
+                    ]
+                }]
+            }
+        }
+    });
+    assert.equal(overloaded.signatures.length, 2);
+    assert.equal(overloaded.activeSignature, 1);
+    assert.equal(overloaded.activeParameter, 1);
+});
+
+test('workspace index resolves global symbols without crossing local module boundaries', () => {
+    const stage = 'stage\n\nglobal variable score = 0\n\non green_flag:\n    score += 1\n';
+    const cat = 'actor Cat\n\nvariable lives = 3\n\non green_flag:\n    score += lives\n';
+    const dog = 'actor Dog\n\nvariable lives = 5\n\non green_flag:\n    score += lives\n';
+    const context = {
+        targetId: 'cat',
+        documents: [
+            {modelKey: 'stage', source: stage},
+            {modelKey: 'cat', source: cat},
+            {modelKey: 'dog', source: dog}
+        ]
+    };
+    assert.deepEqual(
+        getDefinitionLocations(cat, 6, 5, context).map(location => location.modelKey),
+        ['stage']
+    );
+    assert.deepEqual(
+        getReferenceLocations(cat, 6, 5, context).map(location => location.modelKey).sort(),
+        ['cat', 'dog', 'stage', 'stage']
+    );
+    assert.deepEqual(
+        getReferenceLocations(cat, 6, 14, context).map(location => location.modelKey),
+        ['cat', 'cat']
+    );
+    const globalRename = getRenamePlan(cat, 6, 5, 'points', context);
+    assert.equal(globalRename.edits.length, 4);
+    assert.deepEqual(Array.from(new Set(globalRename.edits.map(edit => edit.modelKey))).sort(), [
+        'cat', 'dog', 'stage'
+    ]);
+    const localRename = getRenamePlan(cat, 6, 14, 'health', context);
+    assert.equal(localRename.edits.length, 2);
+    assert.ok(localRename.edits.every(edit => edit.modelKey === 'cat'));
+    assert.match(getRenamePlan(cat, 6, 5, 'lives', context).rejectReason, /already declared/);
+    assert.match(getRenamePlan(cat, 6, 14, 'score', context).rejectReason, /already declared/);
+});
+
+test('parameters shadow module symbols and rename only inside their procedure', () => {
+    const shadowed = `actor Cat
+
+variable value = 1
+
+procedure set_value(value: number):
+    change_x(value)
+
+on green_flag:
+    change_y(value)
+`;
+    const parameterPlan = getRenamePlan(shadowed, 6, 14, 'amount');
+    assert.equal(parameterPlan.edits.length, 2);
+    assert.deepEqual(parameterPlan.edits.map(edit => edit.range.startLineNumber), [5, 6]);
+    const variablePlan = getRenamePlan(shadowed, 9, 14, 'speed');
+    assert.equal(variablePlan.edits.length, 2);
+    assert.deepEqual(variablePlan.edits.map(edit => edit.range.startLineNumber), [3, 9]);
+    assert.match(getRenamePlan(shadowed, 6, 14, 'value').rejectReason, /already declared/);
+});
+
+test('partial index preserves incomplete declarations while the user is typing', () => {
+    const incomplete = 'actor Cat\n\nvariable speed\n\nprocedure move_twice(amount: number)\n';
+    const symbols = getDocumentSymbols(incomplete);
+    assert.ok(symbols.some(symbol => symbol.name === 'speed' && symbol.partial));
+    assert.ok(symbols.some(symbol => symbol.name === 'move_twice' && symbol.partial));
+});
+
+test('document index is cached by model and exact source version', () => {
+    const first = createDocumentIndex(source, 'cat');
+    assert.equal(createDocumentIndex(source, 'cat'), first);
+    assert.notEqual(createDocumentIndex(`${source}\n# changed`, 'cat'), first);
+    assert.notEqual(createDocumentIndex(source, 'dog'), first);
+});
+
+test('completion is context-aware, deduplicated and range-safe', () => {
+    const context = {
+        targetId: 'cat',
+        isStage: false,
+        resources: [{
+            id: 'enemy',
+            name: 'Enemy',
+            kind: 'actor',
+            kindLabel: 'Actor',
+            ownerId: 'enemy',
+            ownerName: 'Enemy'
+        }]
+    };
+    assert.deepEqual(getCompletions('actor Cat\n\n# mo', 3, 5, context), []);
+    assert.ok(getCompletions('actor Cat\n\non green_flag:\n    say(\"unfinished\n    wa', 5, 7, context)
+        .some(item => item.label === 'wait'));
+    const commands = getCompletions('actor Cat\n\non green_flag:\n    mo', 4, 7, context);
+    assert.ok(commands.some(item => item.label === 'move'));
+    assert.equal(new Set(commands.map(item => item.id)).size, commands.length);
+    assert.deepEqual(commands.find(item => item.label === 'move').range, {
+        startLineNumber: 4,
+        startColumn: 5,
+        endLineNumber: 4,
+        endColumn: 7
+    });
+    const beforeParenthesis = getCompletions(
+        'actor Cat\n\non green_flag:\n    move(10)',
+        4,
+        9,
+        context
+    ).find(item => item.label === 'move');
+    assert.equal(beforeParenthesis.insertText, 'move');
+    assert.equal(beforeParenthesis.snippet, false);
+    const events = getCompletions('actor Cat\n\non', 3, 3, context);
+    assert.equal(
+        events.find(item => item.label === 'on green_flag').insertText,
+        'on green_flag:\n    ${1:wait(0)}'
+    );
+    assert.equal(getCompletions('actor Cat\n\n', 3, 1, context)
+        .some(item => item.label === 'global variable'), false);
+    assert.ok(getCompletions('stage\n\n', 3, 1, Object.assign({}, context, {isStage: true}))
+        .some(item => item.label === 'global variable'));
+    const resources = getCompletions(
+        'actor Cat\n\non green_flag:\n    go_to_target("En")',
+        4,
+        21,
+        context
+    );
+    const enemy = resources.find(item => item.label === 'Enemy');
+    assert.equal(enemy.insertText, '"Enemy"');
+    assert.deepEqual(enemy.range, {
+        startLineNumber: 4,
+        startColumn: 18,
+        endLineNumber: 4,
+        endColumn: 22
+    });
+    assert.equal(getResourceAt(
+        'actor Cat\n\non green_flag:\n    go_to_target("Enemy")',
+        4,
+        21,
+        context
+    ).id, 'enemy');
+    assert.equal(getHover(
+        'actor Cat\n\non green_flag:\n    go_to_target("Enemy")',
+        4,
+        21,
+        context
+    ).code, 'Enemy');
+});
+
+test('signature help tracks nested and multiline calls', () => {
+    const nested = getSignatureHelp(
+        'actor Cat\n\non green_flag:\n    glide_to(\n        1,\n        add(2, 3),\n        ',
+        7,
+        9
+    );
+    assert.match(nested.label, /^glide_to\(/);
+    assert.equal(nested.activeParameter, 2);
+    const listArgument = getSignatureHelp(
+        'actor Cat\n\non green_flag:\n    glide_to([1, 2], 3, ',
+        4,
+        25
+    );
+    assert.equal(listArgument.activeParameter, 2);
+    const hints = getInlayHints(
+        'actor Cat\n\nprocedure turn(amount: number):\n    turn_right(amount)\n\n' +
+        'on green_flag:\n    glide_to(\n        1,\n        round(2),\n        3)\n    say("glide_to(1, 2, 3)")\n    turn(90)'
+    );
+    assert.deepEqual(hints.map(hint => hint.label), [
+        'degrees:', 'seconds:', 'x:', 'value:', 'y:', 'message:', 'amount:'
+    ]);
+});
+
+test('formatter is idempotent and ignores colons inside strings and comments', () => {
+    const input = 'actor Cat\non green_flag: # event\n say("value: yes")\n # comment:\n wait(1)\n';
+    const once = formatText(input);
+    assert.equal(formatText(once), once);
+    assert.match(once, /    say\("value: yes"\)/);
+    assert.match(once, /    # comment:/);
+    assert.equal(
+        formatText('actor Cat\non green_flag:\n\nsay("after blank")'),
+        'actor Cat\non green_flag:\n\n    say("after blank")\n'
+    );
+    assert.equal(
+        formatText('actor Cat\non green_flag:\n    if true:\n        move(10)\n    say("done")'),
+        'actor Cat\non green_flag:\n    if true:\n        move(10)\n    say("done")\n'
+    );
+    const incompleteString = 'actor Cat\non green_flag:\n    say("unfinished)\n';
+    assert.equal(formatText(incompleteString), incompleteString);
+});
+
+test('diagnostic suggestions follow the active interface language', () => {
+    assert.match(getDiagnosticSuggestion({code: 'invalid-indent'}, 'pt-BR'), /quatro espaços/);
+    assert.match(getDiagnosticSuggestion({code: 'invalid-indent'}, 'en'), /four spaces/);
 });
 
 test('formatter normalizes indentation while preserving block structure', () => {
@@ -104,6 +319,26 @@ test('workspace exposes editable modules, resources, global search, history and 
     const replaced = replaceWorkspace(workspace, 'FOUND', 'changed');
     assert.equal(replaced.count, 1);
     assert.match(replaced.modules[1].source, /changed/);
+    workspace.modules[1].source = 'actor Cat\n\non green_flag:\n    say("found found")';
+    assert.equal(searchWorkspace(workspace, 'found').length, 2);
+    workspace.modules[1].source = 'actor Cat\n# Árvore árvore';
+    assert.deepEqual(searchWorkspace(workspace, 'árvore').map(item => [item.column, item.endColumn]), [
+        [3, 9],
+        [10, 16]
+    ]);
+
+    const fallbackAssets = makeTarget('fallback-id', 'Fallback');
+    fallbackAssets.sprite.costumes = [{name: 'before'}];
+    fallbackAssets.sprite.sounds = [{name: 'before'}];
+    const beforeRename = buildWorkspace({runtime: {targets: [fallbackAssets]}}).resources
+        .filter(item => ['costume', 'sound'].includes(item.kind))
+        .map(item => item.id);
+    fallbackAssets.sprite.costumes[0].name = 'after';
+    fallbackAssets.sprite.sounds[0].name = 'after';
+    const afterRename = buildWorkspace({runtime: {targets: [fallbackAssets]}}).resources
+        .filter(item => ['costume', 'sound'].includes(item.kind))
+        .map(item => item.id);
+    assert.deepEqual(afterRename, beforeRename);
 
     const storage = makeStorage();
     saveHistorySnapshot(storage, 'project', 'actor-id', 'first', 'edit', 1);
