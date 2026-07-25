@@ -1,0 +1,46 @@
+name: Publish TextWarp Web
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-textwarp-web
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Build and publish web artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate TextWarp documentation
+        run: npm run docs:textwarp:check
+
+      - name: Build web application
+        run: npm run build:textwarp:web
+
+      - name: Publish Hostinger branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gui-deploy-web
+          publish_dir: ./build
+          force_orphan: true

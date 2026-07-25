@@ -64,6 +64,22 @@ The resulting site is written to `build/`. Generated directories such as
 `build/`, `dist/`, and `node_modules/` are not source files and should not be
 committed.
 
+## Hostinger deployment
+
+The `Publish TextWarp Web` workflow runs on every push to `develop` and can
+also be started manually from the GitHub Actions page. It builds the static
+site and publishes only the contents of `build/` to the orphan
+`gui-deploy-web` branch.
+
+Configure Hostinger's Git deployment to use this repository and
+`gui-deploy-web` as its deployment branch. The deploy branch contains only
+website artifacts; source code, tests, dependencies, and Desktop files remain
+on `develop`.
+
+The generated site is configured for the `/textwarp/` path. If the domain uses
+a different subpath, update `ROOT` and `STATIC_PATH` in
+`build:textwarp:web` before publishing.
+
 ## Developing with TextWarp Desktop
 
 Link the shared package into a sibling Desktop checkout:
