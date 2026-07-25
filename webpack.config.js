@@ -205,6 +205,7 @@ module.exports = [
                 template: 'src/playground/index.ejs',
                 filename: 'index.html',
                 title: `${APP_NAME} - Text IDE compatible with Scratch and TurboWarp`,
+                isEditor: true,
                 ...htmlWebpackPluginCommon
             }),
             new HtmlWebpackPlugin({

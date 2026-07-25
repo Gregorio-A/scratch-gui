@@ -21,6 +21,4 @@ import React from 'react';
 import Interface from './render-interface.jsx';
 import render from './app-target.js';
 
-render(<Interface
-    isPlayerOnly
-/>);
+render(<Interface />);
