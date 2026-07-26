@@ -32,8 +32,8 @@ Select the stage or an actor in the regular Scratch target pane. Each target bec
 The Code, Blocks and Split views edit the same target. Dual editor opens two different target modules and keeps
 each Monaco model independent.
 
-TextWarp automatically validates text after an edit and compiles the last valid version. Use Compile for an
-explicit validation, Run for the green flag, Stop to stop all threads and Restart to compile then run again.
+TextWarp automatically validates text after an edit and compiles the last valid version. Use **Text to Blocks**
+for an explicit conversion, Run for the green flag, Stop to stop all threads and Restart to compile then run again.
 
 The project sidebar exposes editable modules, resources, search, symbols and local history. The lower panel keeps
 Problems, Console, Debugger and extension information in separate tabs. All panels can be resized.
@@ -69,6 +69,10 @@ list_add(players, "Grace")
 say(join("Score: ", score))
 ```
 
+Scratch names that are not valid TextWarp identifiers receive a stable alias. For example, `Gear Speed °/s`
+appears as `Gear_Speed_s` in source while block fields retain the original name and ID. Alias collisions receive
+deterministic `_2`, `_3`, and later suffixes.
+
 Expressions support numbers, strings, booleans, variables, reporters and operators such as `+`, `-`, `*`, `/`,
 `and`, `or` and `not`.
 
@@ -89,6 +93,19 @@ forever:
 
 Extension conditionals with more than two branches use explicit `branch N:` sections when required by their
 mutation.
+
+Visually empty bodies use `pass`; an `if/else` keeps both arms even when both are empty. Blocks disconnected from
+events remain editable with explicit top-level syntax:
+
+```textwarp
+stack:
+    go_to(10, 20)
+
+reporter (Gear_X * 2)
+```
+
+`stack:` preserves a command stack that does not execute until connected to an event. `reporter` preserves a
+standalone value block in the workspace.
 
 ### Procedures and parameters
 
@@ -151,7 +168,7 @@ This prevents common ZIP bomb and path traversal attacks.
 
 ## Block import
 
-Import Blocks decompiles existing Scratch stacks into named TextWarp syntax. Unavailable historical or
+Blocks to Text decompiles existing Scratch stacks into named TextWarp syntax. Unavailable historical or
 third-party opcodes remain visible as blocks and are reported instead of being silently replaced with unsafe raw
 code.
 

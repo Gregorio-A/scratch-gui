@@ -63,7 +63,7 @@ Os recursos completos da IDE e seus atalhos estão em [TEXTWARP_IDE.md](TEXTWARP
 
 Alterações válidas no texto são compiladas para o workspace. Alterações no Blockly são decompiladas e mescladas por evento ou procedimento. Unidades que não mudaram conservam comentários, espaçamento e ordem textual; apenas a unidade alterada visualmente recebe a forma canônica do decompilador. Se texto e blocos alterarem unidades diferentes, a mesclagem é automática. A faixa **Manter texto** ou **Usar blocos** aparece somente quando os dois lados alteram semanticamente a mesma unidade ou quando o texto pendente está inválido.
 
-O botão **Importar blocos** também faz uma conversão explícita do alvo. Todos os opcodes carregados no runtime têm
+A ação **Blocos para texto** também faz uma conversão explícita do alvo. Todos os opcodes carregados no runtime têm
 sintaxe nativa, especial ou gerada de `getInfo()`. Se um `.sb3` contiver um opcode cuja extensão não está carregada,
 o stack visual permanece preservado e marcado como não importado; o decompilador não inventa uma chamada nem escreve
 `raw.*`. O parser ainda lê `raw.*` de arquivos TextWarp antigos somente para compatibilidade de migração.
@@ -104,6 +104,10 @@ global list enemies = ["Enemy", "Boss"]
 ```
 
 Variáveis e listas globais declaradas no palco podem ser lidas e alteradas diretamente pelos atores. Ao importar blocos de um ator, o decompilador consulta o palco para preservar essas referências sem criar declarações locais duplicadas.
+
+Nomes do Scratch que não são identificadores TextWarp recebem um alias estável. Por exemplo, `Gear Speed °/s`
+aparece como `Gear_Speed_s` no código, mas os blocos continuam guardando o nome original e o mesmo ID. Se dois nomes
+produzirem o mesmo alias, o próximo recebe um sufixo como `_2`.
 
 Inicializadores precisam ser constantes. Variáveis aceitam número ou string; listas aceitam uma lista literal de números e strings.
 
@@ -160,6 +164,19 @@ forever:
 ```
 
 `while condition` preserva o opcode legado `control_while`; não é convertido em outro bloco visual.
+
+Corpos visualmente vazios usam `pass`. Um `if/else` mantém os dois braços mesmo quando ambos estão vazios.
+Blocos desconectados de um evento também permanecem editáveis:
+
+```text
+stack:
+    go_to(10, 20)
+
+reporter (Gear_X * 2)
+```
+
+`stack:` representa uma pilha de comandos que não executa até ser ligada a um evento. `reporter` representa um
+bloco de valor solto no workspace.
 
 ### Procedimentos e parâmetros
 

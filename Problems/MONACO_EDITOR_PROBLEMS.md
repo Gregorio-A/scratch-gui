@@ -213,8 +213,10 @@ target switching, navigation, rename, and diagnostics in dual view.
 ### P2 — Editor feature registration is not observable after recovery
 
 When Monaco fails, the component falls back to a basic editor. `initializeMonaco()` catches the failure and exposes a
-retry, but there is no telemetry/status distinguishing loader failure, provider registration failure, or runtime model
-failure. A partially initialized Monaco instance can leave the user with no clear recovery reason.
+retry. The raw loader error, conversion data, diagnostics, runtime errors, console entries, variables and current
+source can now be copied or downloaded from the fallback as a technical report, but there is still no structured
+lifecycle status distinguishing loader failure, provider registration failure, or runtime model failure. A partially
+initialized Monaco instance can leave the user with no precise recovery category.
 
 Required fix: expose structured lifecycle states and ensure every failed initialization disposes partial models,
 subscriptions, and registrations before retry.

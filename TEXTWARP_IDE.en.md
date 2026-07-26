@@ -53,6 +53,15 @@ Open-file tabs, project-wide search and replacement, recent targets and local hi
 Compilation writes directly to `scratch-vm`; the native Blocks view reads the same target. The browser uses web
 file APIs and downloads. Electron injects native file handles through the shared platform boundary.
 
+Scratch variable and list names containing spaces, accents, or symbols receive a stable TextWarp identifier, such
+as `Gear Speed °/s` → `Gear_Speed_s`. Block fields retain the original name and ID, so round trips do not create a
+different variable or lose the actor/stage binding. Normalized-name collisions receive deterministic suffixes.
+
+Empty control arms are represented by `pass`, including both sides of an empty `if/else`, and compile back to empty
+visual branches. Command stacks not attached to an event use `stack:`, while disconnected reporter blocks use
+`reporter expression`. Only genuinely unknown opcodes stay exclusively in Blocks and are listed by conversion and
+the technical report.
+
 ## Execution and console
 
 Run, Stop, Restart and selection execution operate on the current VM. The Console tab records input, output,
@@ -72,6 +81,11 @@ Configurable shortcuts support letters, digits, function keys, arrows, navigatio
 Backspace and Delete. Invalid or duplicate shortcuts produce visible feedback and retain the default binding.
 Breakpoints use tracked Monaco decorations, so persisted line positions follow inserted and deleted lines.
 
+The Problems tab always offers **Copy technical report** and **Download technical report**. The report includes
+editor status, Monaco loader failures, Blocks-to-Text conversion results, unavailable opcodes, original variable/list
+names and IDs, runtime errors, console entries, and the current source. Review it before sharing because the complete
+module source is included. The same actions remain available in the basic-editor fallback.
+
 ## Integrated documentation
 
 Documentation is selected from the active Scratch GUI language. Portuguese uses the canonical Portuguese
@@ -84,8 +98,8 @@ path limits. External source files are read or written only after an explicit us
 
 The Monaco loader deduplicates concurrent requests, validates the AMD editor API and supports retry after a
 transient failure. Assets resolve from `document.baseURI`, including subdirectory deployments. If loading still
-fails, the basic editor preserves the source, diagnostics, and compile/run actions, keeps technical details behind
-an expandable control, and offers a retry action.
+fails, the basic editor preserves the source and diagnostics, keeps technical details behind an expandable control,
+offers copy/download technical reports, and provides a retry action.
 
 ## Usability and accessibility
 

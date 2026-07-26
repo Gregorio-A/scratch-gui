@@ -74,6 +74,17 @@ Alterações válidas são compiladas após 300 ms e atualizam somente as unidad
 
 A seleção de alvos é compartilhada com o TurboWarp, eventos são filtrados por tipo de alvo, valores vivos aparecem no depurador e referências persistem por IDs. Esse ciclo funciona como hot reload: uma unidade válida muda na VM sem reconstruir ou reiniciar todo o projeto.
 
+Nomes de variáveis e listas do Scratch que contêm espaços, acentos ou símbolos recebem um identificador TextWarp
+estável, como `Gear Speed °/s` → `Gear_Speed_s`. O ID e o nome original continuam gravados nos campos dos blocos;
+por isso a conversão nos dois sentidos não cria outra variável nem perde a ligação entre ator e palco. Colisões entre
+nomes normalizados recebem sufixos determinísticos.
+
+Ramos vazios são escritos como `pass`, inclusive em `if/else`, e voltam a ser braços vazios no editor visual. Pilhas
+de comandos desconectadas de um evento usam `stack:`, enquanto repórteres soltos usam `reporter expressão`. Esses
+formatos preservam blocos válidos que existem no workspace sem alterar quando eles executam. Somente opcodes realmente
+desconhecidos permanecem exclusivamente como blocos e são identificados no resultado da conversão e no relatório
+técnico.
+
 ## Execução e console
 
 **Executar** valida, compila e inicia o projeto pela bandeira verde. **Parar** interrompe todas as threads e **Reiniciar** para, recompila e inicia de forma previsível. `Ctrl+Shift+Enter` executa o evento selecionado, o evento da linha atual ou um procedimento sem parâmetros; procedimentos com parâmetros continuam sendo chamados pelo código.
@@ -112,6 +123,11 @@ rastreáveis: inserir ou remover linhas move também a posição persistida do b
 ocupa espaço. Divisores arrastáveis redimensionam a barra do projeto, a área inferior e a proporção dos modos
 **Dividido** e **Editor duplo**; os valores ficam salvos localmente.
 
+O painel **Problemas** oferece **Copiar relatório técnico** e **Baixar relatório técnico** mesmo quando não há
+diagnósticos. O relatório reúne estado do editor, falha de carregamento do Monaco, resultado Blocos → Texto, opcodes
+indisponíveis, variáveis/listas com IDs e nomes originais, erros de runtime, console e a fonte atual. Revise o arquivo
+antes de compartilhá-lo, pois ele inclui o código completo do módulo.
+
 Em telas compactas, as ações secundárias ficam em **Ferramentas**, a barra do projeto vira uma sobreposição e os
 dois editores são empilhados. Em largura de celular, o palco e a lista de atores ficam abaixo da IDE, sem cobrir o
 editor nem sair da viewport. Os links opcionais da barra superior são ocultados antes dos comandos de arquivo e
@@ -143,8 +159,8 @@ compilado, recursos e lock de extensões.
 O carregador do Monaco deduplica solicitações concorrentes, valida a API AMD carregada e permite tentar novamente
 depois de uma falha transitória. O caminho dos arquivos parte de `document.baseURI`, inclusive quando a aplicação
 é publicada em um subdiretório. Se o carregamento não for possível, o editor básico preserva a fonte, mostra
-os diagnósticos e as ações de compilar/executar, mantém detalhes técnicos sob demanda e oferece uma ação de nova
-tentativa.
+os diagnósticos, mantém detalhes técnicos sob demanda, permite copiar ou baixar o relatório técnico e oferece uma
+ação de nova tentativa.
 
 ## Usabilidade e acessibilidade
 
