@@ -51,6 +51,7 @@ class MonacoEditor extends React.Component {
     initializeMonaco (retry) {
         const initializationId = ++this.initializationId;
         this.setState({loadError: null});
+        if (retry && this.props.onLoadError) this.props.onLoadError(null);
         const loader = retry ? retryMonaco() : loadMonaco();
         loader.then(monaco => {
             if (!this.mounted || !this.container || initializationId !== this.initializationId) return;
@@ -132,11 +133,14 @@ class MonacoEditor extends React.Component {
             this.registerActions();
             this.updateMarkers();
             this.updateDecorations();
+            if (this.props.onLoadError) this.props.onLoadError(null);
             if (this.props.onReady) this.props.onReady(this);
         }).catch(error => {
             console.error(error);
             if (this.mounted && initializationId === this.initializationId) {
-                this.setState({loadError: error.message});
+                const message = error && error.message ? error.message : String(error);
+                this.setState({loadError: message});
+                if (this.props.onLoadError) this.props.onLoadError(message);
             }
         });
     }
@@ -574,6 +578,27 @@ class MonacoEditor extends React.Component {
                             <summary>{t('errorDetails')}</summary>
                             <code>{this.state.loadError}</code>
                         </details>
+                        {(this.props.onCopyDiagnosticReport || this.props.onDownloadDiagnosticReport) && (
+                            <div style={{display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem'}}>
+                                <span>{t('diagnosticReportIncludesCode')}</span>
+                                {this.props.onCopyDiagnosticReport && (
+                                    <button
+                                        type="button"
+                                        onClick={this.props.onCopyDiagnosticReport}
+                                    >
+                                        {t('copyDiagnosticReport')}
+                                    </button>
+                                )}
+                                {this.props.onDownloadDiagnosticReport && (
+                                    <button
+                                        type="button"
+                                        onClick={this.props.onDownloadDiagnosticReport}
+                                    >
+                                        {t('downloadDiagnosticReport')}
+                                    </button>
+                                )}
+                            </div>
+                        )}
                         {this.props.diagnostics.length > 0 && (
                             <div role="status">
                                 <strong>{t('problems')}{`: ${this.props.diagnostics.length}`}</strong>
@@ -647,6 +672,9 @@ MonacoEditor.propTypes = {
     onCompile: PropTypes.func,
     onInvalidShortcut: PropTypes.func,
     onNavigateResource: PropTypes.func,
+    onCopyDiagnosticReport: PropTypes.func,
+    onDownloadDiagnosticReport: PropTypes.func,
+    onLoadError: PropTypes.func,
     onOpenModel: PropTypes.func,
     onReady: PropTypes.func,
     onRestart: PropTypes.func,

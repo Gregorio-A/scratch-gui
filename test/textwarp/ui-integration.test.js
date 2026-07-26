@@ -52,6 +52,22 @@ test('Extensions is available beside Problems, Console and Debugger only in the 
     assert.match(panelTabs, /t\('problems'\)[\s\S]*?t\('console'\)[\s\S]*?t\('debugPanel'\)[\s\S]*?t\('extensions'\)/);
 });
 
+test('Problems and the basic editor expose copyable and downloadable technical reports', () => {
+    const editorSource = readSource('src/containers/textwarp-editor.jsx');
+    const monacoSource = readSource('src/components/textwarp-editor/monaco-editor.jsx');
+    const editorStyles = readSource('src/components/textwarp-editor/text-editor.css');
+
+    assert.match(editorSource, /getDiagnosticReport \(\)/);
+    assert.match(editorSource, /handleCopyDiagnosticReport \(\)/);
+    assert.match(editorSource, /handleDownloadDiagnosticReport \(\)/);
+    assert.match(editorSource, /onCopyDiagnosticReport=\{this\.handleCopyDiagnosticReport\}/);
+    assert.match(editorSource, /onDownloadDiagnosticReport=\{this\.handleDownloadDiagnosticReport\}/);
+    assert.match(editorSource, /onLoadError=\{this\.handleMonacoLoadError\}/);
+    assert.match(monacoSource, /this\.props\.onCopyDiagnosticReport/);
+    assert.match(monacoSource, /this\.props\.onDownloadDiagnosticReport/);
+    assert.match(editorStyles, /\.diagnostic-report-actions \{/);
+});
+
 test('responsive overlays, tabs and panels expose complete keyboard and ARIA state', () => {
     const editorSource = readSource('src/containers/textwarp-editor.jsx');
     const sidebarSource = readSource('src/components/textwarp-editor/ide-sidebar.jsx');

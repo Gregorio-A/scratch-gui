@@ -24,6 +24,8 @@ describe('TextWarp Monaco editor lifecycle and fallback', () => {
 
     test('fallback keeps diagnostics without duplicating the editor control bar', () => {
         const onCompile = jest.fn();
+        const onCopyDiagnosticReport = jest.fn();
+        const onDownloadDiagnosticReport = jest.fn();
         const onRun = jest.fn();
         const wrapper = shallow(
             <MonacoEditor
@@ -38,6 +40,8 @@ describe('TextWarp Monaco editor lifecycle and fallback', () => {
                         severity: 'error'
                     }],
                     onCompile,
+                    onCopyDiagnosticReport,
+                    onDownloadDiagnosticReport,
                     onRun
                 })}
             />,
@@ -53,6 +57,10 @@ describe('TextWarp Monaco editor lifecycle and fallback', () => {
         expect(onCompile).not.toHaveBeenCalled();
         expect(onRun).not.toHaveBeenCalled();
         expect(wrapper.find('details code').text()).toBe('network unavailable');
+        wrapper.find('button').filterWhere(button => button.text() === 'Copy technical report').simulate('click');
+        wrapper.find('button').filterWhere(button => button.text() === 'Download technical report').simulate('click');
+        expect(onCopyDiagnosticReport).toHaveBeenCalledTimes(1);
+        expect(onDownloadDiagnosticReport).toHaveBeenCalledTimes(1);
     });
 
     test('adaptive options disable dense UI for narrow editors and large files', () => {

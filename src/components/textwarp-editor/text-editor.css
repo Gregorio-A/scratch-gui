@@ -846,6 +846,38 @@
     padding: 0.35rem 0.65rem 0.55rem;
 }
 
+.diagnostic-report-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--ui-black-transparent);
+}
+
+.diagnostic-report-actions span {
+    min-width: 12rem;
+    flex: 1 1 18rem;
+    color: var(--text-primary-transparent);
+}
+
+.diagnostic-report-actions button {
+    min-height: var(--textwarp-control-height);
+    padding: 0.25rem 0.55rem;
+    color: var(--text-primary);
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: var(--textwarp-control-radius);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+}
+
+.diagnostic-report-actions button:hover {
+    background: var(--ui-secondary);
+}
+
 .extension-catalog {
     display: flex;
     flex-direction: column;

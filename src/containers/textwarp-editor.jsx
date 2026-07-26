@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import React from 'react';
 import {connect} from 'react-redux';
 import VisualBlocks from './blocks.jsx';
+import downloadBlob from '../lib/download-blob';
 import {setProjectUnchanged} from '../reducers/project-changed';
 import {setFileHandle, setTextwarpUiOperation, TEXTWARP_UI_COMMANDS} from '../reducers/tw';
 
@@ -10,6 +11,7 @@ import {compileText} from '../lib/textwarp/compiler';
 import {getDebugController} from '../lib/textwarp/debug-controller';
 import {inspectExpression} from '../lib/textwarp/debug-inspector';
 import {decompileTarget} from '../lib/textwarp/decompiler';
+import {createDiagnosticReport} from '../lib/textwarp/diagnostic-report';
 import DocumentationPane from '../components/textwarp-editor/documentation-pane.jsx';
 import {buildExtensionInventory, summarizeExtensionCatalog} from '../lib/textwarp/extension-catalog';
 import IdeSidebar from '../components/textwarp-editor/ide-sidebar.jsx';
@@ -36,6 +38,7 @@ import {
     normalizeUiState
 } from '../lib/textwarp/interface-state';
 import {createTranslator} from '../lib/textwarp/i18n';
+import {sanitizeIdentifier} from '../lib/textwarp/identifier';
 import {getDiagnosticSuggestion, getOutline} from '../lib/textwarp/language-service';
 import MonacoEditor from '../components/textwarp-editor/monaco-editor.jsx';
 import {mergeVisualSource} from '../lib/textwarp/source-merge';
@@ -229,6 +232,7 @@ class TextEditor extends React.Component {
             externalName: '',
             externalLastModified: 0,
             externalSyncState: 'disconnected',
+            monacoError: '',
             debugLimit: DEFAULT_LIST_LIMIT,
             diagnosticLimit: DEFAULT_LIST_LIMIT,
             consoleLimit: DEFAULT_LIST_LIMIT,
@@ -304,6 +308,9 @@ class TextEditor extends React.Component {
         this.openBottomPanel = this.openBottomPanel.bind(this);
         this.resetLayout = this.resetLayout.bind(this);
         this.scrollOpenTabs = this.scrollOpenTabs.bind(this);
+        this.handleCopyDiagnosticReport = this.handleCopyDiagnosticReport.bind(this);
+        this.handleDownloadDiagnosticReport = this.handleDownloadDiagnosticReport.bind(this);
+        this.handleMonacoLoadError = this.handleMonacoLoadError.bind(this);
     }
 
     componentDidMount () {
@@ -427,6 +434,120 @@ class TextEditor extends React.Component {
 
     t (key, values) {
         return createTranslator(this.props.locale)(key, values);
+    }
+
+    getDiagnosticReport () {
+        const target = this.getTarget();
+        const stage = this.getStage();
+        let conversion = null;
+        if (target) {
+            try {
+                const result = decompileTarget(target, {extensionCatalog: this.extensionCatalog});
+                conversion = {
+                    success: result.success,
+                    importedRootCount: result.importedRootIds.length,
+                    unsupportedRootCount: result.unsupportedRootIds.length,
+                    unsupportedOpcodes: result.unsupportedOpcodes
+                };
+            } catch (error) {
+                conversion = {
+                    success: false,
+                    importedRootCount: 0,
+                    unsupportedRootCount: 0,
+                    unsupportedOpcodes: [`diagnostic-report: ${error.message}`]
+                };
+            }
+        }
+        const variables = [];
+        const appendVariables = (owner, ownerName) => Object.values(
+            owner && owner.variables ? owner.variables : {}
+        ).forEach(variable => {
+            if (variable.type === 'broadcast_msg') {
+                return;
+            }
+            variables.push({
+                id: variable.id,
+                name: variable.name,
+                owner: ownerName,
+                type: variable.type
+            });
+        });
+        appendVariables(target, target && target.isStage ? 'stage' : 'target');
+        if (stage && stage !== target) {
+            appendVariables(stage, 'stage');
+        }
+        const snapshot = this.state.debugSnapshot;
+        return createDiagnosticReport({
+            blockCount: target && target.blocks && target.blocks._blocks ?
+                Object.keys(target.blocks._blocks).length : 0,
+            consoleEntries: snapshot.consoleEntries,
+            conversion,
+            diagnostics: this.state.diagnostics,
+            extensions: this.state.extensionSummary.extensions,
+            generatedAt: new Date().toISOString(),
+            isStage: Boolean(target && target.isStage),
+            languageVersion: '0.3',
+            locale: this.props.locale,
+            monacoError: this.state.monacoError,
+            projectTitle: this.props.projectTitle,
+            runtimeErrors: snapshot.runtimeErrors,
+            source: this.state.source,
+            status: this.state.status,
+            targetCount: this.props.vm.runtime && this.props.vm.runtime.targets ?
+                this.props.vm.runtime.targets.length : 0,
+            targetId: target && target.id,
+            targetName: target && target.getName ? target.getName() : '',
+            userAgent: typeof navigator === 'object' ? navigator.userAgent : '',
+            variables
+        });
+    }
+
+    async handleCopyDiagnosticReport () {
+        const report = this.getDiagnosticReport();
+        let input = null;
+        try {
+            if (typeof navigator === 'object' && navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(report);
+            } else {
+                input = document.createElement('textarea');
+                input.value = report;
+                input.style.position = 'fixed';
+                input.style.opacity = '0';
+                document.body.appendChild(input);
+                input.select();
+                if (!document.execCommand('copy')) {
+                    throw new Error('Clipboard command was rejected.');
+                }
+            }
+            this.setState({status: this.t('diagnosticReportCopied'), statusKind: 'success'});
+        } catch (error) {
+            this.setState({status: this.t('diagnosticReportFailed'), statusKind: 'error'});
+        } finally {
+            if (input) {
+                input.remove();
+            }
+        }
+    }
+
+    handleDownloadDiagnosticReport () {
+        try {
+            const target = this.getTarget();
+            const targetName = sanitizeIdentifier(
+                target && target.getName ? target.getName() : 'project',
+                'project'
+            );
+            downloadBlob(
+                `textwarp-diagnostic-${targetName}.txt`,
+                new Blob([this.getDiagnosticReport()], {type: 'text/plain;charset=utf-8'})
+            );
+            this.setState({status: this.t('diagnosticReportDownloaded'), statusKind: 'success'});
+        } catch (error) {
+            this.setState({status: this.t('diagnosticReportFailed'), statusKind: 'error'});
+        }
+    }
+
+    handleMonacoLoadError (monacoError) {
+        this.setState({monacoError: monacoError || ''});
     }
 
     getTemplateName (template) {
@@ -1908,41 +2029,67 @@ class TextEditor extends React.Component {
 
     renderDiagnostics () {
         const t = createTranslator(this.props.locale);
-        if (this.state.diagnostics.length === 0) return <span className={styles.noDiagnostics}>{t('noProblems')}</span>;
+        const reportActions = (
+            <div className={styles.diagnosticReportActions}>
+                <span>{t('diagnosticReportIncludesCode')}</span>
+                <button
+                    type="button"
+                    onClick={this.handleCopyDiagnosticReport}
+                >
+                    {t('copyDiagnosticReport')}
+                </button>
+                <button
+                    type="button"
+                    onClick={this.handleDownloadDiagnosticReport}
+                >
+                    {t('downloadDiagnosticReport')}
+                </button>
+            </div>
+        );
+        if (this.state.diagnostics.length === 0) return (
+            <React.Fragment>
+                {reportActions}
+                <span className={styles.noDiagnostics}>{t('noProblems')}</span>
+            </React.Fragment>
+        );
         const visible = getVisibleItems(this.state.diagnostics, this.state.diagnosticLimit);
         return (
             <React.Fragment>
-            {visible.items.map((item, index) => {
-            const quoted = item.message.match(/[“"]([^”"]+)[”"]/);
-            const helpQuery = quoted && quoted[1] || (/indent/.test(item.code) ? 'indentação' :
-                /variable|list/.test(item.code) ? 'variável lista' : /procedure|parameter|return/.test(item.code) ?
-                    'procedimentos parâmetros' : 'referência');
-            return (
-                <div className={classNames(styles.diagnostic, styles[item.severity])} key={`${item.line}:${item.column}:${item.code}:${index}`}>
-                    <button title={t('goToProblem')} type="button" onClick={() => this.openLocation({
-                        targetId: this.props.editingTargetId, line: item.line, column: item.column
-                    })}>
-                        <span className={styles.diagnosticLocation}>L{item.line}:{item.column}</span>
-                        <span>{item.message}</span>
-                        {getDiagnosticSuggestion(item) && <em>{getDiagnosticSuggestion(item)}</em>}
-                        <small>{item.code}</small>
-                    </button>
-                    <button className={styles.diagnosticHelp} type="button" onClick={() => this.setState({
-                        docsQuery: helpQuery
-                    }, () => this.setViewMode('docs'))}>{t('help')}</button>
-                </div>
-            );
-            })}
-            {visible.hiddenCount > 0 && <button
-                className={styles.showMore}
-                type="button"
-                onClick={() => this.setState(state => ({
-                    diagnosticLimit: state.diagnosticLimit + DEFAULT_LIST_LIMIT
-                }))}
-            >{t('showMoreItems', {count: visible.hiddenCount})}</button>}
-            {visible.totalCount > DEFAULT_LIST_LIMIT && <span className={styles.listCount}>
-                {t('showingItems', {visible: visible.items.length, total: visible.totalCount})}
-            </span>}
+                {reportActions}
+                {visible.items.map((item, index) => {
+                    const quoted = item.message.match(/[“"]([^”"]+)[”"]/);
+                    const helpQuery = quoted && quoted[1] || (/indent/.test(item.code) ? 'indentação' :
+                        /variable|list/.test(item.code) ? 'variável lista' :
+                            /procedure|parameter|return/.test(item.code) ? 'procedimentos parâmetros' : 'referência');
+                    return (
+                        <div
+                            className={classNames(styles.diagnostic, styles[item.severity])}
+                            key={`${item.line}:${item.column}:${item.code}:${index}`}
+                        >
+                            <button title={t('goToProblem')} type="button" onClick={() => this.openLocation({
+                                targetId: this.props.editingTargetId, line: item.line, column: item.column
+                            })}>
+                                <span className={styles.diagnosticLocation}>L{item.line}:{item.column}</span>
+                                <span>{item.message}</span>
+                                {getDiagnosticSuggestion(item) && <em>{getDiagnosticSuggestion(item)}</em>}
+                                <small>{item.code}</small>
+                            </button>
+                            <button className={styles.diagnosticHelp} type="button" onClick={() => this.setState({
+                                docsQuery: helpQuery
+                            }, () => this.setViewMode('docs'))}>{t('help')}</button>
+                        </div>
+                    );
+                })}
+                {visible.hiddenCount > 0 && <button
+                    className={styles.showMore}
+                    type="button"
+                    onClick={() => this.setState(state => ({
+                        diagnosticLimit: state.diagnosticLimit + DEFAULT_LIST_LIMIT
+                    }))}
+                >{t('showMoreItems', {count: visible.hiddenCount})}</button>}
+                {visible.totalCount > DEFAULT_LIST_LIMIT && <span className={styles.listCount}>
+                    {t('showingItems', {visible: visible.items.length, total: visible.totalCount})}
+                </span>}
             </React.Fragment>
         );
     }
@@ -2645,6 +2792,9 @@ class TextEditor extends React.Component {
                             onInvalidShortcut={this.handleInvalidShortcut}
                             onBreakpointsChange={this.handleBreakpointsChange}
                             onNavigateResource={this.handleNavigateResource}
+                            onCopyDiagnosticReport={this.handleCopyDiagnosticReport}
+                            onDownloadDiagnosticReport={this.handleDownloadDiagnosticReport}
+                            onLoadError={this.handleMonacoLoadError}
                             onOpenModel={this.handleOpenModel}
                             onReady={editor => { this.monacoEditor = editor; }}
                             onRestart={this.handleRestart}
