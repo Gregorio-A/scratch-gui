@@ -30,22 +30,22 @@ describe('Menu bar settings', () => {
         await driver.quit();
     });
 
-    test('File->New should be enabled', async () => {
+    test('File->New File should be enabled', async () => {
         await loadUri(uri);
         await clickXpath(FILE_MENU_XPATH);
-        await findByXpath('//*[li[span[text()="New"]] and not(@data-tip="tooltip")]');
+        await findByXpath('//*[li[span[text()="New File"]] and not(@data-tip="tooltip")]');
     });
 
-    test('File->Load should be enabled', async () => {
+    test('File->Import Project should be enabled', async () => {
         await loadUri(uri);
         await clickXpath(FILE_MENU_XPATH);
-        await findByXpath('//*[li[text()="Load from your computer"] and not(@data-tip="tooltip")]');
+        await findByXpath('//*[li[span[text()="Import Project"]] and not(@data-tip="tooltip")]');
     });
 
-    test('File->Save should be enabled', async () => {
+    test('File->Export Project should be enabled', async () => {
         await loadUri(uri);
         await clickXpath(FILE_MENU_XPATH);
-        await findByXpath('//*[li[span[text()="Save to your computer"]] and not(@data-tip="tooltip")]');
+        await findByXpath('//*[li[span[text()="Export Project"]] and not(@data-tip="tooltip")]');
     });
 
     test('Share button should NOT be enabled', async () => {
@@ -71,7 +71,7 @@ describe('Menu bar settings', () => {
     test('User is not warned before uploading project file over a fresh project', async () => {
         await loadUri(uri);
         await clickXpath(FILE_MENU_XPATH);
-        await clickText('Load from your computer');
+        await clickText('Import Project');
         const input = await findByXpath('//input[@accept=".sb,.sb2,.sb3"]');
         await input.sendKeys(path.resolve(__dirname, '../fixtures/project1.sb3'));
         // No replace alert since no changes were made
@@ -86,7 +86,7 @@ describe('Menu bar settings', () => {
         await clickText('delete', scope.spriteTile);
 
         await clickXpath(FILE_MENU_XPATH);
-        await clickText('Load from your computer');
+        await clickText('Import Project');
         const input = await findByXpath('//input[@accept=".sb,.sb2,.sb3"]');
         await input.sendKeys(path.resolve(__dirname, '../fixtures/project1.sb3'));
         await driver.switchTo().alert()

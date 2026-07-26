@@ -4,7 +4,7 @@ import React from 'react';
 import {connect} from 'react-redux';
 import VisualBlocks from './blocks.jsx';
 import {setProjectUnchanged} from '../reducers/project-changed';
-import {setFileHandle} from '../reducers/tw';
+import {setFileHandle, TEXTWARP_UI_COMMANDS} from '../reducers/tw';
 
 import {compileText} from '../lib/textwarp/compiler';
 import {getDebugController} from '../lib/textwarp/debug-controller';
@@ -247,8 +247,9 @@ class TextEditor extends React.Component {
         this.handleStop = this.handleStop.bind(this);
         this.handleRestart = this.handleRestart.bind(this);
         this.handleImportBlocks = this.handleImportBlocks.bind(this);
-        this.handleExportPackage = this.handleExportPackage.bind(this);
         this.handlePackageFile = this.handlePackageFile.bind(this);
+        this.handleTextwarpUiCommand = this.handleTextwarpUiCommand.bind(this);
+        this.openTextwarp = this.openTextwarp.bind(this);
         this.handleToggleBreakpoint = this.handleToggleBreakpoint.bind(this);
         this.handleBreakpointsChange = this.handleBreakpointsChange.bind(this);
         this.handleSecondaryBreakpointsChange = this.handleSecondaryBreakpointsChange.bind(this);
@@ -324,6 +325,9 @@ class TextEditor extends React.Component {
             previousProps.editingTargetId !== this.props.editingTargetId ||
             previousProps.editingTargetName !== this.props.editingTargetName
         ) this.loadSelectedTarget();
+        if (previousProps.textwarpUiCommand.id !== this.props.textwarpUiCommand.id) {
+            this.handleTextwarpUiCommand(this.props.textwarpUiCommand.name);
+        }
     }
 
     componentWillUnmount () {
@@ -1023,6 +1027,29 @@ class TextEditor extends React.Component {
         });
     }
 
+    handleTextwarpUiCommand (command) {
+        switch (command) {
+        case TEXTWARP_UI_COMMANDS.OPEN:
+            this.openTextwarp();
+            break;
+        case TEXTWARP_UI_COMMANDS.SAVE:
+            this.saveTextwarp(false);
+            break;
+        case TEXTWARP_UI_COMMANDS.SAVE_AS:
+            this.saveTextwarp(true);
+            break;
+        case TEXTWARP_UI_COMMANDS.PREFERENCES:
+            this.setState({
+                externalOpen: false,
+                settingsOpen: true,
+                templatesOpen: false
+            });
+            break;
+        default:
+            break;
+        }
+    }
+
     async saveTextwarp (saveAs = false) {
         if (this.state.busy) return;
         this.setState({
@@ -1433,10 +1460,6 @@ class TextEditor extends React.Component {
         }));
     }
 
-    async handleExportPackage () {
-        return this.saveTextwarp(true);
-    }
-
     async connectExternalSource () {
         try {
             const handles = await showTextwarpOpenFilePicker({
@@ -1535,10 +1558,33 @@ class TextEditor extends React.Component {
         });
     }
 
-    async handlePackageFile (event) {
-        const file = event.target.files && event.target.files[0];
-        event.target.value = '';
-        if (!file) return;
+    async openTextwarp () {
+        if (this.state.busy) return;
+        try {
+            const handles = await showTextwarpOpenFilePicker({
+                multiple: false,
+                types: [{
+                    description: 'TextWarp Project',
+                    accept: {'application/zip': ['.textwarp']}
+                }],
+                excludeAcceptAllOption: true
+            });
+            const handle = handles && handles[0];
+            if (!handle) return;
+            await this.importTextwarpFile(await handle.getFile(), handle);
+        } catch (error) {
+            if (error && error.name === 'NotSupportedError') {
+                if (this.packageInput) this.packageInput.click();
+                return;
+            }
+            if (!error || error.name !== 'AbortError') {
+                this.setState({status: error.message, statusKind: 'error'});
+            }
+        }
+    }
+
+    async importTextwarpFile (file, handle = null) {
+        if (!file || this.state.busy) return;
         this.setState({
             busy: true,
             status: this.localized(`Abrindo ${file.name}…`, `Opening ${file.name}…`),
@@ -1546,7 +1592,12 @@ class TextEditor extends React.Component {
         });
         try {
             const result = await importTextwarpProject(this.props.vm, await file.arrayBuffer());
-            clearTextwarpHandle(file.name);
+            if (handle) {
+                setTextwarpHandle(handle);
+                notifyTextwarpFileOpened(handle);
+            } else {
+                clearTextwarpHandle(file.name);
+            }
             this.props.onClearSb3FileHandle();
             const errors = result.diagnostics.filter(module => !module.success).length;
             this.refreshExtensionCatalog();
@@ -1567,6 +1618,12 @@ class TextEditor extends React.Component {
             console.error(error);
             this.setState({status: error.message, statusKind: 'error', busy: false});
         }
+    }
+
+    async handlePackageFile (event) {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = '';
+        if (file) await this.importTextwarpFile(file);
     }
 
     handleToggleBreakpoint (line) {
@@ -1605,12 +1662,6 @@ class TextEditor extends React.Component {
             ),
             statusKind: 'error'
         });
-    }
-
-    toggleDebugger () {
-        const debugOpen = !this.state.debugOpen;
-        this.debugController.setEnabled(debugOpen || this.debugController.hasBreakpoints());
-        this.setState({debugOpen, extensionsOpen: false, consoleOpen: false});
     }
 
     addWatch (event) {
@@ -1930,21 +1981,6 @@ class TextEditor extends React.Component {
                     </div>
                     <div className={styles.actions}>
                         <button
-                            className={classNames(styles.toolButton, this.state.sidebarVisible && styles.debugButtonActive)}
-                            title={`${t('explorer')} (Ctrl+Shift+E)`}
-                            type="button"
-                            onClick={() => this.setState(state => ({sidebarVisible: !state.sidebarVisible}))}
-                        >{t('explorer')}</button>
-                        <button className={styles.secondaryButton} disabled={!this.state.targetName} type="button" onClick={this.handleStop}>
-                            ■ {t('stop')}
-                        </button>
-                        <button className={styles.secondaryButton} disabled={!this.state.targetName || this.state.busy} type="button" onClick={this.handleCompile}>
-                            {t('compile')}
-                        </button>
-                        <button className={styles.runButton} disabled={!this.state.targetName || this.state.busy} type="button" onClick={this.handleRun}>
-                            ▶ {t('run')}
-                        </button>
-                        <button
                             className={styles.drawerToggle}
                             type="button"
                             onClick={() => this.setState(state => ({toolsOpen: !state.toolsOpen}))}
@@ -1955,64 +1991,75 @@ class TextEditor extends React.Component {
                     styles.actionDrawer,
                     this.state.compactLayout && !this.state.toolsOpen && styles.drawerClosed
                 )}>
-                        <button className={styles.toolButton} type="button" onClick={() => {
+                    <button
+                        className={styles.toolButton}
+                        type="button"
+                        onClick={() => {
                             if (this.monacoEditor) this.monacoEditor.openCommandPalette();
-                        }}>{t('commands')}</button>
-                        <button className={styles.toolButton} type="button" onClick={() => this.setState(state => ({
+                        }}
+                    >
+                        {t('commands')}
+                    </button>
+                    <button
+                        className={styles.toolButton}
+                        type="button"
+                        onClick={() => this.setState(state => ({
                             templatesOpen: !state.templatesOpen, settingsOpen: false, externalOpen: false
-                        }))}>{t('models')}</button>
-                        <button className={styles.toolButton} type="button" onClick={() => this.setState(state => ({
-                            settingsOpen: !state.settingsOpen, templatesOpen: false, externalOpen: false
-                        }))}>{t('preferences')}</button>
-                        <button className={styles.toolButton} disabled={!this.state.targetName || this.state.busy} type="button" onClick={this.handleImportBlocks}>
-                            {t('importBlocks')}
-                        </button>
-                        <button className={styles.toolButton} disabled={this.state.busy} type="button" onClick={() => this.packageInput && this.packageInput.click()}>
-                            {t('openPackage')}
-                        </button>
-                        <button className={styles.toolButton} disabled={this.state.busy} type="button" onClick={this.handleExportPackage}>
-                            {t('saveAs')}
-                        </button>
-                        <button className={styles.toolButton} type="button" onClick={() => this.setState(state => ({
+                        }))}
+                    >
+                        {t('models')}
+                    </button>
+                    <button
+                        className={styles.toolButton}
+                        type="button"
+                        onClick={() => this.setState(state => ({
                             externalOpen: !state.externalOpen, settingsOpen: false, templatesOpen: false
-                        }))}>{t('externalEditor')}</button>
-                        <button
-                            className={classNames(styles.toolButton, this.state.extensionsOpen && styles.debugButtonActive)}
-                            type="button"
-                            onClick={() => this.setState(state => ({
-                                extensionsOpen: !state.extensionsOpen, debugOpen: false, consoleOpen: false
-                            }))}
-                        >{t('extensions')}</button>
-                        <button
-                            className={classNames(styles.toolButton, this.state.consoleOpen && styles.debugButtonActive)}
-                            type="button"
-                            onClick={() => this.setState(state => ({
-                                consoleOpen: !state.consoleOpen, debugOpen: false, extensionsOpen: false
-                            }))}
-                        >{t('console')}</button>
-                        <button
-                            className={classNames(styles.toolButton, this.state.debugOpen && styles.debugButtonActive)}
-                            disabled={!this.state.targetName}
-                            type="button"
-                            onClick={() => this.toggleDebugger()}
-                        >{t('debug')}</button>
-                        <button className={styles.secondaryButton} disabled={!this.state.targetName} type="button" onClick={this.handleRestart}>
-                            ↻ {t('redo')}
-                        </button>
-                        <input
-                            accept=".textwarp,application/zip"
-                            className={styles.hiddenInput}
-                            ref={element => { this.packageInput = element; }}
-                            type="file"
-                            onChange={this.handlePackageFile}
-                        />
-                        <input
-                            accept=".tw,text/plain"
-                            className={styles.hiddenInput}
-                            ref={element => { this.externalInput = element; }}
-                            type="file"
-                            onChange={this.handleExternalFile}
-                        />
+                        }))}
+                    >
+                        {t('externalEditor')}
+                    </button>
+                    <button
+                        className={styles.toolButton}
+                        disabled={!this.state.targetName || this.state.busy}
+                        type="button"
+                        onClick={this.handleCompile}
+                    >
+                        {`${t('textToBlocks')} →`}
+                    </button>
+                    <button
+                        className={styles.toolButton}
+                        disabled={!this.state.targetName || this.state.busy}
+                        type="button"
+                        onClick={this.handleImportBlocks}
+                    >
+                        {`← ${t('blocksToText')}`}
+                    </button>
+                    <button
+                        className={classNames(styles.toolButton, this.state.sidebarVisible && styles.debugButtonActive)}
+                        title={`${t('projects')} (Ctrl+Shift+E)`}
+                        type="button"
+                        onClick={() => this.setState(state => ({sidebarVisible: !state.sidebarVisible}))}
+                    >
+                        {t('projects')}
+                    </button>
+                    <input
+                        accept=".textwarp,application/zip"
+                        className={styles.hiddenInput}
+                        ref={element => {
+                            this.packageInput = element;
+                        }}
+                        type="file"
+                        onChange={this.handlePackageFile}
+                    />
+                    <input
+                        accept=".tw,text/plain"
+                        className={styles.hiddenInput}
+                        ref={element => {
+                            this.externalInput = element;
+                        }}
+                        type="file"
+                        onChange={this.handleExternalFile}
+                    />
                 </div>
                 <nav className={styles.openTabs} aria-label={t('openScripts')}>
                     {this.state.openTargetIds.map(targetId => {
@@ -2287,7 +2334,8 @@ class TextEditor extends React.Component {
                 </div>
                 <aside className={classNames(
                     styles.bottomPanel,
-                    (this.state.debugOpen || this.state.consoleOpen) && styles.debugPanelOpen,
+                    (this.state.debugOpen || this.state.consoleOpen || this.state.extensionsOpen) &&
+                        styles.debugPanelOpen,
                     this.state.bottomPanelCollapsed && styles.bottomPanelCollapsed
                 )}>
                     {!this.state.bottomPanelCollapsed && (
@@ -2318,6 +2366,16 @@ class TextEditor extends React.Component {
                                     extensionsOpen: false
                                 });
                             }}>{t('debugPanel')}</button>
+                            <button
+                                className={this.state.extensionsOpen ? styles.activePanelTab : ''}
+                                type="button"
+                                onClick={() => this.setState({
+                                    bottomPanelCollapsed: false,
+                                    debugOpen: false,
+                                    consoleOpen: false,
+                                    extensionsOpen: true
+                                })}
+                            >{t('extensions')}</button>
                         </nav>
                         <label className={styles.fontScale}>
                             <button aria-label={t('fontDecrease')} type="button" onClick={() => this.setFontSize(this.state.fontSize - 1)}>−</button>
@@ -2371,6 +2429,10 @@ TextEditor.propTypes = {
     options: PropTypes.shape({}),
     projectTitle: PropTypes.string,
     stageSize: PropTypes.string,
+    textwarpUiCommand: PropTypes.shape({
+        id: PropTypes.number.isRequired,
+        name: PropTypes.string
+    }),
     theme: PropTypes.shape({}),
     vm: PropTypes.shape({
         editingTarget: PropTypes.shape({}),
@@ -2388,7 +2450,11 @@ TextEditor.defaultProps = {
     isVisible: true,
     locale: 'en',
     onOpenCustomExtensionModal: null,
-    projectTitle: 'TextWarp Project'
+    projectTitle: 'TextWarp Project',
+    textwarpUiCommand: {
+        id: 0,
+        name: null
+    }
 };
 
 const mapStateToProps = state => {
@@ -2401,7 +2467,8 @@ const mapStateToProps = state => {
         editingTargetName: editingTarget ? editingTarget.name : '',
         guiTheme: state.scratchGui.theme.theme.gui,
         locale: state.locales.locale,
-        projectTitle: state.scratchGui.projectTitle
+        projectTitle: state.scratchGui.projectTitle,
+        textwarpUiCommand: state.scratchGui.tw.textwarpUiCommand
     };
 };
 

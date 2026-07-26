@@ -34,5 +34,7 @@ test('TextWarp UI uses Portuguese explicitly and English as the universal fallba
     assert.equal(normalizeLocale('fr'), 'en');
     assert.equal(translate('pt-BR', 'compile'), 'Compilar');
     assert.equal(translate('de', 'compile'), 'Compile');
+    assert.equal(translate('pt-BR', 'textToBlocks'), 'Texto para blocos');
+    assert.equal(translate('en', 'blocksToText'), 'Blocks to Text');
     assert.equal(translate('en', 'topics', {count: 12}), '12 topics');
 });

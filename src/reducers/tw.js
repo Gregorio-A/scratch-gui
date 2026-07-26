@@ -17,6 +17,14 @@ const SET_HAS_CLOUD_VARIABLES = 'tw/SET_HAS_CLOUD_VARIABLES';
 const SET_CLOUD_HOST = 'tw/SET_CLOUD_HOST';
 const SET_PLATFORM_MISMATCH_DETAILS = 'tw/SET_PLATFORM_MISMATCH_DETAILS';
 const SET_PROJECT_ERROR = 'tw/SET_PROJECT_ERROR';
+const REQUEST_TEXTWARP_UI_COMMAND = 'tw/REQUEST_TEXTWARP_UI_COMMAND';
+
+const TEXTWARP_UI_COMMANDS = Object.freeze({
+    OPEN: 'open',
+    PREFERENCES: 'preferences',
+    SAVE: 'save',
+    SAVE_AS: 'save-as'
+});
 
 export const initialState = {
     framerate: 30,
@@ -52,7 +60,11 @@ export const initialState = {
         platform: null,
         callback: null
     },
-    projectError: null
+    projectError: null,
+    textwarpUiCommand: {
+        id: 0,
+        name: null
+    }
 };
 
 const reducer = function (state, action) {
@@ -139,6 +151,13 @@ const reducer = function (state, action) {
     case SET_PROJECT_ERROR:
         return Object.assign({}, state, {
             projectError: action.projectError
+        });
+    case REQUEST_TEXTWARP_UI_COMMAND:
+        return Object.assign({}, state, {
+            textwarpUiCommand: {
+                id: (state.textwarpUiCommand ? state.textwarpUiCommand.id : 0) + 1,
+                name: action.command
+            }
         });
     default:
         return state;
@@ -278,6 +297,13 @@ const setProjectError = function (projectError) {
     };
 };
 
+const requestTextwarpUiCommand = function (command) {
+    return {
+        type: REQUEST_TEXTWARP_UI_COMMAND,
+        command
+    };
+};
+
 export {
     reducer as default,
     initialState as twInitialState,
@@ -299,5 +325,7 @@ export {
     setHasCloudVariables,
     setCloudHost,
     setPlatformMismatchDetails,
-    setProjectError
+    setProjectError,
+    requestTextwarpUiCommand,
+    TEXTWARP_UI_COMMANDS
 };

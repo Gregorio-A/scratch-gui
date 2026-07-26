@@ -22,7 +22,7 @@ describe('TextWarp Monaco editor lifecycle and fallback', () => {
         expect(wrapper.instance().getModelNamespace()).toBe('secondary:project-a');
     });
 
-    test('fallback keeps diagnostics and primary actions available', () => {
+    test('fallback keeps diagnostics without duplicating the editor control bar', () => {
         const onCompile = jest.fn();
         const onRun = jest.fn();
         const wrapper = shallow(
@@ -46,12 +46,12 @@ describe('TextWarp Monaco editor lifecycle and fallback', () => {
         wrapper.setState({loadError: 'network unavailable'});
         expect(wrapper.find('[role="status"]').text()).toContain('Problems: 1');
         expect(wrapper.text()).toContain('L3:2');
-        wrapper.find('button').filterWhere(button => button.text() === 'Compile')
-            .simulate('click');
-        wrapper.find('button').filterWhere(button => button.text() === 'Run')
-            .simulate('click');
-        expect(onCompile).toHaveBeenCalledTimes(1);
-        expect(onRun).toHaveBeenCalledTimes(1);
+        expect(wrapper.find('button').filterWhere(button => button.text() === 'Text to Blocks').exists())
+            .toBe(false);
+        expect(wrapper.find('button').filterWhere(button => button.text() === 'Run').exists())
+            .toBe(false);
+        expect(onCompile).not.toHaveBeenCalled();
+        expect(onRun).not.toHaveBeenCalled();
         expect(wrapper.find('details code').text()).toBe('network unavailable');
     });
 

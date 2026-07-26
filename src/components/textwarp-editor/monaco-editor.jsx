@@ -342,7 +342,7 @@ class MonacoEditor extends React.Component {
         const actions = [
             {
                 id: 'textwarp.compile',
-                label: `TextWarp: ${t('compile')}`,
+                label: `TextWarp: ${t('textToBlocks')}`,
                 value: shortcuts.compile,
                 fallback: this.monaco.KeyCode.F7,
                 run: this.props.onCompile
@@ -586,24 +586,6 @@ class MonacoEditor extends React.Component {
                                 </ul>
                             </div>
                         )}
-                        <div>
-                            {this.props.onCompile && (
-                                <button
-                                    type="button"
-                                    onClick={this.props.onCompile}
-                                >
-                                    {t('compile')}
-                                </button>
-                            )}
-                            {this.props.onRun && (
-                                <button
-                                    type="button"
-                                    onClick={this.props.onRun}
-                                >
-                                    {t('run')}
-                                </button>
-                            )}
-                        </div>
                     </div>
                     <textarea
                         aria-label={t('editor')}

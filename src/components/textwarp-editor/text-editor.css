@@ -128,16 +128,14 @@
 
 .action-drawer {
     min-height: 2.6rem;
-    display: flex;
+    display: grid;
     flex: none;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     align-items: center;
-    justify-content: flex-end;
     gap: 0.35rem;
     padding: 0.3rem 0.65rem;
-    overflow-x: auto;
     background: var(--ui-secondary);
     border-bottom: 1px solid var(--ui-black-transparent);
-    scrollbar-width: thin;
 }
 
 .action-drawer button,
@@ -152,6 +150,13 @@
     white-space: nowrap;
 }
 
+.action-drawer button {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .drawer-toggle {
     display: none;
     color: var(--text-primary);
@@ -162,14 +167,10 @@
     display: none;
 }
 
+.action-drawer button:disabled,
 .actions button:disabled {
     cursor: default;
     opacity: 0.5;
-}
-
-.secondary-button {
-    color: var(--text-primary);
-    background: var(--input-background);
 }
 
 .tool-button {
@@ -182,11 +183,7 @@
     background: var(--data-primary);
 }
 
-.run-button {
-    color: white;
-    background: var(--pen-primary);
-}
-
+.action-drawer button:not(:disabled):hover,
 .actions button:not(:disabled):hover {
     filter: brightness(0.96);
 }
@@ -1058,9 +1055,7 @@
 }
 
 .compact-layout .action-drawer {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    overflow: visible;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .compact-layout .quick-panel {
@@ -1092,7 +1087,6 @@
 }
 
 .narrow-layout .action-drawer {
-    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-height: 32vh;
     overflow: auto;
@@ -1165,10 +1159,6 @@
         padding-right: 0.5rem;
     }
 
-    .run-button {
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
-    }
 }
 
 :global(body.textwarp-resizing) {
