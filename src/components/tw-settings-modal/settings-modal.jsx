@@ -36,7 +36,7 @@ const LearnMore = props => (
         <DocumentationLink {...props}>
             <FormattedMessage
                 defaultMessage="Learn more."
-                id="gui.alerts.cloudInfoLearnMore"
+                id="tw.settingsModal.cloudInfoLearnMore"
             />
         </DocumentationLink>
     </React.Fragment>

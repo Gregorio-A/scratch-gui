@@ -110,7 +110,7 @@ const UsernameModalComponent = props => (
                     <FormattedMessage
                         defaultMessage="Cancel"
                         description="Button in prompt for cancelling the dialog"
-                        id="gui.prompt.cancel"
+                        id="tw.usernameModal.cancel"
                     />
                 </button>
                 <button
@@ -121,7 +121,7 @@ const UsernameModalComponent = props => (
                     <FormattedMessage
                         defaultMessage="OK"
                         description="Button in prompt for confirming the dialog"
-                        id="gui.prompt.ok"
+                        id="tw.usernameModal.ok"
                     />
                 </button>
             </Box>

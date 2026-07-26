@@ -11,7 +11,7 @@ const messages = defineMessages({
     newFramerate: {
         defaultMessage: 'New framerate:',
         description: 'Prompt shown to choose a new framerate',
-        id: 'tw.menuBar.newFramerate'
+        id: 'tw.settingsModal.newFramerate'
     }
 });
 
