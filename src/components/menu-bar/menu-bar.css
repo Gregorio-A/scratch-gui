@@ -103,6 +103,39 @@
     z-index: $z-index-menu-bar;
 }
 
+.textwarp-operation-status {
+    max-width: 18rem;
+    padding: 0.5rem 0.65rem;
+    color: $text-primary-transparent;
+    border-top: 1px solid $ui-black-transparent;
+    font-size: 0.68rem;
+    font-weight: normal;
+    line-height: 1.35;
+    white-space: normal;
+}
+
+.textwarp-menu-action {
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem 0;
+    line-height: 1.25;
+    white-space: normal;
+}
+
+.textwarp-menu-action small {
+    color: $text-primary-transparent;
+    font-size: 0.62rem;
+    font-weight: normal;
+}
+
+.textwarp-operation-status.success {
+    color: $pen-primary;
+}
+
+.textwarp-operation-status.error {
+    color: $error-primary;
+}
+
 .feedback-link {
     color: $menu-bar-background;
     text-decoration: none;

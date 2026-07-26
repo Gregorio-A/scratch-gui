@@ -594,6 +594,7 @@ class MenuBar extends React.Component {
                         />)}
                         {(this.props.canManageFiles) && (
                             <MenuLabel
+                                id="textwarp-file-menu-trigger"
                                 open={this.props.fileMenuOpen}
                                 onOpen={this.props.onClickFile}
                                 onClose={this.props.onRequestCloseFile}
@@ -642,27 +643,66 @@ class MenuBar extends React.Component {
                                         </MenuItem>
                                     )}
                                     <MenuSection>
-                                        <MenuItem onClick={this.handleClickOpenTextwarp}>
-                                            <FormattedMessage
-                                                defaultMessage="Open .textwarp"
-                                                description="Menu item for opening an editable TextWarp project"
-                                                id="tw.menuBar.openTextwarp"
-                                            />
+                                        <MenuItem
+                                            disabled={this.props.textwarpUiOperation.state === 'working'}
+                                            onClick={this.handleClickOpenTextwarp}
+                                        >
+                                            <span className={styles.textwarpMenuAction}>
+                                                <FormattedMessage
+                                                    defaultMessage="Open .textwarp"
+                                                    description="Menu item for opening an editable TextWarp project"
+                                                    id="tw.menuBar.openTextwarp"
+                                                />
+                                                <small>
+                                                    <FormattedMessage
+                                                        defaultMessage="Editable TextWarp source project"
+                                                        description="Explains the editable TextWarp open action"
+                                                        id="tw.menuBar.openTextwarpHelp"
+                                                    />
+                                                </small>
+                                            </span>
                                         </MenuItem>
-                                        <MenuItem onClick={this.handleClickSaveTextwarp}>
-                                            <FormattedMessage
-                                                defaultMessage="Save"
-                                                description="Menu item for saving the current editable TextWarp project"
-                                                id="tw.menuBar.saveTextwarp"
-                                            />
+                                        <MenuItem
+                                            disabled={this.props.textwarpUiOperation.state === 'working'}
+                                            onClick={this.handleClickSaveTextwarp}
+                                        >
+                                            <span className={styles.textwarpMenuAction}>
+                                                <FormattedMessage
+                                                    defaultMessage="Save"
+                                                    description="Menu item for saving the current editable TextWarp project"
+                                                    id="tw.menuBar.saveTextwarp"
+                                                />
+                                                <small>
+                                                    <FormattedMessage
+                                                        defaultMessage="Save editable TextWarp source"
+                                                        description="Explains the editable TextWarp save action"
+                                                        id="tw.menuBar.saveTextwarpHelp"
+                                                    />
+                                                </small>
+                                            </span>
                                         </MenuItem>
-                                        <MenuItem onClick={this.handleClickSaveTextwarpAs}>
+                                        <MenuItem
+                                            disabled={this.props.textwarpUiOperation.state === 'working'}
+                                            onClick={this.handleClickSaveTextwarpAs}
+                                        >
                                             <FormattedMessage
                                                 defaultMessage="Save As .textwarp"
                                                 description="Save an editable TextWarp project to a new file"
                                                 id="tw.menuBar.saveTextwarpAs"
                                             />
                                         </MenuItem>
+                                        {this.props.textwarpUiOperation.message && (
+                                            <li
+                                                aria-live="polite"
+                                                className={classNames(
+                                                    styles.textwarpOperationStatus,
+                                                    styles[this.props.textwarpUiOperation.state]
+                                                )}
+                                                role="status"
+                                            >
+                                                {this.props.textwarpUiOperation.message}
+                                            </li>
+                                        )}
                                     </MenuSection>
                                     {(this.props.canSave || this.props.canCreateCopy || this.props.canRemix) && (
                                         <MenuSection>
@@ -687,11 +727,20 @@ class MenuBar extends React.Component {
                                         <MenuItem
                                             onClick={this.props.onStartSelectingFileUpload}
                                         >
-                                            <FormattedMessage
-                                                defaultMessage="Import Project"
-                                                description="Menu item for importing a compiled Scratch project"
-                                                id="tw.menuBar.importProject"
-                                            />
+                                            <span className={styles.textwarpMenuAction}>
+                                                <FormattedMessage
+                                                    defaultMessage="Import Project"
+                                                    description="Menu item for importing a compiled Scratch project"
+                                                    id="tw.menuBar.importProject"
+                                                />
+                                                <small>
+                                                    <FormattedMessage
+                                                        defaultMessage="Compiled Scratch project (.sb, .sb2, .sb3)"
+                                                        description="Explains which project formats are imported"
+                                                        id="tw.menuBar.importProjectHelp"
+                                                    />
+                                                </small>
+                                            </span>
                                         </MenuItem>
                                         <SB3Downloader
                                             showSaveFilePicker={this.props.showSaveFilePicker}
@@ -702,11 +751,20 @@ class MenuBar extends React.Component {
                                                         extended.available ? extended.saveAsNew : downloadProject
                                                     )}
                                                 >
-                                                    <FormattedMessage
-                                                        defaultMessage="Export Project"
-                                                        description="Export the compiled Scratch project"
-                                                        id="tw.menuBar.exportProject"
-                                                    />
+                                                    <span className={styles.textwarpMenuAction}>
+                                                        <FormattedMessage
+                                                            defaultMessage="Export Project"
+                                                            description="Export the compiled Scratch project"
+                                                            id="tw.menuBar.exportProject"
+                                                        />
+                                                        <small>
+                                                            <FormattedMessage
+                                                                defaultMessage="Compiled Scratch project (.sb3)"
+                                                                description="Explains the compiled project export format"
+                                                                id="tw.menuBar.exportProjectHelp"
+                                                            />
+                                                        </small>
+                                                    </span>
                                                 </MenuItem>
                                             )}
                                         </SB3Downloader>
@@ -1195,6 +1253,11 @@ MenuBar.propTypes = {
     shouldSaveBeforeTransition: PropTypes.func,
     showSaveFilePicker: PropTypes.func,
     showComingSoon: PropTypes.bool,
+    textwarpUiOperation: PropTypes.shape({
+        command: PropTypes.string,
+        message: PropTypes.string,
+        state: PropTypes.string
+    }),
     username: PropTypes.string,
     userOwnsProject: PropTypes.bool,
     vm: PropTypes.instanceOf(VM).isRequired
@@ -1229,6 +1292,11 @@ const mapStateToProps = (state, ownProps) => {
         projectTitle: state.scratchGui.projectTitle,
         sessionExists: state.session && typeof state.session.session !== 'undefined',
         settingsMenuOpen: settingsMenuOpen(state),
+        textwarpUiOperation: state.scratchGui.tw.textwarpUiOperation || {
+            command: null,
+            message: '',
+            state: 'idle'
+        },
         username: user ? user.username : null,
         userOwnsProject: ownProps.authorUsername && user &&
             (ownProps.authorUsername === user.username),

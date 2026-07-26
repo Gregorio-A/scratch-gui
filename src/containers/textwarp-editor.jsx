@@ -4,7 +4,7 @@ import React from 'react';
 import {connect} from 'react-redux';
 import VisualBlocks from './blocks.jsx';
 import {setProjectUnchanged} from '../reducers/project-changed';
-import {setFileHandle, TEXTWARP_UI_COMMANDS} from '../reducers/tw';
+import {setFileHandle, setTextwarpUiOperation, TEXTWARP_UI_COMMANDS} from '../reducers/tw';
 
 import {compileText} from '../lib/textwarp/compiler';
 import {getDebugController} from '../lib/textwarp/debug-controller';
@@ -13,6 +13,8 @@ import {decompileTarget} from '../lib/textwarp/decompiler';
 import DocumentationPane from '../components/textwarp-editor/documentation-pane.jsx';
 import {buildExtensionInventory, summarizeExtensionCatalog} from '../lib/textwarp/extension-catalog';
 import IdeSidebar from '../components/textwarp-editor/ide-sidebar.jsx';
+import InterfaceIcon from '../components/textwarp-editor/interface-icon.jsx';
+import QuickPanel from '../components/textwarp-editor/quick-panel.jsx';
 import {
     DEFAULT_BOTTOM_PANEL_HEIGHT,
     DEFAULT_FONT_SIZE,
@@ -24,7 +26,16 @@ import {
     clampSidebarWidth,
     clampSplitRatio
 } from '../lib/textwarp/ide-preferences';
-import {createTranslator, normalizeLocale} from '../lib/textwarp/i18n';
+import {
+    DEFAULT_LIST_LIMIT,
+    PANEL_IDS,
+    VIEW_IDS,
+    getLayoutMode,
+    getNextTabId,
+    getVisibleItems,
+    normalizeUiState
+} from '../lib/textwarp/interface-state';
+import {createTranslator} from '../lib/textwarp/i18n';
 import {getDiagnosticSuggestion, getOutline} from '../lib/textwarp/language-service';
 import MonacoEditor from '../components/textwarp-editor/monaco-editor.jsx';
 import {mergeVisualSource} from '../lib/textwarp/source-merge';
@@ -73,25 +84,27 @@ const DEFAULT_SHORTCUTS = Object.freeze({
     restart: 'Ctrl+Shift+F5',
     format: 'Ctrl+Shift+I'
 });
+const SHORTCUT_MESSAGE_KEYS = Object.freeze({
+    compile: 'shortcutCompile',
+    format: 'shortcutFormat',
+    restart: 'shortcutRestart',
+    run: 'shortcutRun',
+    runSelection: 'shortcutRunSelection',
+    stop: 'shortcutStop'
+});
 const IDE_TEMPLATES = Object.freeze([
     {
         id: 'movement',
-        name: 'Ator com movimento',
-        nameEnglish: 'Moving actor',
         scope: 'actor',
         source: name => `actor ${name}\n\nvariable speed = 5\n\non green_flag:\n    forever:\n        if key_pressed("right"):\n            change_x(speed)\n        if key_pressed("left"):\n            change_x(-speed)\n        if key_pressed("up"):\n            change_y(speed)\n        if key_pressed("down"):\n            change_y(-speed)\n        wait(0)\n`
     },
     {
         id: 'animation',
-        name: 'Ator animado',
-        nameEnglish: 'Animated actor',
         scope: 'actor',
         source: name => `actor ${name}\n\nvariable frame_time = 0.12\n\non green_flag:\n    forever:\n        next_costume()\n        wait(frame_time)\n`
     },
     {
         id: 'game-stage',
-        name: 'Palco de jogo',
-        nameEnglish: 'Game stage',
         scope: 'stage',
         source: () => 'stage\n\nglobal variable score = 0\nglobal variable lives = 3\n\non green_flag:\n    score = 0\n    lives = 3\n    broadcast("start-game")\n\non receive("game-over"):\n    stop_all()\n'
     }
@@ -165,6 +178,7 @@ class TextEditor extends React.Component {
             source: '',
             diagnostics: [],
             status: t('selectTarget'),
+            announcement: t('selectTarget'),
             statusKind: 'idle',
             targetName: '',
             isStage: false,
@@ -177,13 +191,14 @@ class TextEditor extends React.Component {
             settingsOpen: false,
             templatesOpen: false,
             externalOpen: false,
-            toolsOpen: false,
             shortcuts: DEFAULT_SHORTCUTS,
             fontSize: DEFAULT_FONT_SIZE,
             sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
             bottomPanelHeight: DEFAULT_BOTTOM_PANEL_HEIGHT,
             splitRatio: DEFAULT_SPLIT_RATIO,
+            activeBottomPanel: 'problems',
             bottomPanelCollapsed: false,
+            layoutMode: 'wide',
             compactLayout: false,
             narrowLayout: false,
             workspace: emptyWorkspace(),
@@ -208,9 +223,16 @@ class TextEditor extends React.Component {
             extensionSummary: {extensionCount: 0, blockCount: 0, extensions: []},
             extensionPalette: [],
             visualConflict: null,
+            conflictReviewOpen: false,
             busy: false,
             externalHandle: null,
-            externalName: ''
+            externalName: '',
+            externalLastModified: 0,
+            externalSyncState: 'disconnected',
+            debugLimit: DEFAULT_LIST_LIMIT,
+            diagnosticLimit: DEFAULT_LIST_LIMIT,
+            consoleLimit: DEFAULT_LIST_LIMIT,
+            extensionLimit: DEFAULT_LIST_LIMIT
         };
         this.compileTimer = null;
         this.analysisTimer = null;
@@ -240,6 +262,9 @@ class TextEditor extends React.Component {
             }, 0);
         };
         this.packageInput = null;
+        this.openTabsElement = null;
+        this.projectsButton = null;
+        this.fileCommandReturnFocus = null;
         this.handleChange = this.handleChange.bind(this);
         this.handleCompile = this.handleCompile.bind(this);
         this.handleRun = this.handleRun.bind(this);
@@ -274,6 +299,11 @@ class TextEditor extends React.Component {
         this.insertResource = this.insertResource.bind(this);
         this.restoreHistory = this.restoreHistory.bind(this);
         this.handleExternalFile = this.handleExternalFile.bind(this);
+        this.closeSidebar = this.closeSidebar.bind(this);
+        this.handleResizeKeyDown = this.handleResizeKeyDown.bind(this);
+        this.openBottomPanel = this.openBottomPanel.bind(this);
+        this.resetLayout = this.resetLayout.bind(this);
+        this.scrollOpenTabs = this.scrollOpenTabs.bind(this);
     }
 
     componentDidMount () {
@@ -290,6 +320,15 @@ class TextEditor extends React.Component {
                     sidebarWidth: clampSidebarWidth(savedPreferences.sidebarWidth),
                     splitRatio: clampSplitRatio(savedPreferences.splitRatio)
                 });
+            }
+            const savedUiState = storage && JSON.parse(storage.getItem('textwarp.ide.ui-state'));
+            if (savedUiState) {
+                const restoredUiState = normalizeUiState(savedUiState);
+                this.setState(Object.assign({}, restoredUiState, {
+                    consoleOpen: restoredUiState.activeBottomPanel === 'console',
+                    debugOpen: restoredUiState.activeBottomPanel === 'debugger',
+                    extensionsOpen: restoredUiState.activeBottomPanel === 'extensions'
+                }));
             }
         } catch (error) {
             // Invalid local preferences are ignored and defaults remain active.
@@ -320,7 +359,7 @@ class TextEditor extends React.Component {
         this.loadSelectedTarget();
     }
 
-    componentDidUpdate (previousProps) {
+    componentDidUpdate (previousProps, previousState) {
         if (
             previousProps.editingTargetId !== this.props.editingTargetId ||
             previousProps.editingTargetName !== this.props.editingTargetName
@@ -328,6 +367,16 @@ class TextEditor extends React.Component {
         if (previousProps.textwarpUiCommand.id !== this.props.textwarpUiCommand.id) {
             this.handleTextwarpUiCommand(this.props.textwarpUiCommand.name);
         }
+        if (previousProps.editingTargetId !== this.props.editingTargetId && this.openTabsElement) {
+            const activeTab = this.openTabsElement.querySelector('[aria-selected="true"]');
+            if (activeTab && typeof activeTab.scrollIntoView === 'function') {
+                activeTab.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'nearest'});
+            }
+        }
+        if (
+            previousState.status !== this.state.status &&
+            this.state.announcement !== this.state.status
+        ) this.setState({announcement: this.state.status});
     }
 
     componentWillUnmount () {
@@ -380,23 +429,24 @@ class TextEditor extends React.Component {
         return createTranslator(this.props.locale)(key, values);
     }
 
-    localized (portuguese, english) {
-        return normalizeLocale(this.props.locale) === 'pt' ? portuguese : english;
-    }
-
     getTemplateName (template) {
-        return normalizeLocale(this.props.locale) === 'pt' ? template.name : template.nameEnglish;
+        return this.t({
+            animation: 'templateAnimation',
+            'game-stage': 'templateGameStage',
+            movement: 'templateMovement'
+        }[template.id]);
     }
 
     updateResponsiveLayout (width) {
         const viewportWidth = typeof window === 'undefined' ? Number(width) : window.innerWidth;
-        const effectiveWidth = Math.min(Number(width) || viewportWidth, viewportWidth);
-        const compactLayout = effectiveWidth < 850;
-        const narrowLayout = effectiveWidth < 600;
+        const layoutMode = getLayoutMode(width, viewportWidth);
+        const compactLayout = ['compact', 'narrow'].includes(layoutMode);
+        const narrowLayout = layoutMode === 'narrow';
         if (
+            layoutMode !== this.state.layoutMode ||
             compactLayout !== this.state.compactLayout ||
             narrowLayout !== this.state.narrowLayout
-        ) this.setState({compactLayout, narrowLayout});
+        ) this.setState({compactLayout, layoutMode, narrowLayout});
     }
 
     handleWindowResize () {
@@ -417,6 +467,39 @@ class TextEditor extends React.Component {
         } catch (error) {
             // Preferences remain active for this session when storage is unavailable.
         }
+    }
+
+    persistUiState (next = {}) {
+        const uiState = {
+            activeBottomPanel: next.activeBottomPanel === undefined ?
+                this.state.activeBottomPanel : next.activeBottomPanel,
+            bottomPanelCollapsed: next.bottomPanelCollapsed === undefined ?
+                this.state.bottomPanelCollapsed : next.bottomPanelCollapsed,
+            sidebarPanel: next.sidebarPanel === undefined ? this.state.sidebarPanel : next.sidebarPanel,
+            sidebarVisible: next.sidebarVisible === undefined ? this.state.sidebarVisible : next.sidebarVisible,
+            viewMode: next.viewMode === undefined ? this.state.viewMode : next.viewMode
+        };
+        const storage = this.getStorage();
+        try {
+            if (storage) storage.setItem('textwarp.ide.ui-state', JSON.stringify(uiState));
+        } catch (error) {
+            // Safe interface state remains active for this session when storage is unavailable.
+        }
+    }
+
+    resetLayout () {
+        const layout = {
+            bottomPanelCollapsed: false,
+            bottomPanelHeight: DEFAULT_BOTTOM_PANEL_HEIGHT,
+            fontSize: DEFAULT_FONT_SIZE,
+            sidebarVisible: true,
+            sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+            splitRatio: DEFAULT_SPLIT_RATIO
+        };
+        this.setState(Object.assign({status: this.t('layoutReset'), statusKind: 'success'}, layout));
+        this.persistPreferences(layout);
+        this.persistUiState(layout);
+        if (typeof window !== 'undefined') window.dispatchEvent(new Event('resize'));
     }
 
     setFontSize (value) {
@@ -463,6 +546,82 @@ class TextEditor extends React.Component {
         if (typeof window !== 'undefined') window.dispatchEvent(new Event('resize'));
     }
 
+    handleResizeKeyDown (kind, event) {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home'].includes(event.key)) return;
+        event.preventDefault();
+        if (event.key === 'Home') {
+            if (kind === 'sidebar') {
+                this.setState({sidebarWidth: DEFAULT_SIDEBAR_WIDTH});
+                this.persistPreferences({sidebarWidth: DEFAULT_SIDEBAR_WIDTH});
+            } else if (kind === 'bottom') {
+                this.setState({
+                    bottomPanelCollapsed: false,
+                    bottomPanelHeight: DEFAULT_BOTTOM_PANEL_HEIGHT
+                });
+                this.persistPreferences({bottomPanelHeight: DEFAULT_BOTTOM_PANEL_HEIGHT});
+            } else {
+                this.setState({splitRatio: DEFAULT_SPLIT_RATIO});
+                this.persistPreferences({splitRatio: DEFAULT_SPLIT_RATIO});
+            }
+            return;
+        }
+        const step = event.shiftKey ? 25 : 10;
+        if (kind === 'sidebar') {
+            const direction = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+            const sidebarWidth = clampSidebarWidth(this.state.sidebarWidth + direction);
+            this.setState({sidebarWidth});
+            this.persistPreferences({sidebarWidth});
+        } else if (kind === 'bottom') {
+            const direction = event.key === 'ArrowDown' ? -step : event.key === 'ArrowUp' ? step : 0;
+            const bottomPanelHeight = clampBottomPanelHeight(this.state.bottomPanelHeight + direction);
+            this.setState({bottomPanelCollapsed: false, bottomPanelHeight});
+            this.persistPreferences({bottomPanelHeight});
+        } else {
+            const direction = ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -2 : 2;
+            const splitRatio = clampSplitRatio(this.state.splitRatio + direction);
+            this.setState({splitRatio});
+            this.persistPreferences({splitRatio});
+        }
+    }
+
+    closeSidebar () {
+        this.setState({sidebarVisible: false});
+        this.persistUiState({sidebarVisible: false});
+        if (this.projectsButton) setTimeout(() => this.projectsButton.focus(), 0);
+    }
+
+    openBottomPanel (activeBottomPanel) {
+        if (!PANEL_IDS.includes(activeBottomPanel)) return;
+        if (activeBottomPanel === 'debugger' && this.debugController) this.debugController.setEnabled(true);
+        const panelState = {
+            activeBottomPanel,
+            bottomPanelCollapsed: false,
+            consoleOpen: activeBottomPanel === 'console',
+            debugOpen: activeBottomPanel === 'debugger',
+            extensionsOpen: activeBottomPanel === 'extensions'
+        };
+        this.setState(panelState);
+        this.persistUiState(panelState);
+    }
+
+    scrollOpenTabs (direction) {
+        if (!this.openTabsElement) return;
+        this.openTabsElement.scrollBy({
+            behavior: 'smooth',
+            left: direction * Math.max(180, this.openTabsElement.clientWidth * 0.7)
+        });
+    }
+
+    handleTabKeyDown (event, ids, currentId, onSelect) {
+        const nextId = getNextTabId(ids, currentId, event.key);
+        if (nextId === currentId) return;
+        event.preventDefault();
+        onSelect(nextId);
+        const list = event.currentTarget.parentElement;
+        const nextTab = list && list.querySelector(`[data-tab-id="${nextId}"]`);
+        if (nextTab) nextTab.focus();
+    }
+
     updateShortcut (name, value) {
         const shortcuts = Object.assign({}, this.state.shortcuts, {[name]: value});
         this.setState({shortcuts});
@@ -471,10 +630,7 @@ class TextEditor extends React.Component {
             if (storage) storage.setItem('textwarp.ide.shortcuts', JSON.stringify(shortcuts));
         } catch (error) {
             this.setState({
-                status: this.localized(
-                    'Atalho aplicado nesta sessão; o armazenamento local está indisponível.',
-                    'Shortcut applied for this session; local storage is unavailable.'
-                ),
+                status: this.t('shortcutStorageUnavailable'),
                 statusKind: 'working'
             });
         }
@@ -484,17 +640,21 @@ class TextEditor extends React.Component {
         const target = this.getTarget();
         if (!target) return;
         const templateName = this.getTemplateName(template);
-        if (this.state.source.trim() && typeof window !== 'undefined' && !window.confirm(
-            normalizeLocale(this.props.locale) === 'pt' ?
-                `Substituir ${targetFileName(target)} pelo modelo “${templateName}”? A versão atual continuará no histórico local.` :
-                `Replace ${targetFileName(target)} with “${templateName}”? The current version will remain in local history.`
-        )) return;
-        saveHistorySnapshot(this.getStorage(), this.getProjectStorageId(), target.id, this.state.source, 'antes do modelo');
+        if (this.state.source.trim() && typeof window !== 'undefined' && !window.confirm(this.t(
+            'templateReplaceConfirm',
+            {file: targetFileName(target), name: templateName}
+        ))) return;
+        saveHistorySnapshot(
+            this.getStorage(),
+            this.getProjectStorageId(),
+            target.id,
+            this.state.source,
+            this.t('historyBeforeTemplate')
+        );
         this.handleChange(template.source(target.getName()));
         this.setState({
             templatesOpen: false,
-            status: normalizeLocale(this.props.locale) === 'pt' ?
-                `Modelo “${templateName}” aplicado.` : `Template “${templateName}” applied.`,
+            status: this.t('templateApplied', {name: templateName}),
             statusKind: 'working'
         });
     }
@@ -607,10 +767,7 @@ class TextEditor extends React.Component {
             const workspace = ScratchBlocks && typeof ScratchBlocks.getMainWorkspace === 'function' &&
                 ScratchBlocks.getMainWorkspace();
             if (!workspace || !ScratchBlocks.Xml || typeof ScratchBlocks.Xml.domToWorkspace !== 'function') {
-                throw new Error(this.localized(
-                    'Abra a visualização Blocos ou Dividido antes de inserir XML.',
-                    'Open the Blocks or Split view before inserting XML.'
-                ));
+                throw new Error(this.t('extensionOpenBlocks'));
             }
             const xml = /^\s*<xml\b/i.test(entry.xml) ? entry.xml :
                 `<xml xmlns="http://www.w3.org/1999/xhtml">${entry.xml}</xml>`;
@@ -618,11 +775,11 @@ class TextEditor extends React.Component {
             const inserted = ScratchBlocks.Xml.domToWorkspace(dom, workspace) || [];
             this.setState({
                 viewMode: 'split',
+                activeBottomPanel: 'problems',
                 extensionsOpen: false,
-                status: this.localized(
-                    `${Array.isArray(inserted) ? inserted.length : 1} bloco(s) inserido(s) pela paleta da extensão.`,
-                    `${Array.isArray(inserted) ? inserted.length : 1} block(s) inserted from the extension palette.`
-                ),
+                status: this.t('extensionBlocksInserted', {
+                    count: Array.isArray(inserted) ? inserted.length : 1
+                }),
                 statusKind: 'success'
             });
         } catch (error) {
@@ -666,14 +823,8 @@ class TextEditor extends React.Component {
                 this.setState({
                     visualConflict: result,
                     status: merged && merged.conflicts.length ?
-                        this.localized(
-                            `Conflito semântico em ${merged.conflicts.length} unidade(s). Escolha qual versão manter.`,
-                            `Semantic conflict in ${merged.conflicts.length} unit(s). Choose which version to keep.`
-                        ) :
-                        this.localized(
-                            'Texto inválido e blocos foram alterados ao mesmo tempo. Escolha qual versão manter.',
-                            'Invalid text and blocks changed at the same time. Choose which version to keep.'
-                        ),
+                        this.t('semanticConflict', {count: merged.conflicts.length}) :
+                        this.t('invalidTextConflict'),
                     statusKind: 'working'
                 });
                 return;
@@ -700,7 +851,11 @@ class TextEditor extends React.Component {
             this.suppressBlockSyncUntil = Date.now() + 750;
             applyCompilation(this.props.vm, target, compilation);
             saveHistorySnapshot(
-                this.getStorage(), this.getProjectStorageId(), target.id, synchronized.source, 'sincronização de recurso'
+                this.getStorage(),
+                this.getProjectStorageId(),
+                target.id,
+                synchronized.source,
+                this.t('historyResourceSync')
             );
             if (target.id === this.props.editingTargetId) currentUpdate = {source: synchronized.source, compilation};
         });
@@ -710,10 +865,7 @@ class TextEditor extends React.Component {
         this.setState({
             source: currentUpdate.source,
             diagnostics: currentUpdate.compilation.diagnostics,
-            status: this.localized(
-                'Referências estáveis atualizadas após mudança no projeto.',
-                'Stable references updated after the project changed.'
-            ),
+            status: this.t('referencesUpdated'),
             statusKind: 'success'
         });
         return true;
@@ -730,10 +882,7 @@ class TextEditor extends React.Component {
         if (!visualCompilation.success || !compilation.success) {
             this.setState({
                 diagnostics: compilation.diagnostics,
-                status: this.localized(
-                    'A sincronização produziu uma fonte inválida; nenhuma alteração foi aplicada.',
-                    'Synchronization produced invalid source; no changes were applied.'
-                ),
+                status: this.t('synchronizationInvalid'),
                 statusKind: 'error'
             });
             return;
@@ -756,23 +905,14 @@ class TextEditor extends React.Component {
             source: result.source,
             diagnostics: compilation.diagnostics,
             visualConflict: null,
+            conflictReviewOpen: false,
             blockRefresh: state.blockRefresh + 1,
-            status: this.localized(
-                `${result.semanticMerge && result.semanticMerge.mergedUnits.length ?
-                    `${result.semanticMerge.mergedUnits.length} unidade(s) mesclada(s) automaticamente; ` : ''
-                }blocos sincronizados (${result.importedRootIds.length} stack(s), ${
-                    result.unsupportedOpcodes.length
-                } opcode(s) indisponível(is) mantido(s) somente em blocos, ${
-                    record.lastApply && record.lastApply.unchangedUnits || 0
-                } unidade(s) preservada(s)).`,
-                `${result.semanticMerge && result.semanticMerge.mergedUnits.length ?
-                    `${result.semanticMerge.mergedUnits.length} unit(s) merged automatically; ` : ''
-                }blocks synchronized (${result.importedRootIds.length} stack(s), ${
-                    result.unsupportedOpcodes.length
-                } unavailable opcode(s) kept only as blocks, ${
-                    record.lastApply && record.lastApply.unchangedUnits || 0
-                } unit(s) preserved).`
-            ),
+            status: this.t('blocksSynchronized', {
+                merged: result.semanticMerge && result.semanticMerge.mergedUnits.length || 0,
+                preserved: record.lastApply && record.lastApply.unchangedUnits || 0,
+                stacks: result.importedRootIds.length,
+                unsupported: result.unsupportedOpcodes.length
+            }),
             statusKind: compilation.success ? 'success' : 'error'
         }));
     }
@@ -781,11 +921,12 @@ class TextEditor extends React.Component {
         const target = this.getTarget();
         if (!target) return;
         markGeneratedRootsDirty(target);
-        this.setState({visualConflict: null}, () => this.compileCurrent(false));
+        this.setState({conflictReviewOpen: false, visualConflict: null}, () => this.compileCurrent(false));
     }
 
     setViewMode (viewMode) {
         this.setState({viewMode}, () => {
+            this.persistUiState({viewMode});
             if (typeof window !== 'undefined') window.dispatchEvent(new Event('resize'));
             if (viewMode === 'blocks' || viewMode === 'split') {
                 this.lastBlockFingerprint = blockFingerprint(this.getTarget());
@@ -794,6 +935,43 @@ class TextEditor extends React.Component {
     }
 
     handleKeyDown (event) {
+        if (
+            event.key === 'Tab' &&
+            this.state.narrowLayout &&
+            this.state.sidebarVisible &&
+            this.state.viewMode !== 'docs' &&
+            this.rootElement
+        ) {
+            const sidebar = this.rootElement.querySelector('#textwarp-projects-sidebar');
+            const focusable = sidebar && Array.from(sidebar.querySelectorAll(
+                'button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+                'a[href], [tabindex]:not([tabindex="-1"])'
+            )).filter(element => element.getClientRects().length);
+            if (focusable && focusable.length) {
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (!sidebar.contains(document.activeElement)) {
+                    event.preventDefault();
+                    first.focus();
+                    return;
+                }
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                    return;
+                }
+                if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                    return;
+                }
+            }
+        }
+        if (event.key === 'Escape' && this.state.narrowLayout && this.state.sidebarVisible) {
+            event.preventDefault();
+            this.closeSidebar();
+            return;
+        }
         if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
         const key = String(event.key).toLowerCase();
         if (key === '+' || key === '=') {
@@ -817,11 +995,13 @@ class TextEditor extends React.Component {
         if (event.shiftKey && key === 'e') {
             event.preventDefault();
             this.setState({sidebarVisible: true, sidebarPanel: 'explorer'});
+            this.persistUiState({sidebarVisible: true, sidebarPanel: 'explorer'});
             return;
         }
         if (event.shiftKey && key === 'f') {
             event.preventDefault();
             this.setState({sidebarVisible: true, sidebarPanel: 'search'});
+            this.persistUiState({sidebarVisible: true, sidebarPanel: 'search'});
             return;
         }
         if (key !== 's') return;
@@ -873,10 +1053,10 @@ class TextEditor extends React.Component {
         const targetId = ['actor', 'stage'].includes(resource.kind) ? resource.id : resource.ownerId;
         this.openTarget(targetId);
         this.setState({
-            status: this.localized(
-                `${resource.kindLabel || 'Recurso'} “${resource.name}” selecionado no projeto.`,
-                `${resource.kindLabel || 'Resource'} “${resource.name}” selected in the project.`
-            ),
+            status: this.t('resourceSelected', {
+                kind: resource.kindLabel || this.t('resource'),
+                name: resource.name
+            }),
             statusKind: 'success'
         });
     }
@@ -908,10 +1088,7 @@ class TextEditor extends React.Component {
         if (!replacement.count) return;
         if (
             typeof window !== 'undefined' &&
-            !window.confirm(this.localized(
-                `Substituir ${replacement.count} ocorrência(s) em todos os scripts editáveis?`,
-                `Replace ${replacement.count} occurrence(s) in every editable script?`
-            ))
+            !window.confirm(this.t('replaceConfirm', {count: replacement.count}))
         ) return;
         const compilations = replacement.modules.map(module => {
             const target = this.props.vm.runtime.getTargetById(module.id);
@@ -920,10 +1097,7 @@ class TextEditor extends React.Component {
         const invalid = compilations.find(item => !item.compilation.success);
         if (invalid) {
             this.setState({
-                status: this.localized(
-                    `A substituição deixaria ${invalid.module.fileName} inválido; nenhuma alteração foi aplicada.`,
-                    `The replacement would make ${invalid.module.fileName} invalid; no changes were applied.`
-                ),
+                status: this.t('replaceInvalid', {name: invalid.module.fileName}),
                 statusKind: 'error'
             });
             return;
@@ -932,17 +1106,21 @@ class TextEditor extends React.Component {
             saveTextSource(this.props.vm, item.target, item.module.source);
             applyCompilation(this.props.vm, item.target, item.compilation);
             saveHistorySnapshot(
-                this.getStorage(), this.getProjectStorageId(), item.target.id, item.module.source, 'substituição global'
+                this.getStorage(),
+                this.getProjectStorageId(),
+                item.target.id,
+                item.module.source,
+                this.t('historyGlobalReplace')
             );
         });
         const current = compilations.find(item => item.target.id === this.props.editingTargetId);
         this.setState({
             source: current ? current.module.source : this.state.source,
             diagnostics: current ? current.compilation.diagnostics : this.state.diagnostics,
-            status: this.localized(
-                `${replacement.count} ocorrência(s) substituída(s) em ${compilations.length} script(s).`,
-                `${replacement.count} occurrence(s) replaced in ${compilations.length} script(s).`
-            ),
+            status: this.t('replaceSuccess', {
+                count: replacement.count,
+                scripts: compilations.length
+            }),
             statusKind: 'success',
             saveState: 'salvo'
         }, () => this.handleSearch(this.state.searchQuery));
@@ -953,7 +1131,7 @@ class TextEditor extends React.Component {
         this.handleChange(entry.source);
         this.setState({
             sidebarPanel: 'explorer',
-            status: this.localized('Versão do histórico local restaurada.', 'Local history version restored.'),
+            status: this.t('historyRestored'),
             statusKind: 'working'
         });
     }
@@ -962,15 +1140,15 @@ class TextEditor extends React.Component {
         if (this.props.vm && typeof this.props.vm.stopAll === 'function') this.props.vm.stopAll();
         if (this.debugController) this.debugController.log(
             'info',
-            this.localized('Parada solicitada pelo editor.', 'Stop requested by the editor.')
+            this.t('stopRequestedLog')
         );
-        this.setState({status: this.localized('Execução parada.', 'Execution stopped.'), statusKind: 'idle'});
+        this.setState({status: this.t('executionStopped'), statusKind: 'idle'});
     }
 
     handleRestart () {
         if (this.props.vm && typeof this.props.vm.stopAll === 'function') this.props.vm.stopAll();
         this.setState({
-            status: this.localized('Reiniciando execução…', 'Restarting execution…'),
+            status: this.t('executionRestarting'),
             statusKind: 'working'
         }, () => this.compileCurrent(true));
     }
@@ -982,10 +1160,7 @@ class TextEditor extends React.Component {
         if (!compilation.success) {
             this.setState({
                 diagnostics: compilation.diagnostics,
-                status: this.localized(
-                    'Corrija os erros antes da execução parcial.',
-                    'Fix the errors before running a selection.'
-                ),
+                status: this.t('runFixErrors'),
                 statusKind: 'error'
             });
             return;
@@ -1004,30 +1179,27 @@ class TextEditor extends React.Component {
         );
         if (!runnableUnits.length) {
             this.setState({
-                status: this.localized(
-                    'Selecione um evento ou um procedimento sem parâmetros; procedimentos com parâmetros precisam ser chamados pelo código.',
-                    'Select an event or a parameterless procedure; procedures with parameters must be called from code.'
-                ),
+                status: this.t('runSelectionHelp'),
                 statusKind: 'error'
             });
             return;
         }
         this.applyCompilation(compilation, target, false);
         runnableUnits.forEach(unit => this.props.vm.runtime.toggleScript(unit.rootId, {target, stackClick: true}));
-        if (this.debugController) this.debugController.log('info', this.localized(
-            `${runnableUnits.length} unidade(s) executada(s) parcialmente.`,
-            `${runnableUnits.length} unit(s) run from the selection.`
-        ), target);
+        if (this.debugController) this.debugController.log(
+            'info',
+            this.t('runSelectionSuccess', {count: runnableUnits.length}),
+            target
+        );
         this.setState({
-            status: this.localized(
-                `${runnableUnits.length} unidade(s) executada(s) a partir da seleção.`,
-                `${runnableUnits.length} unit(s) run from the selection.`
-            ),
+            status: this.t('runSelectionSuccess', {count: runnableUnits.length}),
             statusKind: 'success'
         });
     }
 
     handleTextwarpUiCommand (command) {
+        this.fileCommandReturnFocus = typeof document !== 'undefined' &&
+            document.getElementById('textwarp-file-menu-trigger');
         switch (command) {
         case TEXTWARP_UI_COMMANDS.OPEN:
             this.openTextwarp();
@@ -1050,11 +1222,24 @@ class TextEditor extends React.Component {
         }
     }
 
+    setFileOperation (command, state, message) {
+        this.props.onSetTextwarpUiOperation(command, state, message);
+        if (state !== 'working' && this.fileCommandReturnFocus) {
+            const returnFocus = this.fileCommandReturnFocus;
+            setTimeout(() => {
+                if (document.contains(returnFocus)) returnFocus.focus();
+            }, 0);
+        }
+    }
+
     async saveTextwarp (saveAs = false) {
         if (this.state.busy) return;
+        const operation = saveAs ? TEXTWARP_UI_COMMANDS.SAVE_AS : TEXTWARP_UI_COMMANDS.SAVE;
+        const workingMessage = this.t('savingTextwarp');
+        this.setFileOperation(operation, 'working', workingMessage);
         this.setState({
             busy: true,
-            status: this.localized('Salvando projeto editável .textwarp…', 'Saving editable .textwarp project…'),
+            status: workingMessage,
             statusKind: 'working'
         });
         try {
@@ -1092,23 +1277,25 @@ class TextEditor extends React.Component {
             this.props.onClearSb3FileHandle();
             notifyTextwarpFileOpened(handle);
             this.props.onSetProjectUnchanged();
+            const successMessage = this.t('saveSuccess', {name: handle.name || this.props.projectTitle});
             this.setState({
-                status: this.localized(
-                    `${handle.name || 'Projeto'} salvo como fonte editável .textwarp.`,
-                    `${handle.name || 'Project'} saved as editable .textwarp source.`
-                ),
+                status: successMessage,
                 statusKind: 'success'
             });
+            this.setFileOperation(operation, 'success', successMessage);
         } catch (error) {
             if (error && error.name === 'AbortError') {
+                const cancelledMessage = this.t('saveCancelled');
                 this.setState({
-                    status: this.localized('Salvamento cancelado.', 'Save cancelled.'),
+                    status: cancelledMessage,
                     statusKind: 'idle'
                 });
+                this.setFileOperation(operation, 'idle', cancelledMessage);
                 return;
             }
             console.error(error);
             this.setState({status: error.message, statusKind: 'error'});
+            this.setFileOperation(operation, 'error', error.message);
         } finally {
             if (this._isMounted) this.setState({busy: false});
         }
@@ -1123,7 +1310,7 @@ class TextEditor extends React.Component {
             if (breakpoints.length) hasBreakpoints = true;
             this.debugController.setBreakpoints(target, breakpoints);
         });
-        this.debugController.setEnabled(this.state.debugOpen || hasBreakpoints);
+        this.debugController.setEnabled(this.state.activeBottomPanel === 'debugger' || hasBreakpoints);
     }
 
     loadSelectedTarget () {
@@ -1176,15 +1363,9 @@ class TextEditor extends React.Component {
         this.setState({
             source,
             diagnostics: compilation.diagnostics,
-            status: normalizeLocale(this.props.locale) === 'pt' ?
-                (synchronized.count ? 'Fonte e referências atualizadas para o estado atual do projeto.' :
-                    stored ? 'Fonte carregada do projeto.' : existingBlocks ?
-                        'Este alvo já tem blocos. Use “Importar blocos” para convertê-los em texto.' :
-                        'Exemplo inicial — edite ou compile para adicioná-lo ao projeto.') :
-                (synchronized.count ? 'Source references updated to the current project state.' :
-                    stored ? 'Source loaded from the project.' : existingBlocks ?
-                        'This target already has blocks. Use “Import blocks” to convert them to text.' :
-                        'Starter example — edit or compile it to add it to the project.'),
+            status: synchronized.count ? this.t('sourceReferencesUpdated') :
+                stored ? this.t('sourceLoaded') : existingBlocks ?
+                    this.t('existingBlocksHelp') : this.t('starterExample'),
             statusKind: stored ? 'success' : 'idle',
             targetName: target.getName(),
             isStage: target.isStage,
@@ -1209,6 +1390,7 @@ class TextEditor extends React.Component {
         if (!target) return;
         saveTextSource(this.props.vm, target, source);
         this.setState({
+            externalSyncState: this.state.externalHandle ? 'dirty' : this.state.externalSyncState,
             source,
             status: this.t('analyzing'),
             statusKind: 'working',
@@ -1221,7 +1403,7 @@ class TextEditor extends React.Component {
                 this.getProjectStorageId(),
                 target.id,
                 source,
-                'autosave'
+                this.t('historyAutosave')
             );
             if (this._isMounted && this.props.editingTargetId === target.id) {
                 this.setState({history, saveState: 'salvo'}, () => this.refreshWorkspace());
@@ -1241,10 +1423,7 @@ class TextEditor extends React.Component {
             this.setState({
                 diagnostics: compilation.diagnostics,
                 status: errors ?
-                    this.localized(
-                        `${errors} erro(s); a última versão válida continua executável.`,
-                        `${errors} error(s); the last valid version remains executable.`
-                    ) : this.t('analyzing'),
+                    this.t('sourceErrors', {count: errors}) : this.t('analyzing'),
                 statusKind: errors ? 'error' : 'working'
             });
             if (compilation.success) {
@@ -1264,7 +1443,13 @@ class TextEditor extends React.Component {
         const compilation = compileText(source, this.getCompileOptions(target));
         saveTextSource(this.props.vm, target, source);
         if (compilation.success) applyCompilation(this.props.vm, target, compilation);
-        saveHistorySnapshot(this.getStorage(), this.getProjectStorageId(), targetId, source, 'refatoração');
+        saveHistorySnapshot(
+            this.getStorage(),
+            this.getProjectStorageId(),
+            targetId,
+            source,
+            this.t('historyRefactor')
+        );
         this.refreshWorkspace();
     }
 
@@ -1312,7 +1497,7 @@ class TextEditor extends React.Component {
                 this.getProjectStorageId(),
                 target.id,
                 source,
-                'dual editor autosave'
+                this.t('historyDualEditor')
             );
             this.setState({secondaryDiagnostics: compilation.diagnostics, saveState: 'salvo'});
             if (!compilation.success) return;
@@ -1347,7 +1532,7 @@ class TextEditor extends React.Component {
             this.getProjectStorageId(),
             target.id,
             this.state.secondarySource,
-            'dual editor'
+            this.t('historyDualEditor')
         );
         this.setState({saveState: 'salvo'}, () => this.refreshWorkspace());
         if (run) this.props.vm.greenFlag();
@@ -1362,14 +1547,19 @@ class TextEditor extends React.Component {
             const apply = record.lastApply || {};
             const changed = (apply.createdUnits || 0) + (apply.updatedUnits || 0);
             const history = saveHistorySnapshot(
-                this.getStorage(), this.getProjectStorageId(), target.id, compilation.source, 'autosave'
+                this.getStorage(),
+                this.getProjectStorageId(),
+                target.id,
+                compilation.source,
+                this.t('historyAutosave')
             );
             this.setState(state => ({
                 diagnostics: compilation.diagnostics,
-                status: this.localized(
-                    `${record.generatedBlockIds.length} bloco(s) · ${changed} unidade(s) atualizada(s) · ${apply.unchangedUnits || 0} preservada(s).`,
-                    `${record.generatedBlockIds.length} block(s) · ${changed} updated unit(s) · ${apply.unchangedUnits || 0} preserved.`
-                ),
+                status: this.t('compileSuccess', {
+                    blocks: record.generatedBlockIds.length,
+                    changed,
+                    preserved: apply.unchangedUnits || 0
+                }),
                 statusKind: 'success',
                 saveState: 'salvo',
                 history,
@@ -1394,10 +1584,7 @@ class TextEditor extends React.Component {
             saveTextSource(this.props.vm, target, this.state.source);
             this.setState({
                 diagnostics: compilation.diagnostics,
-                status: this.localized(
-                    `${errors} erro(s) impedem a compilação.`,
-                    `${errors} error(s) prevent compilation.`
-                ),
+                status: this.t('compileErrors', {count: errors}),
                 statusKind: 'error'
             });
             return;
@@ -1419,10 +1606,7 @@ class TextEditor extends React.Component {
         const result = decompileTarget(target, {extensionCatalog: this.extensionCatalog});
         if (result.importedRootIds.length === 0 && result.unsupportedRootIds.length === 0) {
             this.setState({
-                status: this.localized(
-                    'Este alvo não contém stacks para importar.',
-                    'This target contains no stacks to import.'
-                ),
+                status: this.t('noStacks'),
                 statusKind: 'idle'
             });
             return;
@@ -1430,10 +1614,7 @@ class TextEditor extends React.Component {
         if (
             this.state.source.trim() &&
             typeof window !== 'undefined' &&
-            !window.confirm(this.localized(
-                'Substituir o texto atual pela conversão dos blocos existentes?',
-                'Replace the current text with a conversion of the existing blocks?'
-            ))
+            !window.confirm(this.t('blocksToTextConfirm'))
         ) return;
         const compilation = compileText(result.source, this.getCompileOptions(target));
         this.suppressBlockSyncUntil = Date.now() + 750;
@@ -1450,10 +1631,10 @@ class TextEditor extends React.Component {
         this.setState(state => ({
             source: result.source,
             diagnostics: compilation.diagnostics,
-            status: this.localized(
-                `${result.importedRootIds.length} stack(s) convertido(s); ${result.unsupportedRootIds.length} preservado(s) como blocos.`,
-                `${result.importedRootIds.length} stack(s) converted; ${result.unsupportedRootIds.length} preserved as blocks.`
-            ),
+            status: this.t('blocksImported', {
+                stacks: result.importedRootIds.length,
+                unsupported: result.unsupportedRootIds.length
+            }),
             statusKind: result.unsupportedRootIds.length ? 'working' : 'success',
             visualConflict: null,
             blockRefresh: state.blockRefresh + 1
@@ -1476,8 +1657,10 @@ class TextEditor extends React.Component {
             this.handleChange(source);
             this.setState({
                 externalHandle: handle,
+                externalLastModified: file.lastModified || 0,
                 externalName: handle.name || file.name,
                 externalOpen: true,
+                externalSyncState: 'synchronized',
                 status: this.t('fileOpened', {name: handle.name || file.name}),
                 statusKind: 'success'
             });
@@ -1507,6 +1690,19 @@ class TextEditor extends React.Component {
                     excludeAcceptAllOption: true
                 });
             }
+            if (!saveAs && handle === this.state.externalHandle && typeof handle.getFile === 'function') {
+                const currentFile = await handle.getFile();
+                const changedOutside = this.state.externalLastModified &&
+                    currentFile.lastModified > this.state.externalLastModified;
+                if (changedOutside && typeof window !== 'undefined' && !window.confirm(this.t('externalOverwriteWarning'))) {
+                    this.setState({
+                        externalSyncState: 'conflict',
+                        status: this.t('externalConflictHelp'),
+                        statusKind: 'error'
+                    });
+                    return;
+                }
+            }
             const writable = await handle.createWritable();
             try {
                 await writable.write(this.state.source);
@@ -1515,10 +1711,13 @@ class TextEditor extends React.Component {
                 await writable.abort();
                 throw error;
             }
+            const savedFile = typeof handle.getFile === 'function' ? await handle.getFile() : null;
             this.setState({
                 externalHandle: handle,
+                externalLastModified: savedFile && savedFile.lastModified || Date.now(),
                 externalName: handle.name || targetFileName(target),
                 externalOpen: true,
+                externalSyncState: 'synchronized',
                 status: this.t('externalSynchronized'),
                 statusKind: 'success'
             });
@@ -1538,7 +1737,12 @@ class TextEditor extends React.Component {
         try {
             const file = await handle.getFile();
             this.handleChange(await file.text());
-            this.setState({status: this.t('externalSynchronized'), statusKind: 'success'});
+            this.setState({
+                externalLastModified: file.lastModified || 0,
+                externalSyncState: 'synchronized',
+                status: this.t('externalSynchronized'),
+                statusKind: 'success'
+            });
         } catch (error) {
             this.setState({status: error.message, statusKind: 'error'});
         }
@@ -1551,8 +1755,10 @@ class TextEditor extends React.Component {
         this.handleChange(await file.text());
         this.setState({
             externalHandle: null,
+            externalLastModified: file.lastModified || 0,
             externalName: file.name,
             externalOpen: true,
+            externalSyncState: 'imported',
             status: this.t('fileOpened', {name: file.name}),
             statusKind: 'success'
         });
@@ -1560,6 +1766,9 @@ class TextEditor extends React.Component {
 
     async openTextwarp () {
         if (this.state.busy) return;
+        const workingMessage = this.t('openChoose');
+        this.setFileOperation(TEXTWARP_UI_COMMANDS.OPEN, 'working', workingMessage);
+        this.setState({status: workingMessage, statusKind: 'working'});
         try {
             const handles = await showTextwarpOpenFilePicker({
                 multiple: false,
@@ -1570,15 +1779,25 @@ class TextEditor extends React.Component {
                 excludeAcceptAllOption: true
             });
             const handle = handles && handles[0];
-            if (!handle) return;
+            if (!handle) {
+                const cancelledMessage = this.t('openCancelled');
+                this.setState({status: cancelledMessage, statusKind: 'idle'});
+                this.setFileOperation(TEXTWARP_UI_COMMANDS.OPEN, 'idle', cancelledMessage);
+                return;
+            }
             await this.importTextwarpFile(await handle.getFile(), handle);
         } catch (error) {
             if (error && error.name === 'NotSupportedError') {
                 if (this.packageInput) this.packageInput.click();
                 return;
             }
-            if (!error || error.name !== 'AbortError') {
+            if (error && error.name === 'AbortError') {
+                const cancelledMessage = this.t('openCancelled');
+                this.setState({status: cancelledMessage, statusKind: 'idle'});
+                this.setFileOperation(TEXTWARP_UI_COMMANDS.OPEN, 'idle', cancelledMessage);
+            } else {
                 this.setState({status: error.message, statusKind: 'error'});
+                this.setFileOperation(TEXTWARP_UI_COMMANDS.OPEN, 'error', error.message);
             }
         }
     }
@@ -1587,7 +1806,7 @@ class TextEditor extends React.Component {
         if (!file || this.state.busy) return;
         this.setState({
             busy: true,
-            status: this.localized(`Abrindo ${file.name}…`, `Opening ${file.name}…`),
+            status: this.t('openingFile', {name: file.name}),
             statusKind: 'working'
         });
         try {
@@ -1602,21 +1821,25 @@ class TextEditor extends React.Component {
             const errors = result.diagnostics.filter(module => !module.success).length;
             this.refreshExtensionCatalog();
             this.syncAllBreakpoints();
+            const resultMessage = errors ?
+                this.t('openWithErrors', {count: errors, name: file.name}) :
+                this.t('openSuccess', {name: file.name});
             this.setState({
-                status: errors ?
-                    this.localized(
-                        `${file.name} aberto com erro em ${errors} módulo(s).`,
-                        `${file.name} opened with errors in ${errors} module(s).`
-                    ) :
-                    this.localized(`${file.name} aberto.`, `${file.name} opened.`),
+                status: resultMessage,
                 statusKind: errors ? 'error' : 'success',
                 busy: false
             });
+            this.setFileOperation(
+                TEXTWARP_UI_COMMANDS.OPEN,
+                errors ? 'error' : 'success',
+                resultMessage
+            );
             this.props.onSetProjectUnchanged();
             setTimeout(() => this.loadSelectedTarget(), 0);
         } catch (error) {
             console.error(error);
             this.setState({status: error.message, statusKind: 'error', busy: false});
+            this.setFileOperation(TEXTWARP_UI_COMMANDS.OPEN, 'error', error.message);
         }
     }
 
@@ -1640,7 +1863,9 @@ class TextEditor extends React.Component {
         if (!target) return;
         saveBreakpoints(this.props.vm, target, breakpoints);
         this.debugController.setBreakpoints(target, breakpoints);
-        this.debugController.setEnabled(this.state.debugOpen || this.debugController.hasBreakpoints());
+        this.debugController.setEnabled(
+            this.state.activeBottomPanel === 'debugger' || this.debugController.hasBreakpoints()
+        );
         this.setState({breakpoints});
     }
 
@@ -1650,16 +1875,15 @@ class TextEditor extends React.Component {
         if (!target) return;
         saveBreakpoints(this.props.vm, target, breakpoints);
         this.debugController.setBreakpoints(target, breakpoints);
-        this.debugController.setEnabled(this.state.debugOpen || this.debugController.hasBreakpoints());
+        this.debugController.setEnabled(
+            this.state.activeBottomPanel === 'debugger' || this.debugController.hasBreakpoints()
+        );
         this.refreshWorkspace();
     }
 
     handleInvalidShortcut (shortcut) {
         this.setState({
-            status: this.localized(
-                `Atalho inválido ou duplicado: ${shortcut}. O padrão foi mantido.`,
-                `Invalid or duplicate shortcut: ${shortcut}. The default was kept.`
-            ),
+            status: this.t('invalidShortcut', {shortcut}),
             statusKind: 'error'
         });
     }
@@ -1682,14 +1906,17 @@ class TextEditor extends React.Component {
     renderDiagnostics () {
         const t = createTranslator(this.props.locale);
         if (this.state.diagnostics.length === 0) return <span className={styles.noDiagnostics}>{t('noProblems')}</span>;
-        return this.state.diagnostics.slice(0, 8).map((item, index) => {
+        const visible = getVisibleItems(this.state.diagnostics, this.state.diagnosticLimit);
+        return (
+            <React.Fragment>
+            {visible.items.map((item, index) => {
             const quoted = item.message.match(/[“"]([^”"]+)[”"]/);
             const helpQuery = quoted && quoted[1] || (/indent/.test(item.code) ? 'indentação' :
                 /variable|list/.test(item.code) ? 'variável lista' : /procedure|parameter|return/.test(item.code) ?
                     'procedimentos parâmetros' : 'referência');
             return (
                 <div className={classNames(styles.diagnostic, styles[item.severity])} key={`${item.line}:${item.column}:${item.code}:${index}`}>
-                    <button title={normalizeLocale(this.props.locale) === 'pt' ? 'Ir para o problema' : 'Go to problem'} type="button" onClick={() => this.openLocation({
+                    <button title={t('goToProblem')} type="button" onClick={() => this.openLocation({
                         targetId: this.props.editingTargetId, line: item.line, column: item.column
                     })}>
                         <span className={styles.diagnosticLocation}>L{item.line}:{item.column}</span>
@@ -1698,35 +1925,43 @@ class TextEditor extends React.Component {
                         <small>{item.code}</small>
                     </button>
                     <button className={styles.diagnosticHelp} type="button" onClick={() => this.setState({
-                        docsQuery: helpQuery,
-                        viewMode: 'docs'
-                    })}>{t('help')}</button>
+                        docsQuery: helpQuery
+                    }, () => this.setViewMode('docs'))}>{t('help')}</button>
                 </div>
             );
-        });
+            })}
+            {visible.hiddenCount > 0 && <button
+                className={styles.showMore}
+                type="button"
+                onClick={() => this.setState(state => ({
+                    diagnosticLimit: state.diagnosticLimit + DEFAULT_LIST_LIMIT
+                }))}
+            >{t('showMoreItems', {count: visible.hiddenCount})}</button>}
+            {visible.totalCount > DEFAULT_LIST_LIMIT && <span className={styles.listCount}>
+                {t('showingItems', {visible: visible.items.length, total: visible.totalCount})}
+            </span>}
+            </React.Fragment>
+        );
     }
 
     renderConsole () {
         const t = createTranslator(this.props.locale);
-        const portuguese = normalizeLocale(this.props.locale) === 'pt';
-        const entries = this.state.debugSnapshot.consoleEntries || [];
+        const entries = (this.state.debugSnapshot.consoleEntries || []).slice().reverse();
+        const visible = getVisibleItems(entries, this.state.consoleLimit);
         return (
             <div className={styles.console} aria-label={t('outputConsole')}>
                 <div className={styles.consoleActions}>
-                    <strong>{portuguese ? 'Console estruturado' : 'Structured console'}</strong>
+                    <strong>{t('consoleStructured')}</strong>
                     <span>{this.state.debugSnapshot.executionState === 'running' ?
-                        (portuguese ? '● executando' : '● running') :
-                        this.state.debugSnapshot.executionState === 'paused' ?
-                            (portuguese ? 'Ⅱ pausado' : 'Ⅱ paused') : (portuguese ? '■ parado' : '■ stopped')}</span>
+                        t('runtimeStateRunning') : this.state.debugSnapshot.executionState === 'paused' ?
+                            t('runtimeStatePaused') : t('runtimeStateStopped')}</span>
                     <button type="button" onClick={() => this.debugController.clearConsole()}>
-                        {portuguese ? 'Limpar' : 'Clear'}
+                        {t('clear')}
                     </button>
                 </div>
                 <div className={styles.consoleEntries} role="log" aria-live="polite">
-                    {!entries.length && <span className={styles.noDiagnostics}>{portuguese ?
-                        'A saída, perguntas e erros aparecerão aqui.' :
-                        'Output, questions and errors will appear here.'}</span>}
-                    {entries.slice().reverse().map(entry => (
+                    {!entries.length && <span className={styles.noDiagnostics}>{t('consoleEmpty')}</span>}
+                    {visible.items.map(entry => (
                         <button
                             className={styles[entry.level]}
                             disabled={!entry.line}
@@ -1740,91 +1975,99 @@ class TextEditor extends React.Component {
                             <pre>{entry.message}</pre>
                         </button>
                     ))}
+                    {visible.hiddenCount > 0 && <button
+                        className={styles.showMore}
+                        type="button"
+                        onClick={() => this.setState(state => ({
+                            consoleLimit: state.consoleLimit + DEFAULT_LIST_LIMIT
+                        }))}
+                    >{t('showMoreItems', {count: visible.hiddenCount})}</button>}
                 </div>
             </div>
         );
     }
 
     renderDebugger () {
-        const portuguese = normalizeLocale(this.props.locale) === 'pt';
+        const t = createTranslator(this.props.locale);
         const snapshot = this.state.debugSnapshot;
         const selectedThread = snapshot.threads.find(thread => thread.id === this.state.selectedThreadId) ||
             snapshot.threads.find(thread => thread.paused) || snapshot.threads[0];
         const inspector = selectedThread && selectedThread.inspector;
         const watches = this.getWatchValues();
+        const visibleThreads = getVisibleItems(snapshot.threads, this.state.debugLimit);
+        const executionMode = snapshot.selectiveInterpreter ? t('debugSelectiveInterpreter') :
+            snapshot.interpreterRequired ? t('debugGlobalInterpreter') :
+                snapshot.jitEnabled ? t('debugJitActive') : t('debugProjectInterpreter');
         return (
             <div className={styles.debugger}>
                 <div className={styles.debugActions}>
                     <button type="button" onClick={() => this.debugController.pauseAll()}>
-                        {portuguese ? 'Pausar threads' : 'Pause threads'}
+                        {t('pauseThreads')}
                     </button>
                     <button type="button" onClick={() => this.debugController.resumeAll()}>
-                        {portuguese ? 'Continuar todas' : 'Resume all'}
+                        {t('resumeAll')}
                     </button>
-                    <span>
-                        {snapshot.threads.length} thread(s) · {this.state.breakpoints.length} breakpoint(s) · {
-                            snapshot.selectiveInterpreter ?
-                                (portuguese ? 'interpretador somente nos atores com breakpoint' :
-                                    'interpreter only for actors with breakpoints') :
-                                snapshot.interpreterRequired ?
-                                    (portuguese ? 'interpretador para pausa global' : 'interpreter for global pause') :
-                                    snapshot.jitEnabled ? (portuguese ? 'JIT ativo' : 'JIT active') :
-                                        (portuguese ? 'interpretador do projeto' : 'project interpreter')
-                        }
-                    </span>
+                    <span>{t('debugSummary', {
+                        breakpoints: this.state.breakpoints.length,
+                        mode: executionMode,
+                        threads: snapshot.threads.length
+                    })}</span>
                 </div>
                 <div className={styles.debugGrid}>
                 <div className={styles.threadList}>
                     {snapshot.threads.length === 0 && <span className={styles.noDiagnostics}>
-                        {portuguese ? 'Nenhuma thread ativa.' : 'No active threads.'}
+                        {t('noActiveThreads')}
                     </span>}
-                    {snapshot.threads.map(thread => (
+                    {visibleThreads.items.map(thread => (
                         <div
                             className={classNames(styles.thread, selectedThread && selectedThread.id === thread.id && styles.selectedThread)}
                             key={thread.id}
                         >
                             <button className={styles.threadSelect} type="button" onClick={() => this.setState({selectedThreadId: thread.id})}>
                             <span className={classNames(styles.threadState, thread.paused && styles.threadPaused)}>
-                                {thread.paused ? (portuguese ? 'pausada' : 'paused') :
-                                    (portuguese ? 'executando' : 'running')}
+                                {thread.paused ? t('runtimeStatePaused') : t('runtimeStateRunning')}
                             </span>
                             <strong>{thread.targetName}</strong>
                             <code>
-                                {thread.line ? (portuguese ? `linha ${thread.line}` : `line ${thread.line}`) :
-                                    thread.blockId || (portuguese ? 'sem linha' : 'no line')} · {
-                                    thread.executionMode === 'jit' ? 'JIT' :
-                                        (portuguese ? 'interpretador' : 'interpreter')
+                                {thread.line ? t('lineNumber', {line: thread.line}) :
+                                    thread.blockId || t('noLine')} · {
+                                    thread.executionMode === 'jit' ? 'JIT' : t('interpreter')
                                 }
                             </code>
                             </button>
                             {thread.paused && <>
                                 <button type="button" onClick={() => this.debugController.stepThread(thread.id)}>
                                     {thread.stepGranularity === 'frame' ?
-                                        (portuguese ? 'Passo de frame' : 'Step frame') :
-                                        (portuguese ? 'Entrar' : 'Step into')}
+                                        t('stepFrame') : t('stepInto')}
                                 </button>
                                 {thread.stepGranularity !== 'frame' && <button type="button" onClick={() =>
                                     this.debugController.stepOverThread(thread.id)
-                                }>{portuguese ? 'Passar' : 'Step over'}</button>}
+                                }>{t('stepOver')}</button>}
                                 {thread.canStepOut && <button type="button" onClick={() =>
                                     this.debugController.stepOutThread(thread.id)
-                                }>{portuguese ? 'Sair' : 'Step out'}</button>}
+                                }>{t('stepOut')}</button>}
                                 <button type="button" onClick={() => this.debugController.resumeThread(thread.id)}>
-                                    {portuguese ? 'Continuar' : 'Resume'}
+                                    {t('resume')}
                                 </button>
                             </>}
                         </div>
                     ))}
+                    {visibleThreads.hiddenCount > 0 && <button
+                        className={styles.showMore}
+                        type="button"
+                        onClick={() => this.setState(state => ({
+                            debugLimit: state.debugLimit + DEFAULT_LIST_LIMIT
+                        }))}
+                    >{t('showMoreItems', {count: visibleThreads.hiddenCount})}</button>}
                 </div>
                 <div className={styles.inspector}>
                     <section>
-                        <h3>{portuguese ? 'Variáveis e estado' : 'Variables and state'}</h3>
+                        <h3>{t('variablesAndState')}</h3>
                         {inspector && inspector.target && <code>
                             x {inspector.target.x} · y {inspector.target.y} · {
-                                portuguese ? 'direção' : 'direction'
+                                t('direction')
                             } {inspector.target.direction} · {
-                                inspector.target.visible ? (portuguese ? 'visível' : 'visible') :
-                                    (portuguese ? 'oculto' : 'hidden')
+                                inspector.target.visible ? t('visible') : t('hidden')
                             }
                         </code>}
                         {inspector && inspector.variables.map(variable => (
@@ -1836,22 +2079,22 @@ class TextEditor extends React.Component {
                         ))}
                     </section>
                     <section>
-                        <h3>{portuguese ? 'Pilha de chamadas' : 'Call stack'}</h3>
+                        <h3>{t('callStack')}</h3>
                         {selectedThread && selectedThread.callStack.map((frame, index) => (
                             <button key={`${frame.blockId}:${index}`} type="button" onClick={() => frame.line && this.openLocation({
                                 targetId: selectedThread.targetId,
                                 line: frame.line
                             })}>
                                 <code>{frame.opcode || frame.blockId}</code>
-                                <span>{frame.line ? `L${frame.line}` : (portuguese ? 'sem fonte' : 'no source')}</span>
+                                <span>{frame.line ? `L${frame.line}` : t('noSource')}</span>
                             </button>
                         ))}
                     </section>
                     <section>
-                        <h3>Watch</h3>
+                        <h3>{t('watch')}</h3>
                         <form onSubmit={event => this.addWatch(event)}>
                             <input
-                                aria-label={portuguese ? 'Nova expressão watch' : 'New watch expression'}
+                                aria-label={t('watchExpression')}
                                 placeholder="score * 2"
                                 value={this.state.watchInput}
                                 onChange={event => this.setState({watchInput: event.target.value})}
@@ -1862,9 +2105,13 @@ class TextEditor extends React.Component {
                             <div key={watch.expression}>
                                 <strong>{watch.expression}</strong>
                                 <code>{watch.success ? JSON.stringify(watch.value) : watch.error}</code>
-                                <button type="button" aria-label={`${portuguese ? 'Remover' : 'Remove'} watch ${watch.expression}`} onClick={() => this.setState(state => ({
-                                    watches: state.watches.filter(item => item !== watch.expression)
-                                }))}>×</button>
+                                <button
+                                    aria-label={t('removeWatch', {name: watch.expression})}
+                                    type="button"
+                                    onClick={() => this.setState(state => ({
+                                        watches: state.watches.filter(item => item !== watch.expression)
+                                    }))}
+                                ><InterfaceIcon name="close" /></button>
                             </div>
                         ))}
                     </section>
@@ -1872,7 +2119,11 @@ class TextEditor extends React.Component {
                 </div>
                 {snapshot.runtimeErrors.slice(0, 3).map(error => (
                     <details className={styles.runtimeError} key={`${error.timestamp}:${error.blockId}`}>
-                        <summary>Runtime {error.targetName}{error.line ? ` L${error.line}` : ''}: {error.message}</summary>
+                        <summary>{t('runtimeError', {
+                            location: error.line ? ` L${error.line}` : '',
+                            message: error.message,
+                            target: error.targetName
+                        })}</summary>
                         {error.stack && <pre>{error.stack}</pre>}
                         {error.callStack && error.callStack.length > 0 && <code>{error.callStack.map(frame =>
                             `${frame.line ? `L${frame.line}` : frame.blockId}`
@@ -1886,10 +2137,11 @@ class TextEditor extends React.Component {
     renderExtensionCatalog () {
         const t = createTranslator(this.props.locale);
         const entries = this.state.extensionPalette.filter(entry => entry.kind !== 'separator');
+        const visible = getVisibleItems(entries, this.state.extensionLimit);
         return (
             <div className={styles.extensionCatalog}>
                 {entries.length === 0 && <span className={styles.noDiagnostics}>{t('noExtensions')}</span>}
-                {entries.map((entry, index) => (
+                {visible.items.map((entry, index) => (
                     <div className={styles.extensionEntry} key={`${entry.canonicalName}:${index}`}>
                         <span className={styles.extensionKind}>{entry.kind}</span>
                         <code>{entry.canonicalName}</code>
@@ -1905,10 +2157,20 @@ class TextEditor extends React.Component {
                             <button
                                 type="button"
                                 onClick={() => this.props.vm.handleExtensionButtonPress(entry.actionId)}
-                            >{normalizeLocale(this.props.locale) === 'pt' ? 'Executar ação' : 'Run action'}</button>
+                            >{t('runAction')}</button>
                         )}
                     </div>
                 ))}
+                {visible.hiddenCount > 0 && <button
+                    className={styles.showMore}
+                    type="button"
+                    onClick={() => this.setState(state => ({
+                        extensionLimit: state.extensionLimit + DEFAULT_LIST_LIMIT
+                    }))}
+                >{t('showMoreItems', {count: visible.hiddenCount})}</button>}
+                {visible.totalCount > DEFAULT_LIST_LIMIT && <span className={styles.listCount}>
+                    {t('showingItems', {visible: visible.items.length, total: visible.totalCount})}
+                </span>}
             </div>
         );
     }
@@ -1922,6 +2184,13 @@ class TextEditor extends React.Component {
             this.props.vm.runtime.getTargetById(this.state.secondaryTargetId);
         const secondaryActiveLines = secondaryTarget ?
             this.state.debugSnapshot.activeLinesByTarget[secondaryTarget.id] || [] : [];
+        const activeFileName = target ? targetFileName(target) : '';
+        const externalStateLabel = {
+            conflict: t('externalConflict'),
+            dirty: t('externalDirty'),
+            imported: t('externalImported'),
+            synchronized: t('externalConnected')
+        }[this.state.externalSyncState] || t('externalDisconnected');
         const rootStyle = {
             '--textwarp-bottom-panel-height': `${this.state.bottomPanelHeight}px`,
             '--textwarp-sidebar-width': `${this.state.sidebarWidth}px`,
@@ -1932,6 +2201,7 @@ class TextEditor extends React.Component {
                 aria-label={t('editor')}
                 className={classNames(
                     styles.root,
+                    this.state.layoutMode === 'condensed' && styles.condensedLayout,
                     this.state.compactLayout && styles.compactLayout,
                     this.state.narrowLayout && styles.narrowLayout
                 )}
@@ -1940,59 +2210,51 @@ class TextEditor extends React.Component {
                 style={rootStyle}
             >
                 <header className={styles.toolbar}>
-                    <div className={styles.identity}>
+                    <div className={styles.identity} title={t('activeFile', {name: activeFileName})}>
                         <span className={classNames(styles.targetBadge, this.state.isStage && styles.stageBadge)}>{targetLabel}</span>
                         <div>
                             <strong>{this.state.targetName || t('noneTarget')}</strong>
-                            <span className={styles.filename}>{this.state.isStage ? 'stage.tw' : `${this.state.targetName || 'actor'}.tw`}</span>
+                            <span className={styles.filename}>{activeFileName}</span>
                         </div>
                     </div>
                     <div className={styles.viewTabs} aria-label={t('viewModes')} role="tablist">
-                        <button
-                            className={this.state.viewMode === 'code' ? styles.activeTab : ''}
-                            role="tab"
-                            type="button"
-                            onClick={() => this.setViewMode('code')}
-                        >{t('code')}</button>
-                        <button
-                            className={this.state.viewMode === 'blocks' ? styles.activeTab : ''}
-                            role="tab"
-                            type="button"
-                            onClick={() => this.setViewMode('blocks')}
-                        >{t('blocks')}</button>
-                        <button
-                            className={this.state.viewMode === 'split' ? styles.activeTab : ''}
-                            role="tab"
-                            type="button"
-                            onClick={() => this.setViewMode('split')}
-                        >{t('split')}</button>
-                        <button
-                            className={this.state.viewMode === 'dual' ? styles.activeTab : ''}
-                            role="tab"
-                            type="button"
-                            onClick={() => this.setViewMode('dual')}
-                        >{t('dual')}</button>
-                        <button
-                            className={this.state.viewMode === 'docs' ? styles.activeTab : ''}
-                            role="tab"
-                            type="button"
-                            onClick={() => this.setState({docsQuery: ''}, () => this.setViewMode('docs'))}
-                        >{t('documentation')}</button>
-                    </div>
-                    <div className={styles.actions}>
-                        <button
-                            className={styles.drawerToggle}
-                            type="button"
-                            onClick={() => this.setState(state => ({toolsOpen: !state.toolsOpen}))}
-                        >{t('tools')}</button>
+                        {[
+                            ['code', t('code')],
+                            ['blocks', t('blocks')],
+                            ['split', t('split')],
+                            ['dual', t('dual')],
+                            ['docs', t('documentation')]
+                        ].map(([id, label]) => (
+                            <button
+                                aria-controls="textwarp-editor-area"
+                                aria-selected={this.state.viewMode === id}
+                                className={this.state.viewMode === id ? styles.activeTab : ''}
+                                data-tab-id={id}
+                                id={`textwarp-view-tab-${id}`}
+                                key={id}
+                                role="tab"
+                                tabIndex={this.state.viewMode === id ? 0 : -1}
+                                title={label}
+                                type="button"
+                                onClick={() => {
+                                    if (id === 'docs') this.setState({docsQuery: ''}, () => this.setViewMode(id));
+                                    else this.setViewMode(id);
+                                }}
+                                onKeyDown={event => this.handleTabKeyDown(
+                                    event,
+                                    VIEW_IDS,
+                                    id,
+                                    nextId => this.setViewMode(nextId)
+                                )}
+                            >{label}</button>
+                        ))}
                     </div>
                 </header>
-                <div className={classNames(
-                    styles.actionDrawer,
-                    this.state.compactLayout && !this.state.toolsOpen && styles.drawerClosed
-                )}>
+                <div aria-label={t('tools')} className={styles.actionDrawer} role="toolbar">
                     <button
+                        aria-label={t('commands')}
                         className={styles.toolButton}
+                        title={t('commands')}
                         type="button"
                         onClick={() => {
                             if (this.monacoEditor) this.monacoEditor.openCommandPalette();
@@ -2001,7 +2263,11 @@ class TextEditor extends React.Component {
                         {t('commands')}
                     </button>
                     <button
+                        aria-controls="textwarp-templates-panel"
+                        aria-expanded={this.state.templatesOpen}
+                        aria-label={t('models')}
                         className={styles.toolButton}
+                        title={t('models')}
                         type="button"
                         onClick={() => this.setState(state => ({
                             templatesOpen: !state.templatesOpen, settingsOpen: false, externalOpen: false
@@ -2010,35 +2276,65 @@ class TextEditor extends React.Component {
                         {t('models')}
                     </button>
                     <button
+                        aria-controls="textwarp-external-panel"
+                        aria-expanded={this.state.externalOpen}
+                        aria-label={t('externalState', {state: externalStateLabel})}
                         className={styles.toolButton}
+                        title={t('externalState', {state: externalStateLabel})}
                         type="button"
                         onClick={() => this.setState(state => ({
                             externalOpen: !state.externalOpen, settingsOpen: false, templatesOpen: false
                         }))}
                     >
-                        {t('externalEditor')}
+                        <span>{t('externalEditor')}</span>
+                        <small className={classNames(styles.connectionState, styles[this.state.externalSyncState])}>
+                            {externalStateLabel}
+                        </small>
                     </button>
                     <button
+                        aria-label={t('textToBlocksDescription')}
                         className={styles.toolButton}
                         disabled={!this.state.targetName || this.state.busy}
+                        title={!this.state.targetName || this.state.busy ?
+                            t('conversionUnavailable') : t('textToBlocksDescription')}
                         type="button"
                         onClick={this.handleCompile}
                     >
-                        {`${t('textToBlocks')} →`}
+                        <span>{t('textToBlocks')}</span>
+                        <InterfaceIcon name="arrow-right" />
                     </button>
                     <button
+                        aria-label={t('blocksToTextDescription')}
                         className={styles.toolButton}
                         disabled={!this.state.targetName || this.state.busy}
+                        title={!this.state.targetName || this.state.busy ?
+                            t('conversionUnavailable') : t('blocksToTextDescription')}
                         type="button"
                         onClick={this.handleImportBlocks}
                     >
-                        {`← ${t('blocksToText')}`}
+                        <InterfaceIcon name="arrow-left" />
+                        <span>{t('blocksToText')}</span>
                     </button>
                     <button
+                        aria-controls="textwarp-projects-sidebar"
+                        aria-expanded={this.state.sidebarVisible}
                         className={classNames(styles.toolButton, this.state.sidebarVisible && styles.debugButtonActive)}
+                        ref={element => {
+                            this.projectsButton = element;
+                        }}
                         title={`${t('projects')} (Ctrl+Shift+E)`}
                         type="button"
-                        onClick={() => this.setState(state => ({sidebarVisible: !state.sidebarVisible}))}
+                        onClick={() => {
+                            const sidebarVisible = !this.state.sidebarVisible;
+                            this.setState({sidebarVisible}, () => {
+                                if (!sidebarVisible || !this.state.narrowLayout || !this.rootElement) return;
+                                const firstControl = this.rootElement.querySelector(
+                                    '#textwarp-projects-sidebar button:not([disabled])'
+                                );
+                                if (firstControl) firstControl.focus();
+                            });
+                            this.persistUiState({sidebarVisible});
+                        }}
                     >
                         {t('projects')}
                     </button>
@@ -2049,6 +2345,11 @@ class TextEditor extends React.Component {
                             this.packageInput = element;
                         }}
                         type="file"
+                        onCancel={() => {
+                            const message = this.t('openCancelled');
+                            this.setFileOperation(TEXTWARP_UI_COMMANDS.OPEN, 'idle', message);
+                            this.setState({status: message, statusKind: 'idle'});
+                        }}
                         onChange={this.handlePackageFile}
                     />
                     <input
@@ -2061,43 +2362,105 @@ class TextEditor extends React.Component {
                         onChange={this.handleExternalFile}
                     />
                 </div>
-                <nav className={styles.openTabs} aria-label={t('openScripts')}>
-                    {this.state.openTargetIds.map(targetId => {
-                        const module = this.state.workspace.modules.find(item => item.id === targetId);
-                        if (!module) return null;
-                        return (
-                            <div
-                                className={targetId === this.props.editingTargetId ? styles.activeFileTab : ''}
-                                key={targetId}
-                            >
-                                <button className={styles.fileTabMain} type="button" onClick={() => this.openTarget(targetId)}>
-                                <span>{module.fileName}</span>
-                                {targetId === this.props.editingTargetId && this.state.saveState === 'salvando' && <small>●</small>}
-                                </button>
-                                {this.state.openTargetIds.length > 1 && <button
-                                    aria-label={`${t('close')} ${module.fileName}`}
-                                    className={styles.closeFileTab}
-                                    type="button"
-                                    onClick={event => this.closeTarget(event, targetId)}
-                                >×</button>}
-                            </div>
-                        );
-                    })}
-                </nav>
+                <div className={styles.openTabsRegion}>
+                    <button
+                        aria-label={t('previousTabs')}
+                        className={styles.tabsScrollButton}
+                        type="button"
+                        onClick={() => this.scrollOpenTabs(-1)}
+                    >
+                        <InterfaceIcon name="arrow-left" />
+                    </button>
+                    <nav
+                        aria-label={t('openScripts')}
+                        className={styles.openTabs}
+                        ref={element => {
+                            this.openTabsElement = element;
+                        }}
+                        role="tablist"
+                    >
+                        {this.state.openTargetIds.map(targetId => {
+                            const module = this.state.workspace.modules.find(item => item.id === targetId);
+                            if (!module) return null;
+                            const active = targetId === this.props.editingTargetId;
+                            return (
+                                <div className={active ? styles.activeFileTab : ''} key={targetId}>
+                                    <button
+                                        aria-selected={active}
+                                        className={styles.fileTabMain}
+                                        data-tab-id={targetId}
+                                        role="tab"
+                                        tabIndex={active ? 0 : -1}
+                                        title={module.fileName}
+                                        type="button"
+                                        onClick={() => this.openTarget(targetId)}
+                                        onKeyDown={event => this.handleTabKeyDown(
+                                            event,
+                                            this.state.openTargetIds,
+                                            targetId,
+                                            this.openTarget
+                                        )}
+                                    >
+                                        <span>{module.fileName}</span>
+                                        {active && this.state.saveState === 'salvando' && (
+                                            <small aria-hidden="true">{'●'}</small>
+                                        )}
+                                    </button>
+                                    {this.state.openTargetIds.length > 1 && <button
+                                        aria-label={`${t('close')} ${module.fileName}`}
+                                        className={styles.closeFileTab}
+                                        type="button"
+                                        onClick={event => this.closeTarget(event, targetId)}
+                                    >
+                                        <InterfaceIcon name="close" />
+                                    </button>}
+                                </div>
+                            );
+                        })}
+                    </nav>
+                    <label className={styles.openTabsMenu}>
+                        <span>{t('moreTabs')}</span>
+                        <select
+                            aria-label={t('moreTabs')}
+                            value={this.props.editingTargetId || ''}
+                            onChange={event => this.openTarget(event.target.value)}
+                        >
+                            {this.state.openTargetIds.map(targetId => {
+                                const module = this.state.workspace.modules.find(item => item.id === targetId);
+                                return module && <option key={targetId} value={targetId}>{module.fileName}</option>;
+                            })}
+                        </select>
+                    </label>
+                    <button
+                        aria-label={t('nextTabs')}
+                        className={styles.tabsScrollButton}
+                        type="button"
+                        onClick={() => this.scrollOpenTabs(1)}
+                    >
+                        <InterfaceIcon name="arrow-right" />
+                    </button>
+                </div>
                 {this.state.templatesOpen && (
-                    <div className={styles.quickPanel} role="dialog" aria-label={t('models')}>
-                        <strong>{t('templatesTitle')}</strong>
+                    <QuickPanel
+                        closeLabel={t('close')}
+                        id="textwarp-templates-panel"
+                        label={t('templatesTitle')}
+                        onClose={() => this.setState({templatesOpen: false})}
+                    >
                         {IDE_TEMPLATES.filter(template => template.scope === (this.state.isStage ? 'stage' : 'actor')).map(template => (
                             <button key={template.id} type="button" onClick={() => this.applyTemplate(template)}>
                                 {this.getTemplateName(template)}
                             </button>
                         ))}
-                        <button type="button" onClick={() => this.setState({templatesOpen: false})}>{t('close')}</button>
-                    </div>
+                    </QuickPanel>
                 )}
                 {this.state.settingsOpen && (
-                    <div className={styles.quickPanel} role="dialog" aria-label={t('editorPreferences')}>
-                        <strong>{t('editorPreferences')}</strong>
+                    <QuickPanel
+                        closeLabel={t('close')}
+                        id="textwarp-settings-panel"
+                        label={t('editorPreferences')}
+                        onClose={() => this.setState({settingsOpen: false})}
+                    >
                         <label className={styles.fontPreference}>
                             <span>{t('fontSize')}</span>
                             <input
@@ -2108,11 +2471,11 @@ class TextEditor extends React.Component {
                                 value={this.state.fontSize}
                                 onChange={event => this.setFontSize(event.target.value)}
                             />
-                            <output>{this.state.fontSize}px</output>
+                            <output>{`${this.state.fontSize}px`}</output>
                         </label>
                         {Object.entries(this.state.shortcuts).map(([name, value]) => (
                             <label key={name}>
-                                <span>{name}</span>
+                                <span>{t(SHORTCUT_MESSAGE_KEYS[name])}</span>
                                 <input value={value} onChange={event => this.updateShortcut(name, event.target.value)} />
                             </label>
                         ))}
@@ -2124,47 +2487,93 @@ class TextEditor extends React.Component {
                                 if (storage) storage.setItem('textwarp.ide.shortcuts', JSON.stringify(shortcuts));
                             } catch (error) {
                                 this.setState({
-                                    status: this.localized(
-                                        'Padrões restaurados somente nesta sessão.',
-                                        'Defaults restored for this session only.'
-                                    ),
+                                    status: this.t('defaultsSessionOnly'),
                                     statusKind: 'working'
                                 });
                             }
                             this.setFontSize(DEFAULT_FONT_SIZE);
                         }}>{t('resetDefaults')}</button>
-                        <button type="button" onClick={() => this.setState({settingsOpen: false})}>{t('close')}</button>
-                    </div>
+                        <button type="button" onClick={this.resetLayout}>
+                            <InterfaceIcon name="reset" />
+                            {t('resetLayout')}
+                        </button>
+                    </QuickPanel>
                 )}
                 {this.state.externalOpen && (
-                    <div className={styles.quickPanel} role="dialog" aria-label={t('externalEditor')}>
-                        <strong>{t('externalEditor')}</strong>
+                    <QuickPanel
+                        closeLabel={t('close')}
+                        id="textwarp-external-panel"
+                        label={t('externalEditor')}
+                        onClose={() => this.setState({externalOpen: false})}
+                    >
                         <span className={styles.quickPanelHelp}>{t('externalHelp')}</span>
                         {this.state.externalName && <code>{this.state.externalName}</code>}
+                        <span
+                            className={classNames(styles.externalStatus, styles[this.state.externalSyncState])}
+                            role="status"
+                        >
+                            {externalStateLabel}
+                        </span>
                         <button type="button" onClick={() => this.connectExternalSource()}>{t('externalConnect')}</button>
-                        <button type="button" onClick={() => this.saveExternalSource(true)}>{t('externalSave')}</button>
+                        <button
+                            disabled={!this.state.externalHandle}
+                            type="button"
+                            onClick={() => this.saveExternalSource(false)}
+                        >{t('externalSave')}</button>
+                        <button type="button" onClick={() => this.saveExternalSource(true)}>{t('saveAs')}</button>
                         <button disabled={!this.state.externalHandle} type="button" onClick={() => this.reloadExternalSource()}>
                             {t('externalReload')}
                         </button>
-                        <button type="button" onClick={() => this.setState({externalOpen: false})}>{t('close')}</button>
-                    </div>
+                    </QuickPanel>
                 )}
                 {this.state.visualConflict && (
-                    <div className={styles.conflictBanner}>
-                        <strong>{normalizeLocale(this.props.locale) === 'pt' ?
-                            'Conflito entre texto e blocos.' : 'Text and blocks conflict.'}</strong>
-                        <span>{normalizeLocale(this.props.locale) === 'pt' ?
-                            'As duas versões têm alterações não aplicadas.' :
-                            'Both versions contain unapplied changes.'}</span>
+                    <div aria-live="assertive" className={styles.conflictBanner} role="alert">
+                        <div>
+                            <strong>{t('conflictTitle')}</strong>
+                            <span>{t('conflictDescription')}</span>
+                            <small>{t('conflictAffected', {
+                                count: this.state.visualConflict.semanticMerge ?
+                                    this.state.visualConflict.semanticMerge.conflicts.length : 1,
+                                name: activeFileName
+                            })}</small>
+                        </div>
+                        <button type="button" onClick={() => this.setState({conflictReviewOpen: true})}>
+                            {t('conflictReview')}
+                        </button>
                         <button type="button" onClick={() => this.keepTextChanges()}>
-                            {normalizeLocale(this.props.locale) === 'pt' ? 'Manter texto' : 'Keep text'}
+                            {t('conflictKeepText')}
                         </button>
                         <button type="button" onClick={() => this.acceptVisualChanges()}>
-                            {normalizeLocale(this.props.locale) === 'pt' ? 'Usar blocos' : 'Use blocks'}
+                            {t('conflictUseBlocks')}
                         </button>
                     </div>
                 )}
+                {this.state.visualConflict && this.state.conflictReviewOpen && (
+                    <QuickPanel
+                        closeLabel={t('close')}
+                        id="textwarp-conflict-review"
+                        label={t('conflictReview')}
+                        onClose={() => this.setState({conflictReviewOpen: false})}
+                    >
+                        <section className={styles.conflictPreview}>
+                            <strong>{t('conflictTextPreview')}</strong>
+                            <pre>{this.state.source}</pre>
+                        </section>
+                        <section className={styles.conflictPreview}>
+                            <strong>{t('conflictBlocksPreview')}</strong>
+                            <pre>{this.state.visualConflict.source}</pre>
+                        </section>
+                    </QuickPanel>
+                )}
                 <div className={styles.mainWorkspace}>
+                    {this.state.narrowLayout && this.state.sidebarVisible && this.state.viewMode !== 'docs' && (
+                        <button
+                            aria-label={t('closeProjects')}
+                            className={styles.sidebarBackdrop}
+                            type="button"
+                            onClick={this.closeSidebar}
+                        />
+                    )}
                     <IdeSidebar
                         activeFileName={targetFileName(target)}
                         activePanel={this.state.sidebarPanel}
@@ -2178,11 +2587,15 @@ class TextEditor extends React.Component {
                         replaceValue={this.state.replaceValue}
                         visible={this.state.sidebarVisible && this.state.viewMode !== 'docs'}
                         workspace={this.state.workspace}
+                        onClose={this.closeSidebar}
                         onInsertResource={this.insertResource}
                         onOpenLocation={this.openLocation}
                         onOpenResource={this.openResource}
                         onOpenTarget={this.openTarget}
-                        onPanelChange={sidebarPanel => this.setState({sidebarPanel})}
+                        onPanelChange={sidebarPanel => {
+                            this.setState({sidebarPanel});
+                            this.persistUiState({sidebarPanel});
+                        }}
                         onReplaceAll={this.handleReplaceAll}
                         onReplaceValueChange={replaceValue => this.setState({replaceValue})}
                         onRestoreHistory={this.restoreHistory}
@@ -2195,13 +2608,18 @@ class TextEditor extends React.Component {
                             role="separator"
                             tabIndex="0"
                             onPointerDown={event => this.startResize('sidebar', event)}
+                            onKeyDown={event => this.handleResizeKeyDown('sidebar', event)}
                         />
                     )}
                 <div className={classNames(
                     styles.editorArea,
                     this.state.viewMode === 'split' && styles.splitMode,
                     this.state.viewMode === 'dual' && styles.dualMode
-                )} ref={element => { this.editorAreaElement = element; }}>
+                )}
+                aria-labelledby={`textwarp-view-tab-${this.state.viewMode}`}
+                id="textwarp-editor-area"
+                ref={element => { this.editorAreaElement = element; }}
+                role="tabpanel">
                     <div className={classNames(
                         styles.viewPane,
                         styles.codePane,
@@ -2299,6 +2717,7 @@ class TextEditor extends React.Component {
                             role="separator"
                             tabIndex="0"
                             onPointerDown={event => this.startResize('split', event)}
+                            onKeyDown={event => this.handleResizeKeyDown('split', event)}
                         />
                     )}
                     <div className={classNames(
@@ -2334,10 +2753,11 @@ class TextEditor extends React.Component {
                 </div>
                 <aside className={classNames(
                     styles.bottomPanel,
-                    (this.state.debugOpen || this.state.consoleOpen || this.state.extensionsOpen) &&
+                    this.state.activeBottomPanel !== 'problems' &&
                         styles.debugPanelOpen,
                     this.state.bottomPanelCollapsed && styles.bottomPanelCollapsed
-                )}>
+                )}
+                aria-label={t('panels')}>
                     {!this.state.bottomPanelCollapsed && (
                         <div
                             aria-label={t('panels')}
@@ -2345,40 +2765,25 @@ class TextEditor extends React.Component {
                             role="separator"
                             tabIndex="0"
                             onPointerDown={event => this.startResize('bottom', event)}
+                            onKeyDown={event => this.handleResizeKeyDown('bottom', event)}
                         />
                     )}
-                    <div className={styles.statusRow}>
-                        <span className={classNames(styles.statusDot, styles[this.state.statusKind])} />
-                        <span aria-live="polite" role="status">{this.state.status}</span>
-                        <nav className={styles.panelTabs} aria-label={t('panels')}>
-                            <button className={!this.state.debugOpen && !this.state.consoleOpen && !this.state.extensionsOpen ? styles.activePanelTab : ''} type="button" onClick={() => this.setState({
-                                bottomPanelCollapsed: false, debugOpen: false, consoleOpen: false, extensionsOpen: false
-                            })}>{t('problems')} <small>{this.state.diagnostics.length}</small></button>
-                            <button className={this.state.consoleOpen ? styles.activePanelTab : ''} type="button" onClick={() => this.setState({
-                                bottomPanelCollapsed: false, debugOpen: false, consoleOpen: true, extensionsOpen: false
-                            })}>{t('console')}</button>
-                            <button className={this.state.debugOpen ? styles.activePanelTab : ''} type="button" onClick={() => {
-                                this.debugController.setEnabled(true);
-                                this.setState({
-                                    bottomPanelCollapsed: false,
-                                    debugOpen: true,
-                                    consoleOpen: false,
-                                    extensionsOpen: false
-                                });
-                            }}>{t('debugPanel')}</button>
-                            <button
-                                className={this.state.extensionsOpen ? styles.activePanelTab : ''}
-                                type="button"
-                                onClick={() => this.setState({
-                                    bottomPanelCollapsed: false,
-                                    debugOpen: false,
-                                    consoleOpen: false,
-                                    extensionsOpen: true
-                                })}
-                            >{t('extensions')}</button>
-                        </nav>
+                    <div className={styles.statusSummary}>
+                        <div className={styles.statusMessage}>
+                            <span className={classNames(styles.statusDot, styles[this.state.statusKind])} />
+                            <span>{this.state.status}</span>
+                            <span
+                                aria-live={this.state.statusKind === 'error' ? 'assertive' : 'polite'}
+                                className={styles.visuallyHidden}
+                                role={this.state.statusKind === 'error' ? 'alert' : 'status'}
+                            >{this.state.announcement}</span>
+                        </div>
                         <label className={styles.fontScale}>
-                            <button aria-label={t('fontDecrease')} type="button" onClick={() => this.setFontSize(this.state.fontSize - 1)}>−</button>
+                            <button
+                                aria-label={t('fontDecrease')}
+                                type="button"
+                                onClick={() => this.setFontSize(this.state.fontSize - 1)}
+                            ><InterfaceIcon name="minus" /></button>
                             <input
                                 aria-label={t('fontSize')}
                                 max="28"
@@ -2387,27 +2792,86 @@ class TextEditor extends React.Component {
                                 value={this.state.fontSize}
                                 onChange={event => this.setFontSize(event.target.value)}
                             />
-                            <output>{this.state.fontSize}px</output>
-                            <button aria-label={t('fontIncrease')} type="button" onClick={() => this.setFontSize(this.state.fontSize + 1)}>＋</button>
-                            <button aria-label={t('fontReset')} type="button" onClick={() => this.setFontSize(DEFAULT_FONT_SIZE)}>0</button>
+                            <output>{`${this.state.fontSize}px`}</output>
+                            <button
+                                aria-label={t('fontIncrease')}
+                                type="button"
+                                onClick={() => this.setFontSize(this.state.fontSize + 1)}
+                            ><InterfaceIcon name="plus" /></button>
+                            <button
+                                aria-label={t('fontReset')}
+                                type="button"
+                                onClick={() => this.setFontSize(DEFAULT_FONT_SIZE)}
+                            ><InterfaceIcon name="reset" /></button>
                         </label>
-                        <span className={styles.languageHelp}>
-                            {this.state.saveState === 'salvo' ? `✓ ${t('saved')}` : `● ${t('saving')}`} · TextWarp 0.3 · {
-                                this.state.extensionSummary.extensionCount
-                            } {t('extensions')} · {this.state.extensionSummary.blockCount} opcode(s)
-                        </span>
+                        <details className={styles.runtimeDetails}>
+                            <summary>{t('runtimeDetails')}</summary>
+                            <span>{t('runtimeSummary', {
+                                blocks: this.state.extensionSummary.blockCount,
+                                extensions: this.state.extensionSummary.extensionCount,
+                                save: this.state.saveState === 'salvo' ? t('saved') : t('saving'),
+                                version: '0.3'
+                            })}</span>
+                        </details>
                         <button
+                            aria-controls="textwarp-bottom-panel-content"
+                            aria-expanded={!this.state.bottomPanelCollapsed}
                             aria-label={this.state.bottomPanelCollapsed ? t('panelExpand') : t('panelCollapse')}
                             className={styles.collapsePanelButton}
                             type="button"
-                            onClick={() => this.setState(state => ({
-                                bottomPanelCollapsed: !state.bottomPanelCollapsed
-                            }))}
-                        >{this.state.bottomPanelCollapsed ? '⌃' : '⌄'}</button>
+                            onClick={() => {
+                                const bottomPanelCollapsed = !this.state.bottomPanelCollapsed;
+                                this.setState({bottomPanelCollapsed});
+                                this.persistUiState({bottomPanelCollapsed});
+                            }}
+                        >
+                            <InterfaceIcon name={this.state.bottomPanelCollapsed ? 'chevron-up' : 'chevron-down'} />
+                        </button>
                     </div>
-                    {!this.state.bottomPanelCollapsed && (this.state.debugOpen ? this.renderDebugger() :
-                        this.state.consoleOpen ? this.renderConsole() : this.state.extensionsOpen ?
-                        this.renderExtensionCatalog() : <div className={styles.diagnostics}>{this.renderDiagnostics()}</div>
+                    <nav className={styles.panelTabs} aria-label={t('panels')} role="tablist">
+                        {[
+                            ['problems', t('problems'), this.state.diagnostics.length],
+                            ['console', t('console')],
+                            ['debugger', t('debugPanel')],
+                            ['extensions', t('extensions')]
+                        ].map(([id, label, count]) => (
+                            <button
+                                aria-controls="textwarp-bottom-panel-content"
+                                aria-selected={!this.state.bottomPanelCollapsed && this.state.activeBottomPanel === id}
+                                className={!this.state.bottomPanelCollapsed &&
+                                    this.state.activeBottomPanel === id ? styles.activePanelTab : ''}
+                                data-tab-id={id}
+                                id={`textwarp-bottom-tab-${id}`}
+                                key={id}
+                                role="tab"
+                                tabIndex={this.state.activeBottomPanel === id ? 0 : -1}
+                                title={label}
+                                type="button"
+                                onClick={() => this.openBottomPanel(id)}
+                                onKeyDown={event => this.handleTabKeyDown(
+                                    event,
+                                    PANEL_IDS,
+                                    id,
+                                    this.openBottomPanel
+                                )}
+                            >
+                                {label} {typeof count === 'number' && <small>{count}</small>}
+                            </button>
+                        ))}
+                    </nav>
+                    {!this.state.bottomPanelCollapsed && (
+                        <div
+                            aria-labelledby={`textwarp-bottom-tab-${this.state.activeBottomPanel}`}
+                            className={styles.bottomPanelContent}
+                            id="textwarp-bottom-panel-content"
+                            role="tabpanel"
+                        >
+                            {this.state.activeBottomPanel === 'debugger' ? this.renderDebugger() :
+                                this.state.activeBottomPanel === 'console' ? this.renderConsole() :
+                                    this.state.activeBottomPanel === 'extensions' ?
+                                        this.renderExtensionCatalog() :
+                                        <div className={styles.diagnostics}>{this.renderDiagnostics()}</div>}
+                        </div>
                     )}
                 </aside>
             </section>
@@ -2425,6 +2889,7 @@ TextEditor.propTypes = {
     locale: PropTypes.string,
     onOpenCustomExtensionModal: PropTypes.func,
     onClearSb3FileHandle: PropTypes.func.isRequired,
+    onSetTextwarpUiOperation: PropTypes.func.isRequired,
     onSetProjectUnchanged: PropTypes.func.isRequired,
     options: PropTypes.shape({}),
     projectTitle: PropTypes.string,
@@ -2474,7 +2939,10 @@ const mapStateToProps = state => {
 
 const mapDispatchToProps = dispatch => ({
     onClearSb3FileHandle: () => dispatch(setFileHandle(null)),
+    onSetTextwarpUiOperation: (command, state, message) =>
+        dispatch(setTextwarpUiOperation(command, state, message)),
     onSetProjectUnchanged: () => dispatch(setProjectUnchanged())
 });
 
+export {TextEditor};
 export default connect(mapStateToProps, mapDispatchToProps)(TextEditor);

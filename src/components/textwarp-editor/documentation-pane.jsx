@@ -155,11 +155,8 @@ class DocumentationPane extends React.PureComponent {
                 ) : <div className={styles.emptyState}>{t('noResults')}</div>}
                 {section.palette.length > 0 && (
                     <React.Fragment>
-                        <h2>{normalizeLocale(this.props.locale) === 'pt' ?
-                            'Itens não executáveis da paleta' : 'Non-executable palette items'}</h2>
-                        <p>{normalizeLocale(this.props.locale) === 'pt' ?
-                            'Rótulos, botões, separadores e XML aparecem na paleta, mas não são comandos da linguagem.' :
-                            'Labels, buttons, separators and XML appear in the palette but are not language commands.'}</p>
+                        <h2>{t('documentationPaletteTitle')}</h2>
+                        <p>{t('documentationPaletteDescription')}</p>
                         <div className={styles.paletteList}>
                             {section.palette.map((entry, index) => (
                                 <div key={`${entry.name}:${index}`}>
@@ -185,7 +182,7 @@ class DocumentationPane extends React.PureComponent {
             <div className={classNames(styles.root, this.props.compact && styles.compact)}>
                 <aside className={styles.sidebar} aria-label={t('documentationIndex')}>
                     <div className={styles.sidebarHeader}>
-                        <span className={styles.eyebrow}>TextWarp 0.3</span>
+                        <span className={styles.eyebrow}>{t('versionLabel', {version: '0.3'})}</span>
                         <strong>{t('documentation')}</strong>
                         <p>{t('documentationDescription')}</p>
                     </div>
@@ -220,15 +217,14 @@ class DocumentationPane extends React.PureComponent {
                             <div className={styles.noResults}>
                                 <strong>{t('noResults')}</strong>
                                 <button type="button" onClick={() => this.setState({query: ''})}>
-                                    {normalizeLocale(this.props.locale) === 'pt' ? 'Limpar busca' : 'Clear search'}
+                                    {t('documentationClearSearch')}
                                 </button>
                             </div>
                         )}
                     </nav>
                     <div className={styles.sidebarFooter}>
                         <span>{t('topics', {count: sections.length})}</span>
-                        <span>{normalizeLocale(this.props.locale) === 'pt' ?
-                            `${executableCount} bloco(s) de extensão` : `${executableCount} extension block(s)`}</span>
+                        <span>{t('documentationExtensionBlockCount', {count: executableCount})}</span>
                     </div>
                 </aside>
                 <main className={styles.article} ref={element => { this.article = element; }}>

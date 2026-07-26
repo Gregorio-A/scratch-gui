@@ -53,10 +53,20 @@ class MenuLabel extends React.Component {
     render () {
         return (
             <div
+                aria-expanded={this.props.open}
+                aria-haspopup="menu"
                 className={classNames(styles.menuBarItem, styles.hoverable, {
                     [styles.active]: this.props.open
                 })}
+                id={this.props.id}
+                role="button"
+                tabIndex="0"
                 onClick={this.handleClick}
+                onKeyDown={event => {
+                    if (!['Enter', ' ', 'ArrowDown'].includes(event.key)) return;
+                    event.preventDefault();
+                    if (!this.props.open) this.props.onOpen();
+                }}
                 ref={this.menuRef}
             >
                 {this.props.children}
@@ -67,6 +77,7 @@ class MenuLabel extends React.Component {
 
 MenuLabel.propTypes = {
     children: PropTypes.node,
+    id: PropTypes.string,
     open: PropTypes.bool,
     onOpen: PropTypes.func,
     onClose: PropTypes.func

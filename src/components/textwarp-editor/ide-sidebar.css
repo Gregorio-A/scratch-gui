@@ -10,6 +10,43 @@
     border-right: 1px solid var(--ui-black-transparent);
 }
 
+.sidebar-header {
+    min-height: 2.75rem;
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0.4rem;
+    padding-left: 0.65rem;
+    border-bottom: 1px solid var(--ui-black-transparent);
+}
+
+.sidebar-header strong {
+    font-size: 0.72rem;
+}
+
+.sidebar-header span {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: var(--text-primary-transparent);
+    font-family: monospace;
+    font-size: 0.62rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebar-header button {
+    width: 2.75rem;
+    height: 2.75rem;
+    display: grid;
+    flex: none;
+    place-items: center;
+    color: var(--text-primary);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
 .overlay {
     position: absolute;
     z-index: 12;
@@ -33,7 +70,8 @@
 
 .tabs button {
     min-width: 0;
-    padding: 0.55rem 0.1rem;
+    min-height: 2.75rem;
+    padding: 0.55rem 0.2rem;
     overflow: hidden;
     color: var(--text-primary-transparent);
     background: transparent;
@@ -83,7 +121,7 @@
 .history button,
 .results button {
     min-width: 0;
-    min-height: 2rem;
+    min-height: 2.75rem;
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -152,7 +190,7 @@
 }
 
 .resources .insert-button {
-    min-height: 2rem;
+    min-height: 2.75rem;
     justify-content: center;
     padding: 0;
     color: var(--motion-primary);
@@ -201,6 +239,7 @@
 
 .replace-button {
     margin: 0 0.65rem 0.45rem;
+    min-height: 2.75rem;
     padding: 0.4rem;
     color: white;
     background: var(--motion-primary);
@@ -233,6 +272,26 @@
 .history button {
     display: grid;
     grid-template-columns: auto 1fr auto;
+}
+
+.show-more {
+    width: calc(100% - 1.3rem);
+    min-height: 2.75rem;
+    margin: 0.35rem 0.65rem;
+    justify-content: center;
+    color: var(--motion-primary);
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.35rem;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.list-count {
+    display: block;
+    padding: 0.25rem 0.65rem 0.5rem;
+    color: var(--text-primary-transparent);
+    font-size: 0.58rem;
 }
 
 @media (max-width: 900px) {
