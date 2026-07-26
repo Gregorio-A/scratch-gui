@@ -2,19 +2,8 @@
 
 const {blockRegistry, eventRegistry} = require('./block-registry');
 const {dynamicMetadata} = require('./extension-catalog');
+const {assignSourceNames, sanitizeIdentifier} = require('./identifier');
 const {decodeArgumentTypes, decodeParameterIdType, decodeReturnType} = require('./procedure-metadata');
-
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-const sanitizeIdentifier = (value, fallback = 'symbol') => {
-    const normalized = String(value || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^A-Za-z0-9_]+/g, '_')
-        .replace(/^([0-9])/, '_$1')
-        .replace(/^_+|_+$/g, '');
-    return IDENTIFIER.test(normalized) ? normalized : fallback;
-};
 
 const quote = value => JSON.stringify(String(value));
 
@@ -107,7 +96,6 @@ const decompileTarget = (target, options = {}) => {
         return candidate;
     };
 
-    const usedVariables = new Set();
     const targetVariables = Object.values(target.variables || {}).filter(variable => variable.type !== 'broadcast_msg');
     const runtime = target.runtime;
     const stageTarget = !target.isStage && (options.stageTarget || runtime && (
@@ -117,15 +105,14 @@ const decompileTarget = (target, options = {}) => {
     const stageVariables = stageTarget ? Object.values(stageTarget.variables || {}).filter(variable =>
         variable.type !== 'broadcast_msg' && !targetVariables.some(local => local.id === variable.id)
     ) : [];
-    const registerVariable = (variable, index) => {
+    const registerVariable = variable => {
         if (variable.type === 'broadcast_msg') return;
-        const sourceName = uniqueName(variable.name, `value_${index + 1}`, usedVariables);
+        const sourceName = variable.sourceName;
         variableNames.set(variable.id, sourceName);
         const fallbackKey = `${variable.type}:${variable.name}`;
         if (!variableNames.has(fallbackKey)) variableNames.set(fallbackKey, sourceName);
     };
-    targetVariables.forEach(registerVariable);
-    stageVariables.forEach((variable, index) => registerVariable(variable, targetVariables.length + index));
+    assignSourceNames(targetVariables.concat(stageVariables)).forEach(registerVariable);
 
     const allBlocks = target.blocks && target.blocks._blocks ? Object.values(target.blocks._blocks) : [];
 
@@ -322,8 +309,8 @@ const decompileTarget = (target, options = {}) => {
         while (block && !visited.has(block.id)) {
             visited.add(block.id);
             let line = null;
-            let nested = [];
-            let alternate = [];
+            let nested = null;
+            let alternate = null;
             let extraBranches = [];
             let blockSupported = true;
 
@@ -354,7 +341,9 @@ const decompileTarget = (target, options = {}) => {
                 if (block.opcode === 'control_if_else') {
                     alternate = sequence(block.inputs.SUBSTACK2 && block.inputs.SUBSTACK2.block, indent + 4, visited);
                 }
-                blockSupported = value.supported && nested.supported && (!alternate.length || alternate.supported);
+                blockSupported = value.supported && nested.supported && (
+                    block.opcode !== 'control_if_else' || alternate.supported
+                );
             } else if (block.opcode === 'procedures_return') {
                 const value = expression(activeInputBlock(target, block, 'VALUE'));
                 line = `${prefix}return ${value.text}`;
@@ -404,16 +393,19 @@ const decompileTarget = (target, options = {}) => {
                 blockSupported = false;
             }
             lines.push({text: line, block});
-            if (Array.isArray(nested)) lines.push(...nested);
-            else lines.push(...nested.lines);
+            if (nested) {
+                if (nested.length) lines.push(...nested);
+                else lines.push({text: `${' '.repeat(indent + 4)}pass`, block: null});
+            }
             if (block.opcode === 'control_if_else') {
                 lines.push({text: `${prefix}else:`, block: null});
-                if (Array.isArray(alternate)) lines.push(...alternate);
-                else lines.push(...alternate.lines);
+                if (alternate && alternate.length) lines.push(...alternate);
+                else lines.push({text: `${' '.repeat(indent + 4)}pass`, block: null});
             }
             extraBranches.forEach(branch => {
                 lines.push({text: `${prefix}branch ${branch.index}:`, block: null});
-                lines.push(...branch.body.lines);
+                if (branch.body.length) lines.push(...branch.body);
+                else lines.push({text: `${' '.repeat(indent + 4)}pass`, block: null});
             });
             supported = supported && blockSupported;
             block = getBlock(target, block.next);
@@ -438,6 +430,50 @@ const decompileTarget = (target, options = {}) => {
         if (!event) return null;
         const args = decompileArguments(block, event.metadata, new Set());
         return {text: `on ${event.name}${args.values.length ? `(${args.values.join(', ')})` : ''}:`, supported: args.supported};
+    };
+
+    const isLooseCommandRoot = block => {
+        if (!block) return false;
+        if ([
+            'data_setvariableto',
+            'data_changevariableby',
+            'control_repeat',
+            'control_repeat_until',
+            'control_while',
+            'control_forever',
+            'control_if',
+            'control_if_else',
+            'control_stop',
+            'procedures_call'
+        ].includes(block.opcode)) return true;
+        const registered = reverseCore[block.opcode];
+        const extension = extensionForBlock(block);
+        const metadata = registered && registered.metadata || extension;
+        return Boolean(metadata && ['command', 'conditional', 'loop'].includes(metadata.kind));
+    };
+
+    const isLooseReporterRoot = block => {
+        if (!block) return false;
+        if (
+            /^math_(?:number|positive_number|whole_number|integer|angle)$/.test(block.opcode) ||
+            [
+                'text',
+                'colour_picker',
+                'data_listindexall',
+                'data_listindexrandom',
+                'data_variable',
+                'data_listcontents',
+                'argument_reporter_string_number',
+                'argument_reporter_boolean',
+                'operator_not'
+            ].includes(block.opcode) ||
+            Boolean(operatorByOpcode[block.opcode])
+        ) return true;
+        if (block.opcode === 'procedures_call') return Boolean(block.mutation && block.mutation.return);
+        const registered = reverseCore[block.opcode];
+        const extension = extensionForBlock(block);
+        const metadata = registered && registered.metadata || extension;
+        return Boolean(metadata && ['reporter', 'boolean'].includes(metadata.kind));
     };
 
     emit(target.isStage ? 'stage' : `actor ${target.getName ? target.getName() : target.sprite && target.sprite.name || 'Actor'}`);
@@ -475,6 +511,24 @@ const decompileTarget = (target, options = {}) => {
         }
         const header = eventHeader(root);
         if (!header) {
+            if (isLooseReporterRoot(root)) {
+                const reporter = expression(root);
+                if (reporter.supported) {
+                    emit('');
+                    emit(`reporter ${reporter.text}`, root);
+                    importedRootIds.push(root.id);
+                    return;
+                }
+            }
+            if (isLooseCommandRoot(root)) {
+                emit('');
+                emit('stack:', root);
+                const body = sequence(root.id, 4);
+                body.lines.forEach(item => emit(item.text, item.block));
+                if (body.supported) importedRootIds.push(root.id);
+                else unsupportedRootIds.push(root.id);
+                return;
+            }
             unsupportedOpcodes.add(root.opcode);
             emit('');
             emit(`# Stack não importado: bloco indisponível ${root.opcode}`, root);

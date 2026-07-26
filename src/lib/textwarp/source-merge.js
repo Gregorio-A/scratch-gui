@@ -18,7 +18,7 @@ const unitRanges = (source, compilation) => {
     const ranges = new Map();
     if (!compilation || !compilation.graph) return {lines, ranges};
     compilation.graph.units.forEach(unit => {
-        const location = compilation.graph.sourceMap[unit.rootId];
+        const location = unit.location || compilation.graph.sourceMap[unit.rootId];
         if (!location || !Number.isInteger(location.startLine)) return;
         const start = location.startLine - 1;
         let end = start;

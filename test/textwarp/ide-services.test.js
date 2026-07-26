@@ -202,6 +202,9 @@ test('completion is context-aware, deduplicated and range-safe', () => {
     );
     assert.equal(getCompletions('actor Cat\n\n', 3, 1, context)
         .some(item => item.label === 'global variable'), false);
+    const looseBlocks = getCompletions('actor Cat\n\n', 3, 1, context);
+    assert.ok(looseBlocks.some(item => item.label === 'stack'));
+    assert.ok(looseBlocks.some(item => item.label === 'reporter'));
     assert.ok(getCompletions('stage\n\n', 3, 1, Object.assign({}, context, {isStage: true}))
         .some(item => item.label === 'global variable'));
     const resources = getCompletions(
@@ -271,6 +274,10 @@ test('formatter is idempotent and ignores colons inside strings and comments', (
     );
     const incompleteString = 'actor Cat\non green_flag:\n    say("unfinished)\n';
     assert.equal(formatText(incompleteString), incompleteString);
+    assert.equal(
+        formatText('actor Cat\n stack:\n  move(10)\n reporter x_position()'),
+        'actor Cat\nstack:\n    move(10)\nreporter x_position()\n'
+    );
 });
 
 test('diagnostic suggestions follow the active interface language', () => {

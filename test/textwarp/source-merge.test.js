@@ -106,3 +106,23 @@ on green_flag:
     assert.match(result.source, /variable lives = 3/);
     assert.match(result.source, /move\(20\)  # texto/);
 });
+
+test('merges a loose stack from its top-level header instead of orphaning stack syntax', () => {
+    const base = `actor Player
+stack:
+    move(10)
+reporter x_position()`;
+    const visualSource = base.replace('move(10)', 'move(20)');
+    const result = mergeVisualSource({
+        baseSource: base,
+        textSource: base,
+        visualSource,
+        baseCompilation: compile(base),
+        textCompilation: compile(base),
+        visualCompilation: compile(visualSource)
+    });
+    assert.deepEqual(result.conflicts, []);
+    assert.equal((result.source.match(/^stack:$/gm) || []).length, 1);
+    assert.match(result.source, /stack:\n    move\(20\)/);
+    assert.match(result.source, /reporter x_position\(\)/);
+});

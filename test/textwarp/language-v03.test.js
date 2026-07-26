@@ -314,6 +314,168 @@ on green_flag:
     expectedOpcodes.forEach(opcode => assert.ok(recompiledOpcodes.has(opcode), `round-trip lost ${opcode}`));
 });
 
+test('round-trips Scratch variable names with spaces and symbols plus empty branches', () => {
+    const externalVariables = [
+        {id: 'local-gear-x', name: 'Gear X', variableType: 'list', owner: 'target'},
+        {id: 'stage-gear-speed', name: 'Gear Speed °/s', variableType: 'list', owner: 'stage'}
+    ];
+    const source = `actor Player
+list Gear_X = []
+on green_flag:
+    if (list_length(Gear_Speed_s) > 0):
+    else:
+        list_add(Gear_X, list_item(Gear_Speed_s, 1))`;
+    const compilation = compileText(source, Object.assign({}, actorOptions, {variables: externalVariables}));
+    assert.equal(compilation.success, true, JSON.stringify(compilation.diagnostics));
+    assert.ok(compilation.diagnostics.some(item => item.code === 'empty-block' && item.severity === 'warning'));
+    assert.ok(compilation.graph.declarations.some(variable =>
+        variable.id === 'local-gear-x' && variable.name === 'Gear X'
+    ));
+
+    const stage = {
+        id: actorOptions.stageId,
+        isStage: true,
+        variables: {
+            'stage-gear-speed': {
+                id: 'stage-gear-speed',
+                name: 'Gear Speed °/s',
+                type: 'list',
+                value: [90]
+            }
+        }
+    };
+    const target = {
+        id: actorOptions.targetId,
+        isStage: false,
+        variables: {
+            'local-gear-x': {id: 'local-gear-x', name: 'Gear X', type: 'list', value: []}
+        },
+        runtime: {getTargetForStage: () => stage},
+        getName: () => 'Player',
+        blocks: {
+            _blocks: compilation.graph.blocks,
+            getBlock: id => compilation.graph.blocks[id]
+        }
+    };
+    const decompiled = decompileTarget(target);
+    assert.equal(decompiled.success, true, JSON.stringify(decompiled));
+    assert.match(decompiled.source, /list Gear_X = \[\]/);
+    assert.match(decompiled.source, /list_length\(Gear_Speed_s\)/);
+    assert.match(decompiled.source, /if .*:\n        pass\n    else:/);
+
+    const recompiled = compileText(decompiled.source, Object.assign({}, actorOptions, {variables: externalVariables}));
+    assert.equal(recompiled.success, true, JSON.stringify(recompiled.diagnostics));
+    assert.equal(recompiled.diagnostics.some(item => item.code === 'unknown-variable'), false);
+    const listFields = Object.values(recompiled.graph.blocks)
+        .flatMap(block => Object.values(block.fields || {}))
+        .filter(field => ['local-gear-x', 'stage-gear-speed'].includes(field.id));
+    assert.ok(listFields.some(field => field.id === 'local-gear-x' && field.value === 'Gear X'));
+    assert.ok(listFields.some(field => field.id === 'stage-gear-speed' && field.value === 'Gear Speed °/s'));
+});
+
+test('round-trips executable command stacks that are not attached to an event', () => {
+    const source = `actor Player
+stack:
+    go_to(10, 20)
+    say("loose stack")`;
+    const compilation = compileText(source, actorOptions);
+    assert.equal(compilation.success, true, JSON.stringify(compilation.diagnostics));
+    const root = compilation.graph.blocks[compilation.graph.rootIds[0]];
+    assert.equal(root.opcode, 'motion_gotoxy');
+    assert.equal(root.topLevel, true);
+    assert.equal(compilation.graph.blocks[root.next].opcode, 'looks_say');
+
+    const target = {
+        id: actorOptions.targetId,
+        isStage: false,
+        variables: {},
+        getName: () => 'Player',
+        blocks: {
+            _blocks: compilation.graph.blocks,
+            getBlock: id => compilation.graph.blocks[id]
+        }
+    };
+    const decompiled = decompileTarget(target);
+    assert.equal(decompiled.success, true, JSON.stringify(decompiled));
+    assert.match(decompiled.source, /stack:\n    go_to\(10, 20\)\n    say\("loose stack"\)/);
+    assert.doesNotMatch(decompiled.source, /Stack não importado/);
+    const recompiled = compileText(decompiled.source, actorOptions);
+    assert.equal(recompiled.success, true, JSON.stringify(recompiled.diagnostics));
+    assert.deepEqual(
+        recompiled.graph.rootIds.map(id => recompiled.graph.blocks[id].opcode),
+        ['motion_gotoxy']
+    );
+});
+
+test('preserves an if/else block when both visual branches are empty', () => {
+    const source = `actor Player
+stack:
+    if true:
+        pass
+    else:
+        pass`;
+    const compilation = compileText(source, actorOptions);
+    assert.equal(compilation.success, true, JSON.stringify(compilation.diagnostics));
+    const root = compilation.graph.blocks[compilation.graph.rootIds[0]];
+    assert.equal(root.opcode, 'control_if_else');
+    assert.equal(root.inputs.SUBSTACK.block, null);
+    assert.equal(root.inputs.SUBSTACK2.block, null);
+
+    const target = {
+        id: actorOptions.targetId,
+        isStage: false,
+        variables: {},
+        getName: () => 'Player',
+        blocks: {
+            _blocks: compilation.graph.blocks,
+            getBlock: id => compilation.graph.blocks[id]
+        }
+    };
+    const decompiled = decompileTarget(target);
+    assert.match(decompiled.source, /if .*:\n        pass\n    else:\n        pass/);
+    const recompiled = compileText(decompiled.source, actorOptions);
+    assert.equal(recompiled.success, true, JSON.stringify(recompiled.diagnostics));
+    assert.equal(recompiled.graph.blocks[recompiled.graph.rootIds[0]].opcode, 'control_if_else');
+});
+
+test('round-trips standalone reporter blocks instead of marking them as unavailable', () => {
+    const externalVariables = [
+        {id: 'gear-x', name: 'Gear X', variableType: '', owner: 'target'}
+    ];
+    const source = `actor Player
+reporter (Gear_X * 2)`;
+    const compilation = compileText(source, Object.assign({}, actorOptions, {variables: externalVariables}));
+    assert.equal(compilation.success, true, JSON.stringify(compilation.diagnostics));
+    const root = compilation.graph.blocks[compilation.graph.rootIds[0]];
+    assert.equal(root.opcode, 'operator_multiply');
+    assert.equal(root.topLevel, true);
+    assert.equal(root.shadow, false);
+
+    const target = {
+        id: actorOptions.targetId,
+        isStage: false,
+        variables: {
+            'gear-x': {id: 'gear-x', name: 'Gear X', type: '', value: 10}
+        },
+        getName: () => 'Player',
+        blocks: {
+            _blocks: compilation.graph.blocks,
+            getBlock: id => compilation.graph.blocks[id]
+        }
+    };
+    const decompiled = decompileTarget(target);
+    assert.equal(decompiled.success, true, JSON.stringify(decompiled));
+    assert.match(decompiled.source, /reporter \(Gear_X \* 2\)/);
+    assert.doesNotMatch(decompiled.source, /Stack não importado/);
+
+    const recompiled = compileText(decompiled.source, Object.assign({}, actorOptions, {variables: externalVariables}));
+    assert.equal(recompiled.success, true, JSON.stringify(recompiled.diagnostics));
+    const variableField = Object.values(recompiled.graph.blocks)
+        .flatMap(block => Object.values(block.fields || {}))
+        .find(field => field.id === 'gear-x');
+    assert.equal(variableField.value, 'Gear X');
+});
+
 test('keeps JIT enabled for observation and switches to interpreter only for pausing', () => {
     const listeners = {};
     const runtime = {

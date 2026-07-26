@@ -3,7 +3,8 @@
 const JSZip = require('@turbowarp/jszip');
 
 const {compileText} = require('./compiler');
-const {decompileTarget, sanitizeIdentifier} = require('./decompiler');
+const {decompileTarget} = require('./decompiler');
+const {sanitizeIdentifier} = require('./identifier');
 const {buildExtensionCatalog} = require('./extension-catalog');
 const {applyCompilation, readSourceRecord, writeSourceRecord} = require('./vm-adapter');
 

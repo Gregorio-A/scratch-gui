@@ -150,7 +150,7 @@ const configureLanguage = monaco => {
         keywords: [
             'actor', 'stage', 'on', 'global', 'variable', 'list', 'procedure',
             'if', 'else', 'repeat', 'repeat_until', 'while', 'forever',
-            'return', 'warp', 'branch', 'pass', 'any', 'number', 'string', 'boolean',
+            'return', 'warp', 'branch', 'pass', 'stack', 'reporter', 'any', 'number', 'string', 'boolean',
             'and', 'or', 'not', 'true', 'false'
         ].concat(Object.keys(eventRegistry)),
         commands: Object.keys(blockRegistry).concat(Object.keys(operatorRegistry)),

@@ -278,6 +278,8 @@ const parseText = source => {
     const declarations = [];
     const procedures = [];
     const scripts = [];
+    const stacks = [];
+    const reporters = [];
 
     if (tokens.length > 0 && tokens[0].indent === 0) {
         const first = tokens[0];
@@ -293,11 +295,11 @@ const parseText = source => {
 
     const requireBody = (nodeName, token, nested) => {
         if (nested.statements.length === 0) diagnostics.push(diagnostic(
-            `${nodeName} precisa de pelo menos um comando indentado.`,
+            `${nodeName} está vazio; o ramo será preservado sem comandos.`,
             token.line,
             token.column,
             token.content.length,
-            'error',
+            'warning',
             'empty-block'
         ));
     };
@@ -330,14 +332,23 @@ const parseText = source => {
                 requireBody('if', token, consequent);
                 index = consequent.cursor;
                 let alternate = [];
+                let hasAlternate = false;
                 if (index < tokens.length && tokens[index].indent === expectedIndent && /^else\s*:\s*$/.test(tokens[index].content)) {
                     const elseToken = tokens[index];
                     const parsedElse = parseBlock(index + 1, expectedIndent);
                     requireBody('else', elseToken, parsedElse);
                     alternate = parsedElse.statements;
+                    hasAlternate = true;
                     index = parsedElse.cursor;
                 }
-                statements.push({type: 'IfStatement', condition, consequent: consequent.statements, alternate, location: token});
+                statements.push({
+                    type: 'IfStatement',
+                    condition,
+                    consequent: consequent.statements,
+                    alternate,
+                    hasAlternate,
+                    location: token
+                });
                 continue;
             }
 
@@ -561,6 +572,30 @@ const parseText = source => {
             continue;
         }
 
+        if (/^stack\s*:\s*$/.test(token.content)) {
+            const nested = parseBlock(cursor + 1, 0);
+            requireBody('stack', token, nested);
+            stacks.push({type: 'LooseStack', body: nested.statements, location: token});
+            cursor = nested.cursor;
+            continue;
+        }
+
+        const reporterMatch = token.content.match(/^reporter\s+(.+)$/);
+        if (reporterMatch) {
+            reporters.push({
+                type: 'LooseReporter',
+                expression: parseExpression(
+                    reporterMatch[1],
+                    token,
+                    diagnostics,
+                    token.content.indexOf(reporterMatch[1])
+                ),
+                location: token
+            });
+            cursor++;
+            continue;
+        }
+
         diagnostics.push(diagnostic(
             `Declaração desconhecida: ${token.content}.`,
             token.line,
@@ -573,7 +608,7 @@ const parseText = source => {
     }
 
     return {
-        ast: {type: 'ActorModule', declaration, declarations, procedures, scripts},
+        ast: {type: 'ActorModule', declaration, declarations, procedures, scripts, stacks, reporters},
         diagnostics
     };
 };

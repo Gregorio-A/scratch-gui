@@ -5,8 +5,8 @@ const {parseText} = require('./parser');
 
 const KEYWORDS = new Set([
     'actor', 'stage', 'on', 'global', 'variable', 'list', 'procedure', 'if', 'else', 'repeat',
-    'repeat_until', 'while', 'forever', 'return', 'warp', 'branch', 'pass', 'any', 'number',
-    'string', 'boolean', 'and', 'or', 'not', 'true', 'false'
+    'repeat_until', 'while', 'forever', 'return', 'warp', 'branch', 'pass', 'stack', 'reporter',
+    'any', 'number', 'string', 'boolean', 'and', 'or', 'not', 'true', 'false'
 ]);
 
 const INDEX_CACHE_LIMIT = 80;
@@ -181,7 +181,7 @@ const createDocumentIndex = (source, modelKey = 'target') => {
     const ast = parsed.ast;
     const symbols = [];
     const topLevelLines = []
-        .concat(ast.declarations, ast.procedures, ast.scripts)
+        .concat(ast.declarations, ast.procedures, ast.scripts, ast.stacks || [], ast.reporters || [])
         .map(node => node.location.line)
         .concat(ast.declaration ? [ast.declaration.location.line] : [])
         .sort((left, right) => left - right);
@@ -818,6 +818,8 @@ const getCompletions = (source, line, column, context = {}) => {
         const declarations = [
             ['variable', 'variable ${1:name} = ${2:0}', 'Declare a variable.'],
             ['list', 'list ${1:items} = [${2}]', 'Declare a list.'],
+            ['stack', 'stack:\n    ${1:pass}', 'Preserve a command stack without an event.'],
+            ['reporter', 'reporter ${1:expression}', 'Preserve a disconnected reporter block.'],
             ['procedure', 'procedure ${1:name}(${2:value: any}):\n    ${3:pass}', 'Declare a procedure.'],
             [
                 'procedure with return',
@@ -1081,7 +1083,8 @@ const formatText = source => {
         const trimmed = rawLine.trim();
         if (!trimmed) return '';
         const code = codeBeforeComment(trimmed);
-        const topLevel = /^(?:actor|stage|global\s+(?:variable|list)|variable|list|procedure|on)\b/.test(code);
+        const topLevel = /^(?:actor|stage|global\s+(?:variable|list)|variable|list|procedure|on|stack|reporter)\b/
+            .test(code);
         const originalIndent = rawLine.match(/^[ \t]*/)[0]
             .replace(/\t/g, '    ')
             .length;
@@ -1124,7 +1127,7 @@ const formatText = source => {
         const rendered = `${' '.repeat(level * 4)}${trimmed}`;
         if (!branch && /:\s*$/.test(code)) {
             const kind = /^if\b/.test(code) ? 'if' :
-                /^(?:actor|stage|procedure|on|repeat|repeat_until|while|forever)\b/.test(code) ?
+                /^(?:actor|stage|procedure|on|stack|repeat|repeat_until|while|forever)\b/.test(code) ?
                     'block' : 'flow';
             stack.push({kind, level, originalIndent});
         }

@@ -7,6 +7,7 @@ const {
     operatorRegistry
 } = require('./block-registry');
 const {resolveDynamicMetadata} = require('./extension-catalog');
+const {assignSourceNames, isIdentifier} = require('./identifier');
 const {parseText} = require('./parser');
 const {encodeParameterId, encodeProcedureTypes} = require('./procedure-metadata');
 
@@ -63,7 +64,7 @@ const analyzeAndBuildIR = (ast, options = {}) => {
     const stageId = options.stageId || (isStage ? targetId : 'stage');
     const extensionCatalog = options.extensionCatalog || {};
     const availableOpcodes = options.availableOpcodes ? new Set(options.availableOpcodes) : null;
-    const externalVariables = Array.isArray(options.variables) ? options.variables : [];
+    const externalVariables = assignSourceNames(options.variables);
     const externalBroadcasts = Array.isArray(options.broadcasts) ? options.broadcasts : [];
     const projectResources = Array.isArray(options.resources) ? options.resources : null;
     const declarations = [];
@@ -94,10 +95,14 @@ const analyzeAndBuildIR = (ast, options = {}) => {
         }
     }
 
-    const addSymbol = symbol => {
-        if (!symbols.has(symbol.name)) symbols.set(symbol.name, symbol);
+    const addSymbol = (symbol, lookupName = symbol.name) => {
+        if (!symbols.has(lookupName)) symbols.set(lookupName, symbol);
     };
-    externalVariables.forEach(variable => addSymbol(Object.assign({generated: false}, variable)));
+    externalVariables.forEach(variable => {
+        const symbol = Object.assign({generated: false}, variable);
+        if (isIdentifier(variable.name)) addSymbol(symbol);
+        addSymbol(symbol, variable.sourceName);
+    });
 
     const constantValue = (expression, expectedList, location) => {
         if (expectedList) {
@@ -139,18 +144,20 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             node.location,
             'global-declaration-outside-stage'
         ));
-        if (declarations.some(item => item.name === node.name)) {
+        if (declarations.some(item => (item.sourceName || item.name) === node.name)) {
             diagnostics.push(semanticDiagnostic(`O nome "${node.name}" já foi declarado.`, node.location, 'duplicate-variable'));
             return;
         }
         const owner = isStage || node.global ? 'stage' : 'target';
         const existing = externalVariables.find(variable =>
-            variable.name === node.name && variable.variableType === variableType &&
+            (variable.name === node.name || variable.sourceName === node.name) &&
+            variable.variableType === variableType &&
             (owner !== 'target' || variable.owner !== 'stage')
         );
         const symbol = {
             id: existing ? existing.id : stableId(owner === 'stage' ? stageId : targetId, `variable:${variableType}:${node.name}`),
-            name: node.name,
+            name: existing ? existing.name : node.name,
+            sourceName: node.name,
             variableType,
             owner,
             generated: existing ? Boolean(existing.generated) : true,
@@ -688,10 +695,11 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             return {type: 'Return', opcode: 'procedures_return', value, location: statement.location};
         }
         if (statement.type === 'IfStatement') {
+            const hasAlternate = Boolean(statement.hasAlternate || statement.alternate.length);
             return {
                 type: 'Control',
-                name: statement.alternate.length ? 'if_else' : 'if',
-                opcode: statement.alternate.length ? controlRegistry.if_else.opcode : controlRegistry.if.opcode,
+                name: hasAlternate ? 'if_else' : 'if',
+                opcode: hasAlternate ? controlRegistry.if_else.opcode : controlRegistry.if.opcode,
                 condition: convertExpression(statement.condition, parameters),
                 body: convertStatements(statement.consequent, parameters, procedureContext).filter(Boolean),
                 alternate: convertStatements(statement.alternate, parameters, procedureContext).filter(Boolean),
@@ -766,6 +774,14 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             location: script.location
         };
     });
+    const stacks = (ast.stacks || []).map(stack => ({
+        statements: convertStatements(stack.body).filter(Boolean),
+        location: stack.location
+    }));
+    const reporters = (ast.reporters || []).map(reporter => ({
+        expression: convertExpression(reporter.expression),
+        location: reporter.location
+    }));
 
     const ir = {
         formatVersion: 3,
@@ -775,7 +791,9 @@ const analyzeAndBuildIR = (ast, options = {}) => {
         broadcasts: Array.from(broadcasts.values()),
         resourceBindings,
         procedures,
-        scripts
+        scripts,
+        stacks,
+        reporters
     };
     return {ir, diagnostics};
 };
@@ -799,16 +817,19 @@ const generateGraph = ir => {
     const targetId = ir.target.id;
     let currentUnit = null;
 
+    const sourceLocation = location => ({
+        actorId: targetId,
+        file: ir.target.isStage ? 'stage.tw' : `${ir.target.name}.tw`,
+        startLine: location.line,
+        startColumn: location.column,
+        endLine: location.line,
+        endColumn: location.column + Math.max(1, location.content.length)
+    });
+
     const addSourceMap = (blockId, location) => {
-        sourceMap[blockId] = {
-            blockId,
-            actorId: targetId,
-            file: ir.target.isStage ? 'stage.tw' : `${ir.target.name}.tw`,
-            startLine: location.line,
-            startColumn: location.column,
-            endLine: location.line,
-            endColumn: location.column + Math.max(1, location.content.length)
-        };
+        sourceMap[blockId] = Object.assign({
+            blockId
+        }, sourceLocation(location));
     };
 
     const addBlock = (block, location) => {
@@ -1045,7 +1066,7 @@ const generateGraph = ir => {
         return `${statement.type}:${statement.name || statement.opcode}`;
     };
 
-    const compileSequence = (statements, physicalParentId, logicalPath) => {
+    const compileSequence = (statements, physicalParentId, logicalPath, topLevel = false) => {
         const occurrences = Object.create(null);
         let firstId = null;
         let previousId = null;
@@ -1067,10 +1088,16 @@ const generateGraph = ir => {
                 addBlock(block, statement.location);
                 applyProcedureArguments(block, statement.procedure, statement.arguments, path, statement.location);
             } else if (statement.type === 'RawCommand') {
-                const rawId = materializeRawBlock(statement.payload, parentId, path, statement.location);
+                const rawId = materializeRawBlock(
+                    statement.payload,
+                    parentId,
+                    path,
+                    statement.location,
+                    topLevel && !previousId
+                );
                 block = blocks[rawId];
             } else {
-                block = makeBlock(id, statement.opcode, parentId);
+                block = makeBlock(id, statement.opcode, parentId, topLevel && !previousId);
                 addBlock(block, statement.location);
                 if (statement.type === 'Call') {
                     applyArguments(block, statement.metadata, statement.arguments, path, statement.location);
@@ -1137,8 +1164,16 @@ const generateGraph = ir => {
         return {firstId, lastId: previousId};
     };
 
-    const beginUnit = (unitId, kind, name, hash) => {
-        currentUnit = {unitId, kind, name, hash, rootId: null, blockIds: []};
+    const beginUnit = (unitId, kind, name, hash, location) => {
+        currentUnit = {
+            unitId,
+            kind,
+            name,
+            hash,
+            location: location ? sourceLocation(location) : null,
+            rootId: null,
+            blockIds: []
+        };
         units.push(currentUnit);
     };
     const endUnit = rootId => {
@@ -1155,7 +1190,7 @@ const generateGraph = ir => {
         eventOccurrences[key] = occurrence + 1;
         const unitId = `script:${key}#${occurrence}`;
         const path = `unit/${unitId}`;
-        beginUnit(unitId, 'script', key, unitHash(script));
+        beginUnit(unitId, 'script', key, unitHash(script), script.location);
         const id = stableId(targetId, `${path}/root`);
         let eventBlock;
         if (script.event.rawPayload) {
@@ -1173,10 +1208,45 @@ const generateGraph = ir => {
         endUnit(id);
     });
 
+    (ir.stacks || []).forEach((stack, stackIndex) => {
+        const unitId = `stack:#${stackIndex}`;
+        const path = `unit/${unitId}`;
+        beginUnit(unitId, 'stack', `stack ${stackIndex + 1}`, unitHash(stack), stack.location);
+        const body = compileSequence(stack.statements, null, `${path}/body`, true);
+        if (!body.firstId) {
+            currentUnit = null;
+            units.pop();
+            return;
+        }
+        blocks[body.firstId].x = 64 + ((stackIndex % 3) * 340);
+        blocks[body.firstId].y = 680 + (Math.floor(stackIndex / 3) * 260);
+        endUnit(body.firstId);
+    });
+
+    (ir.reporters || []).forEach((reporter, reporterIndex) => {
+        const unitId = `reporter:#${reporterIndex}`;
+        const path = `unit/${unitId}`;
+        beginUnit(
+            unitId,
+            'reporter',
+            `reporter ${reporterIndex + 1}`,
+            unitHash(reporter),
+            reporter.location
+        );
+        const reporterId = compileExpression(reporter.expression, null, `${path}/root`);
+        const block = blocks[reporterId];
+        block.parent = null;
+        block.topLevel = true;
+        block.shadow = false;
+        block.x = 64 + ((reporterIndex % 3) * 340);
+        block.y = 940 + (Math.floor(reporterIndex / 3) * 180);
+        endUnit(reporterId);
+    });
+
     ir.procedures.forEach((procedure, procedureIndex) => {
         const unitId = `procedure:${procedure.name}`;
         const path = `unit/${unitId}`;
-        beginUnit(unitId, 'procedure', procedure.name, unitHash(procedure));
+        beginUnit(unitId, 'procedure', procedure.name, unitHash(procedure), procedure.location);
         const definitionId = stableId(targetId, `${path}/definition`);
         const prototypeId = stableId(targetId, `${path}/prototype`);
         const definition = makeBlock(definitionId, 'procedures_definition', null, true);
