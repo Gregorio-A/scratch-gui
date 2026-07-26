@@ -585,9 +585,12 @@ class TextEditor extends React.Component {
     }
 
     closeSidebar () {
-        this.setState({sidebarVisible: false});
+        this.setState({sidebarVisible: false}, () => {
+            if (this.projectsButton) {
+                this.projectsButton.focus();
+            }
+        });
         this.persistUiState({sidebarVisible: false});
-        if (this.projectsButton) setTimeout(() => this.projectsButton.focus(), 0);
     }
 
     openBottomPanel (activeBottomPanel) {
