@@ -25,6 +25,7 @@ class MonacoEditor extends React.Component {
         this.modelKeysByUri = new Map();
         this.modelStates = new Map();
         this.changeSubscription = null;
+        this.cursorSubscription = null;
         this.mouseSubscription = null;
         this.modelChangeSubscription = null;
         this.editorOpenerDisposable = null;
@@ -102,6 +103,14 @@ class MonacoEditor extends React.Component {
                 const key = activeModel && this.modelKeysByUri.get(String(activeModel.uri));
                 if (key && key !== this.props.modelKey && this.props.onOpenModel) this.props.onOpenModel(key);
                 this.updateAdaptiveOptions();
+            });
+            this.cursorSubscription = this.editor.onDidChangeCursorPosition(event => {
+                if (this.props.onCursorPositionChange) {
+                    this.props.onCursorPositionChange({
+                        column: event.position.column,
+                        line: event.position.lineNumber
+                    });
+                }
             });
             if (typeof window !== 'undefined' && window.ResizeObserver) {
                 this.resizeObserver = new window.ResizeObserver(() => this.updateAdaptiveOptions());
@@ -218,6 +227,7 @@ class MonacoEditor extends React.Component {
         this.mounted = false;
         this.initializationId++;
         if (this.changeSubscription) this.changeSubscription.dispose();
+        if (this.cursorSubscription) this.cursorSubscription.dispose();
         if (this.mouseSubscription) this.mouseSubscription.dispose();
         if (this.modelChangeSubscription) this.modelChangeSubscription.dispose();
         if (this.editorOpenerDisposable) this.editorOpenerDisposable.dispose();
@@ -487,6 +497,12 @@ class MonacoEditor extends React.Component {
         const action = this.editor.getAction('editor.action.quickCommand');
         if (action) action.run();
     }
+    formatDocument () {
+        if (!this.editor) return;
+        this.editor.focus();
+        const action = this.editor.getAction('editor.action.formatDocument');
+        if (action) action.run();
+    }
     updateMarkers () {
         if (!this.editor || !this.monaco) return;
         const model = this.editor.getModel();
@@ -673,6 +689,7 @@ MonacoEditor.propTypes = {
     onInvalidShortcut: PropTypes.func,
     onNavigateResource: PropTypes.func,
     onCopyDiagnosticReport: PropTypes.func,
+    onCursorPositionChange: PropTypes.func,
     onDownloadDiagnosticReport: PropTypes.func,
     onLoadError: PropTypes.func,
     onOpenModel: PropTypes.func,

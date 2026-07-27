@@ -150,7 +150,9 @@ export const setPaused = (_paused) => {
 };
 
 export const onPauseChanged = (listener) => {
-  eventTarget.addEventListener("change", () => listener(paused));
+  const handler = () => listener(paused);
+  eventTarget.addEventListener("change", handler);
+  return () => eventTarget.removeEventListener("change", handler);
 };
 
 export const onSingleStep = (listener) => {

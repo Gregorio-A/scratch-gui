@@ -53,10 +53,16 @@ export default async function ({ addon, msg, console }) {
     }
 
     bindEvents() {
-      this.findInput.addEventListener("focus", () => this.inputChange());
+      this.findInput.addEventListener("focus", () => {
+        this.findBarOuter.classList.add("revealed");
+        this.inputChange();
+      });
       this.findInput.addEventListener("keydown", (e) => this.inputKeyDown(e));
       this.findInput.addEventListener("keyup", () => this.inputChange());
-      this.findInput.addEventListener("focusout", () => this.hideDropDown());
+      this.findInput.addEventListener("focusout", () => {
+        this.hideDropDown();
+        this.findBarOuter.classList.remove("revealed");
+      });
     }
 
     tabChanged() {
@@ -134,7 +140,16 @@ export default async function ({ addon, msg, console }) {
       let ctrlKey = e.ctrlKey || e.metaKey;
 
       if (e.key.toLowerCase() === "f" && ctrlKey && !e.shiftKey) {
+        const textWarpEditor = document.querySelector('[data-tabs="textwarp"]');
+        if (
+          textWarpEditor &&
+          textWarpEditor.getClientRects().length &&
+          textWarpEditor.contains(document.activeElement)
+        ) {
+          return;
+        }
         // Ctrl + F (Override default Ctrl+F find)
+        this.findBarOuter.classList.add("revealed");
         this.findInput.focus();
         this.findInput.select();
         e.cancelBubble = true;

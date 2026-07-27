@@ -11,11 +11,9 @@ import VM from 'scratch-vm';
 
 import Box from '../box/box.jsx';
 import Button from '../button/button.jsx';
-import CommunityButton from './community-button.jsx';
 import ShareButton from './share-button.jsx';
 import {ComingSoonTooltip} from '../coming-soon/coming-soon.jsx';
 import Divider from '../divider/divider.jsx';
-import SaveStatus from './save-status.jsx';
 import ProjectWatcher from '../../containers/project-watcher.jsx';
 import MenuBarMenu from './menu-bar-menu.jsx';
 import MenuLabel from './tw-menu-label.jsx';
@@ -26,7 +24,6 @@ import SB3Downloader from '../../containers/sb3-downloader.jsx';
 import DeletionRestorer from '../../containers/deletion-restorer.jsx';
 import TurboMode from '../../containers/turbo-mode.jsx';
 import MenuBarHOC from '../../containers/menu-bar-hoc.jsx';
-import SettingsMenu from './settings-menu.jsx';
 
 import FramerateChanger from '../../containers/tw-framerate-changer.jsx';
 import ChangeUsername from '../../containers/tw-change-username.jsx';
@@ -36,14 +33,7 @@ import TWNews from './tw-news.jsx';
 
 import {openTipsLibrary, openSettingsModal, openRestorePointModal} from '../../reducers/modals';
 import {setPlayer} from '../../reducers/mode';
-import {
-    isTimeTravel220022BC,
-    isTimeTravel1920,
-    isTimeTravel1990,
-    isTimeTravel2020,
-    isTimeTravelNow,
-    setTimeTravel
-} from '../../reducers/time-travel';
+import {isTimeTravel2020, isTimeTravelNow, setTimeTravel} from '../../reducers/time-travel';
 import {
     autoUpdateProject,
     getIsUpdating,
@@ -57,23 +47,15 @@ import {
     openAboutMenu,
     closeAboutMenu,
     aboutMenuOpen,
-    openAccountMenu,
-    closeAccountMenu,
-    accountMenuOpen,
     openFileMenu,
     closeFileMenu,
     fileMenuOpen,
     openEditMenu,
     closeEditMenu,
     editMenuOpen,
-    openLoginMenu,
-    closeLoginMenu,
-    loginMenuOpen,
     openModeMenu,
     closeModeMenu,
     modeMenuOpen,
-    settingsMenuOpen,
-    openSettingsMenu,
     closeSettingsMenu,
     errorsMenuOpen,
     openErrorsMenu,
@@ -92,17 +74,11 @@ import collectMetadata from '../../lib/collect-metadata';
 
 import styles from './menu-bar.css';
 
-import helpIcon from '../../lib/assets/icon--tutorials.svg';
-import mystuffIcon from './icon--mystuff.png';
-import profileIcon from './icon--profile.png';
 import remixIcon from './icon--remix.svg';
 import dropdownCaret from './dropdown-caret.svg';
-import aboutIcon from './icon--about.svg';
 import fileIcon from './icon--file.svg';
 import editIcon from './icon--edit.svg';
-import addonsIcon from './addons.svg';
 import errorIcon from './tw-error.svg';
-import advancedIcon from './tw-advanced.svg';
 
 import ninetiesLogo from './nineties_logo.svg';
 import catLogo from './cat_logo.svg';
@@ -112,15 +88,7 @@ import oldtimeyLogo from './oldtimey-logo.svg';
 import sharedMessages from '../../lib/shared-messages';
 
 import SeeInsideButton from './tw-see-inside.jsx';
-import {APP_NAME, SUPPORT_URL} from '../../lib/brand.js';
-
-const ariaMessages = defineMessages({
-    tutorials: {
-        id: 'gui.menuBar.tutorialsLibrary',
-        defaultMessage: 'Tutorials',
-        description: 'accessibility text for the tutorials button'
-    }
-});
+import {SUPPORT_URL} from '../../lib/brand.js';
 
 const twMessages = defineMessages({
     compileError: {
@@ -184,19 +152,6 @@ MenuItemTooltip.propTypes = {
     isRtl: PropTypes.bool
 };
 
-const AboutButton = props => (
-    <Button
-        className={classNames(styles.menuBarItem, styles.hoverable)}
-        iconClassName={styles.aboutIcon}
-        iconSrc={aboutIcon}
-        onClick={props.onClick}
-    />
-);
-
-AboutButton.propTypes = {
-    onClick: PropTypes.func.isRequired
-};
-
 // Unlike <MenuItem href="">, this uses an actual <a>
 const MenuItemLink = props => (
     <a
@@ -232,6 +187,7 @@ class MenuBar extends React.Component {
             'handleClickSaveTextwarpAs',
             'handleClickTextwarpPreferences',
             'handleClickAdvancedSettings',
+            'handleClickAddonSettings',
             'handleClickSeeCommunity',
             'handleClickShare',
             'handleSetMode',
@@ -310,6 +266,10 @@ class MenuBar extends React.Component {
         this.props.onClickSettingsModal();
         this.props.onRequestCloseAdvanced();
     }
+    handleClickAddonSettings () {
+        this.props.onRequestCloseAdvanced();
+        this.props.onClickAddonSettings();
+    }
     handleClickSeeCommunity (waitForUpdate) {
         if (this.props.shouldSaveBeforeTransition()) {
             this.props.autoUpdateProject(); // save before transitioning to project page
@@ -372,9 +332,9 @@ class MenuBar extends React.Component {
         if (modifier) {
             if (event.key.toLowerCase() === 's') {
                 this.props.handleSaveProject();
-                event.preventDefault();    
+                event.preventDefault();
             } else if (event.key.toLowerCase() === 'o') {
-                event.preventDefault();    
+                event.preventDefault();
                 this.props.onStartSelectingFileUpload();
             }
         }
@@ -422,35 +382,48 @@ class MenuBar extends React.Component {
         this.props.onClickSeeInside();
     }
     buildAboutMenu (onClickAbout) {
-        if (!onClickAbout) {
-            // hide the button
-            return null;
-        }
-        if (typeof onClickAbout === 'function') {
-            // make a button which calls a function
-            return <AboutButton onClick={onClickAbout} />;
-        }
-        // assume it's an array of objects
-        // each item must have a 'title' FormattedMessage and a 'handleClick' function
-        // generate a menu with items for each object in the array
         return (
             <MenuLabel
                 open={this.props.aboutMenuOpen}
                 onOpen={this.props.onRequestOpenAbout}
                 onClose={this.props.onRequestCloseAbout}
             >
+                <span className={styles.topMenuLabel}>
+                    <FormattedMessage
+                        defaultMessage="Help"
+                        description="Text for the help dropdown menu"
+                        id="tw.menuBar.help"
+                    />
+                </span>
                 <img
-                    className={styles.aboutIcon}
-                    src={aboutIcon}
+                    src={dropdownCaret}
                     draggable={false}
+                    width={8}
+                    height={5}
                 />
                 <MenuBarMenu
                     className={classNames(styles.menuBarMenu)}
                     open={this.props.aboutMenuOpen}
                     place={this.props.isRtl ? 'right' : 'left'}
                 >
-                    {
-                        onClickAbout.map(itemProps => (
+                    <MenuSection>
+                        <MenuItem onClick={this.wrapAboutMenuCallback(this.props.onOpenTipLibrary)}>
+                            <FormattedMessage
+                                defaultMessage="Documentation and tutorials"
+                                description="Open the built-in documentation and tutorials"
+                                id="tw.menuBar.documentation"
+                            />
+                        </MenuItem>
+                        {typeof onClickAbout === 'function' && (
+                            <MenuItem onClick={this.wrapAboutMenuCallback(onClickAbout)}>
+                                <FormattedMessage
+                                    defaultMessage="About TextWarp"
+                                    description="Open information about TextWarp"
+                                    id="tw.menuBar.aboutTextwarp"
+                                />
+                            </MenuItem>
+                        )}
+                        {Array.isArray(onClickAbout) && onClickAbout.map(itemProps => (
                             <MenuItem
                                 key={itemProps.title}
                                 isRtl={this.props.isRtl}
@@ -458,8 +431,15 @@ class MenuBar extends React.Component {
                             >
                                 {itemProps.title}
                             </MenuItem>
-                        ))
-                    }
+                        ))}
+                        <MenuItemLink href={SUPPORT_URL}>
+                            <FormattedMessage
+                                defaultMessage="Send feedback"
+                                description="Open the TextWarp feedback page"
+                                id="tw.menuBar.sendFeedback"
+                            />
+                        </MenuItemLink>
+                    </MenuSection>
                 </MenuBarMenu>
             </MenuLabel>
         );
@@ -523,6 +503,20 @@ class MenuBar extends React.Component {
             >
                 <div className={styles.mainMenu}>
                     <div className={styles.fileGroup}>
+                        <button
+                            className={styles.textwarpBrand}
+                            title="TextWarp"
+                            type="button"
+                            onClick={this.props.onClickLogo}
+                        >
+                            {this.props.logo && <img
+                                alt=""
+                                id="logo_img"
+                                src={this.props.logo}
+                                draggable={false}
+                            />}
+                            <span>{'TextWarp'}</span>
+                        </button>
                         {this.props.errors.length > 0 && <div>
                             <MenuLabel
                                 open={this.props.errorsMenuOpen}
@@ -575,23 +569,6 @@ class MenuBar extends React.Component {
                                 </MenuBarMenu>
                             </MenuLabel>
                         </div>}
-                        {(this.props.canChangeTheme || this.props.canChangeLanguage) && (<SettingsMenu
-                            canChangeLanguage={this.props.canChangeLanguage}
-                            canChangeTheme={this.props.canChangeTheme}
-                            isRtl={this.props.isRtl}
-                            onClickDesktopSettings={
-                                this.props.onClickDesktopSettings &&
-                                this.handleClickDesktopSettings
-                            }
-                            // eslint-disable-next-line react/jsx-no-bind
-                            onOpenCustomSettings={
-                                this.props.onClickAddonSettings &&
-                                this.props.onClickAddonSettings.bind(null, 'editor-theme3')
-                            }
-                            onRequestClose={this.props.onRequestCloseSettings}
-                            onRequestOpen={this.props.onClickSettings}
-                            settingsMenuOpen={this.props.settingsMenuOpen}
-                        />)}
                         {(this.props.canManageFiles) && (
                             <MenuLabel
                                 id="textwarp-file-menu-trigger"
@@ -669,7 +646,7 @@ class MenuBar extends React.Component {
                                             <span className={styles.textwarpMenuAction}>
                                                 <FormattedMessage
                                                     defaultMessage="Save"
-                                                    description="Menu item for saving the current editable TextWarp project"
+                                                    description="Save the current editable TextWarp project"
                                                     id="tw.menuBar.saveTextwarp"
                                                 />
                                                 <small>
@@ -760,7 +737,7 @@ class MenuBar extends React.Component {
                                                         <small>
                                                             <FormattedMessage
                                                                 defaultMessage="Compiled Scratch project (.sb3)"
-                                                                description="Explains the compiled project export format"
+                                                                description="Compiled project export format"
                                                                 id="tw.menuBar.exportProjectHelp"
                                                             />
                                                         </small>
@@ -954,43 +931,17 @@ class MenuBar extends React.Component {
                             </MenuLabel>
                         )}
 
-                        {this.props.onClickAddonSettings && (
-                            <div
-                                className={classNames(styles.menuBarItem, styles.hoverable)}
-                                onClick={this.props.onClickAddonSettings}
-                            >
-                                <img
-                                    src={addonsIcon}
-                                    draggable={false}
-                                    width={20}
-                                    height={20}
-                                />
-                                <span className={styles.collapsibleLabel}>
-                                    <FormattedMessage
-                                        defaultMessage="Addons"
-                                        description="Button to open addon settings"
-                                        id="tw.menuBar.addons"
-                                    />
-                                </span>
-                            </div>
-                        )}
                         {this.props.onClickSettingsModal && (
                             <MenuLabel
                                 open={this.props.advancedMenuOpen}
                                 onOpen={this.props.onClickAdvanced}
                                 onClose={this.props.onRequestCloseAdvanced}
                             >
-                                <img
-                                    src={advancedIcon}
-                                    draggable={false}
-                                    width={20}
-                                    height={20}
-                                />
-                                <span className={styles.collapsibleLabel}>
+                                <span className={styles.topMenuLabel}>
                                     <FormattedMessage
-                                        defaultMessage="Advanced"
-                                        description="Button to open advanced settings menu"
-                                        id="tw.menuBar.advanced"
+                                        defaultMessage="Project"
+                                        description="Button to open the project menu"
+                                        id="tw.menuBar.project"
                                     />
                                 </span>
                                 <img
@@ -1019,10 +970,43 @@ class MenuBar extends React.Component {
                                                 id="tw.menuBar.moreSettings"
                                             />
                                         </MenuItem>
+                                        {this.props.onClickAddonSettings && (
+                                            <MenuItem
+                                                onClick={this.handleClickAddonSettings}
+                                            >
+                                                <FormattedMessage
+                                                    defaultMessage="Extensions and addons"
+                                                    description="Open extension and addon settings"
+                                                    id="tw.menuBar.extensions"
+                                                />
+                                            </MenuItem>
+                                        )}
+                                        {this.props.enableCommunity && (
+                                            (this.props.isShowingProject || this.props.isUpdating) && (
+                                                <ProjectWatcher onDoneUpdating={this.props.onSeeCommunity}>
+                                                    {waitForUpdate => (
+                                                        <MenuItem
+                                                            // eslint-disable-next-line react/jsx-no-bind
+                                                            onClick={() => {
+                                                                this.props.onRequestCloseAdvanced();
+                                                                this.handleClickSeeCommunity(waitForUpdate);
+                                                            }}
+                                                        >
+                                                            <FormattedMessage
+                                                                defaultMessage="Open project page"
+                                                                description="Open the current project page"
+                                                                id="tw.menuBar.openProjectPage"
+                                                            />
+                                                        </MenuItem>
+                                                    )}
+                                                </ProjectWatcher>
+                                            )
+                                        )}
                                     </MenuSection>
                                 </MenuBarMenu>
                             </MenuLabel>
                         )}
+                        {aboutButton}
                     </div>
 
                     <Divider className={styles.divider} />
@@ -1080,56 +1064,14 @@ class MenuBar extends React.Component {
                             {remixButton}
                         </div>
                     )}
-                    <div className={classNames(styles.menuBarItem, styles.communityButtonWrapper)}>
-                        {this.props.enableCommunity ? (
-                            (this.props.isShowingProject || this.props.isUpdating) && (
-                                <ProjectWatcher onDoneUpdating={this.props.onSeeCommunity}>
-                                    {
-                                        waitForUpdate => (
-                                            <CommunityButton
-                                                className={styles.menuBarButton}
-                                                /* eslint-disable react/jsx-no-bind */
-                                                onClick={() => {
-                                                    this.handleClickSeeCommunity(waitForUpdate);
-                                                }}
-                                                /* eslint-enable react/jsx-no-bind */
-                                            />
-                                        )
-                                    }
-                                </ProjectWatcher>
-                            )
-                        ) : (this.props.showComingSoon ? (
-                            <MenuBarItemTooltip id="community-button">
-                                <CommunityButton className={styles.menuBarButton} />
-                            </MenuBarItemTooltip>
-                        ) : (this.props.enableSeeInside ? (
+                    {this.props.enableSeeInside && (
+                        <div className={classNames(styles.menuBarItem)}>
                             <SeeInsideButton
                                 className={styles.menuBarButton}
                                 onClick={this.handleClickSeeInside}
                             />
-                        ) : []))}
-                    </div>
-                    {/* tw: add a feedback button */}
-                    <div className={styles.menuBarItem}>
-                        <a
-                            className={styles.feedbackLink}
-                            href={SUPPORT_URL}
-                            rel="noopener noreferrer"
-                            target="_blank"
-                        >
-                            {/* todo: icon */}
-                            <Button className={styles.feedbackButton}>
-                                <FormattedMessage
-                                    defaultMessage="{APP_NAME} Feedback"
-                                    description="Button to give feedback in the menu bar"
-                                    id="tw.feedbackButton"
-                                    values={{
-                                        APP_NAME
-                                    }}
-                                />
-                            </Button>
-                        </a>
-                    </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className={styles.accountInfoGroup}>
@@ -1137,8 +1079,6 @@ class MenuBar extends React.Component {
                         showSaveFilePicker={this.props.showSaveFilePicker}
                     />
                 </div>
-
-                {aboutButton}
             </Box>
         );
 
@@ -1156,13 +1096,10 @@ MenuBar.propTypes = {
     enableSeeInside: PropTypes.bool,
     onClickSeeInside: PropTypes.func,
     aboutMenuOpen: PropTypes.bool,
-    accountMenuOpen: PropTypes.bool,
     authorId: PropTypes.oneOfType([PropTypes.string, PropTypes.bool]),
     authorThumbnailUrl: PropTypes.string,
     authorUsername: PropTypes.oneOfType([PropTypes.string, PropTypes.bool]),
     autoUpdateProject: PropTypes.func,
-    canChangeLanguage: PropTypes.bool,
-    canChangeTheme: PropTypes.bool,
     canCreateCopy: PropTypes.bool,
     canCreateNew: PropTypes.bool,
     canEditTitle: PropTypes.bool,
@@ -1180,7 +1117,6 @@ MenuBar.propTypes = {
     onClickErrors: PropTypes.func,
     onRequestCloseErrors: PropTypes.func,
     confirmReadyToReplaceProject: PropTypes.func,
-    currentLocale: PropTypes.string.isRequired,
     editMenuOpen: PropTypes.bool,
     enableCommunity: PropTypes.bool,
     fileMenuOpen: PropTypes.bool,
@@ -1193,11 +1129,8 @@ MenuBar.propTypes = {
     isTotallyNormal: PropTypes.bool,
     isUpdating: PropTypes.bool,
     locale: PropTypes.string.isRequired,
-    loginMenuOpen: PropTypes.bool,
-    mode1920: PropTypes.bool,
-    mode1990: PropTypes.bool,
+    logo: PropTypes.string,
     mode2020: PropTypes.bool,
-    mode220022BC: PropTypes.bool,
     modeMenuOpen: PropTypes.bool,
     modeNow: PropTypes.bool,
     onClickAbout: PropTypes.oneOfType([
@@ -1209,7 +1142,6 @@ MenuBar.propTypes = {
             })
         )
     ]),
-    onClickAccount: PropTypes.func,
     onClickAdvanced: PropTypes.func,
     onClickAddonSettings: PropTypes.func,
     onClickDesktopSettings: PropTypes.func,
@@ -1217,25 +1149,20 @@ MenuBar.propTypes = {
     onClickRestorePoints: PropTypes.func,
     onClickEdit: PropTypes.func,
     onClickFile: PropTypes.func,
-    onClickLogin: PropTypes.func,
+    onClickLogo: PropTypes.func,
     onClickMode: PropTypes.func,
     onClickNew: PropTypes.func,
     onClickNewWindow: PropTypes.func,
     onClickRemix: PropTypes.func,
     onClickSave: PropTypes.func,
     onClickSaveAsCopy: PropTypes.func,
-    onClickSettings: PropTypes.func,
     onClickSettingsModal: PropTypes.func,
-    onLogOut: PropTypes.func,
-    onOpenRegistration: PropTypes.func,
     onOpenTipLibrary: PropTypes.func,
     onProjectTelemetryEvent: PropTypes.func,
     onRequestCloseAbout: PropTypes.func,
-    onRequestCloseAccount: PropTypes.func,
     onRequestCloseAdvanced: PropTypes.func,
     onRequestCloseEdit: PropTypes.func,
     onRequestCloseFile: PropTypes.func,
-    onRequestCloseLogin: PropTypes.func,
     onRequestCloseMode: PropTypes.func,
     onRequestCloseSettings: PropTypes.func,
     onRequestOpenAbout: PropTypes.func,
@@ -1244,12 +1171,8 @@ MenuBar.propTypes = {
     onSetTimeTravelMode: PropTypes.func,
     onShare: PropTypes.func,
     onStartSelectingFileUpload: PropTypes.func,
-    onToggleLoginOpen: PropTypes.func,
     projectId: PropTypes.string,
     projectTitle: PropTypes.string,
-    renderLogin: PropTypes.func,
-    sessionExists: PropTypes.bool,
-    settingsMenuOpen: PropTypes.bool,
     shouldSaveBeforeTransition: PropTypes.func,
     showSaveFilePicker: PropTypes.func,
     showComingSoon: PropTypes.bool,
@@ -1259,7 +1182,6 @@ MenuBar.propTypes = {
         state: PropTypes.string
     }),
     username: PropTypes.string,
-    userOwnsProject: PropTypes.bool,
     vm: PropTypes.instanceOf(VM).isRequired
 };
 
@@ -1267,7 +1189,7 @@ MenuBar.defaultProps = {
     onShare: () => {}
 };
 
-const mapStateToProps = (state, ownProps) => {
+const mapStateToProps = state => {
     const loadingState = state.scratchGui.projectState.loadingState;
     const user = state.session && state.session.session && state.session.session.user;
     return {
@@ -1276,8 +1198,6 @@ const mapStateToProps = (state, ownProps) => {
         authorThumbnailUrl: state.scratchGui.tw.author.thumbnail,
         projectId: state.scratchGui.projectState.projectId,
         aboutMenuOpen: aboutMenuOpen(state),
-        accountMenuOpen: accountMenuOpen(state),
-        currentLocale: state.locales.locale,
         fileMenuOpen: fileMenuOpen(state),
         editMenuOpen: editMenuOpen(state),
         errors: state.scratchGui.tw.compileErrors,
@@ -1287,23 +1207,15 @@ const mapStateToProps = (state, ownProps) => {
         isUpdating: getIsUpdating(loadingState),
         isShowingProject: getIsShowingProject(loadingState),
         locale: state.locales.locale,
-        loginMenuOpen: loginMenuOpen(state),
         modeMenuOpen: modeMenuOpen(state),
         projectTitle: state.scratchGui.projectTitle,
-        sessionExists: state.session && typeof state.session.session !== 'undefined',
-        settingsMenuOpen: settingsMenuOpen(state),
         textwarpUiOperation: state.scratchGui.tw.textwarpUiOperation || {
             command: null,
             message: '',
             state: 'idle'
         },
         username: user ? user.username : null,
-        userOwnsProject: ownProps.authorUsername && user &&
-            (ownProps.authorUsername === user.username),
         vm: state.scratchGui.vm,
-        mode220022BC: isTimeTravel220022BC(state),
-        mode1920: isTimeTravel1920(state),
-        mode1990: isTimeTravel1990(state),
         mode2020: isTimeTravel2020(state),
         modeNow: isTimeTravelNow(state)
     };
@@ -1313,8 +1225,6 @@ const mapDispatchToProps = dispatch => ({
     onClickSeeInside: () => dispatch(setPlayer(false)),
     autoUpdateProject: () => dispatch(autoUpdateProject()),
     onOpenTipLibrary: () => dispatch(openTipsLibrary()),
-    onClickAccount: () => dispatch(openAccountMenu()),
-    onRequestCloseAccount: () => dispatch(closeAccountMenu()),
     onClickAdvanced: () => dispatch(openAdvancedMenu()),
     onRequestCloseAdvanced: () => dispatch(closeAdvancedMenu()),
     onClickFile: () => dispatch(openFileMenu()),
@@ -1323,14 +1233,11 @@ const mapDispatchToProps = dispatch => ({
     onRequestCloseEdit: () => dispatch(closeEditMenu()),
     onClickErrors: () => dispatch(openErrorsMenu()),
     onRequestCloseErrors: () => dispatch(closeErrorsMenu()),
-    onClickLogin: () => dispatch(openLoginMenu()),
-    onRequestCloseLogin: () => dispatch(closeLoginMenu()),
     onClickMode: () => dispatch(openModeMenu()),
     onRequestCloseMode: () => dispatch(closeModeMenu()),
     onRequestOpenAbout: () => dispatch(openAboutMenu()),
     onRequestCloseAbout: () => dispatch(closeAboutMenu()),
     onClickRestorePoints: () => dispatch(openRestorePointModal()),
-    onClickSettings: () => dispatch(openSettingsMenu()),
     onClickSettingsModal: () => {
         dispatch(closeEditMenu());
         dispatch(openSettingsModal());

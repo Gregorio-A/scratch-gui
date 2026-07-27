@@ -1,0 +1,103 @@
+.root {
+    width: 3rem;
+    min-width: 3rem;
+    min-height: 0;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    color: var(--text-primary-transparent);
+    background: var(--ui-tertiary);
+    border-right: 1px solid var(--ui-black-transparent);
+}
+
+.primary,
+.secondary {
+    display: flex;
+    flex-direction: column;
+}
+
+.secondary {
+    border-top: 1px solid var(--ui-black-transparent);
+}
+
+.button {
+    position: relative;
+    width: 3rem;
+    height: 3rem;
+    display: grid;
+    flex: none;
+    place-items: center;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.button::before {
+    position: absolute;
+    top: 0.45rem;
+    bottom: 0.45rem;
+    left: 0;
+    width: 2px;
+    content: "";
+    background: transparent;
+    border-radius: 0 2px 2px 0;
+}
+
+.button svg {
+    width: 1.3rem;
+    height: 1.3rem;
+}
+
+.button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.button:hover,
+.button:focus-visible,
+.active {
+    color: var(--text-primary);
+    background: var(--ui-black-transparent);
+}
+
+.active::before {
+    background: var(--motion-primary);
+}
+
+.button:focus-visible {
+    z-index: 1;
+    outline: 2px solid var(--motion-primary);
+    outline-offset: -2px;
+}
+
+@media (max-width: 599px) {
+    .root {
+        width: 2.75rem;
+        min-width: 2.75rem;
+    }
+
+    .button {
+        width: 2.75rem;
+        height: 2.75rem;
+    }
+}
+
+:global(.textwarp-compact-ui) .root {
+    width: 2.5rem;
+    min-width: 2.5rem;
+}
+
+:global(.textwarp-compact-ui) .button {
+    width: 2.5rem;
+    height: 2.5rem;
+}

@@ -11,7 +11,7 @@
 }
 
 .sidebar-header {
-    min-height: 2.75rem;
+    min-height: var(--textwarp-control-height, 2.25rem);
     display: flex;
     flex: none;
     align-items: center;
@@ -36,8 +36,8 @@
 }
 
 .sidebar-header button {
-    width: 2.75rem;
-    height: 2.75rem;
+    width: var(--textwarp-control-height, 2.25rem);
+    height: var(--textwarp-control-height, 2.25rem);
     display: grid;
     flex: none;
     place-items: center;
@@ -45,6 +45,11 @@
     background: transparent;
     border: 0;
     cursor: pointer;
+}
+
+.sidebar-header .active-header-button {
+    color: var(--motion-primary);
+    background: var(--ui-black-transparent);
 }
 
 .overlay {
@@ -60,32 +65,6 @@
 
 .hidden {
     display: none;
-}
-
-.tabs {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    border-bottom: 1px solid var(--ui-black-transparent);
-}
-
-.tabs button {
-    min-width: 0;
-    min-height: 2.75rem;
-    padding: 0.55rem 0.2rem;
-    overflow: hidden;
-    color: var(--text-primary-transparent);
-    background: transparent;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    font-size: 0.58rem;
-    font-weight: 700;
-    text-overflow: ellipsis;
-}
-
-.tabs .active-tab {
-    color: var(--text-primary);
-    border-bottom-color: var(--motion-primary);
 }
 
 .content {
@@ -121,7 +100,7 @@
 .history button,
 .results button {
     min-width: 0;
-    min-height: 2.75rem;
+    min-height: var(--textwarp-control-height, 2.25rem);
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -142,6 +121,31 @@
 .results button:hover,
 .tree .active-item {
     background: var(--ui-black-transparent);
+}
+
+.project-root {
+    display: block;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.72rem;
+}
+
+.tree-group h3 {
+    min-height: 1.8rem;
+    display: flex;
+    align-items: center;
+    margin: 0;
+    padding: 0.25rem 0.65rem 0.25rem 1rem;
+    color: var(--text-primary-transparent);
+    font-size: 0.62rem;
+}
+
+.tree-group h3::before {
+    content: "⌄";
+    margin-right: 0.35rem;
+}
+
+.tree-group button {
+    padding-left: 1.35rem;
 }
 
 .tree .active-item {
@@ -190,7 +194,7 @@
 }
 
 .resources .insert-button {
-    min-height: 2.75rem;
+    min-height: var(--textwarp-control-height, 2.25rem);
     justify-content: center;
     padding: 0;
     color: var(--motion-primary);
@@ -206,6 +210,37 @@
     padding: 0.3rem 0.7rem;
     color: var(--text-primary-transparent);
     font-size: 0.62rem;
+}
+
+.outline-root {
+    display: block;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.72rem;
+}
+
+.symbol-group h3 {
+    min-height: 1.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0.25rem 0.65rem 0.25rem 1rem;
+    color: var(--text-primary-transparent);
+    font-size: 0.62rem;
+    font-weight: 700;
+}
+
+.symbol-group h3::before {
+    content: "⌄";
+}
+
+.symbol-group h3 small {
+    margin-left: auto;
+    font-weight: 400;
+}
+
+.symbol-group button {
+    padding-left: 1.35rem;
 }
 
 .search {
@@ -239,7 +274,7 @@
 
 .replace-button {
     margin: 0 0.65rem 0.45rem;
-    min-height: 2.75rem;
+    min-height: var(--textwarp-control-height, 2.25rem);
     padding: 0.4rem;
     color: white;
     background: var(--motion-primary);
@@ -276,7 +311,7 @@
 
 .show-more {
     width: calc(100% - 1.3rem);
-    min-height: 2.75rem;
+    min-height: var(--textwarp-control-height, 2.25rem);
     margin: 0.35rem 0.65rem;
     justify-content: center;
     color: var(--motion-primary);
@@ -294,12 +329,150 @@
     font-size: 0.58rem;
 }
 
+.target-cards,
+.extension-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0 0.55rem;
+}
+
+.target-cards > button {
+    min-width: 0;
+    min-height: 3.4rem;
+    display: grid;
+    grid-template-columns: 2.35rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.45rem;
+    color: var(--text-primary);
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.45rem;
+    cursor: pointer;
+    text-align: left;
+}
+
+.target-cards > button:hover,
+.target-cards > .active-item {
+    border-color: var(--motion-primary);
+    background: var(--ui-black-transparent);
+}
+
+.target-cards > .active-item {
+    box-shadow: inset 3px 0 var(--motion-primary);
+}
+
+.target-cards > button > span:nth-child(2) {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.target-cards strong {
+    overflow: hidden;
+    font-size: 0.68rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.target-cards small,
+.extension-list small {
+    color: var(--text-primary-transparent);
+    font-size: 0.56rem;
+}
+
+.target-avatar {
+    width: 2.15rem;
+    height: 2.15rem;
+    display: grid;
+    place-items: center;
+    color: white;
+    background: var(--motion-primary);
+    border-radius: 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.stage-avatar {
+    background: var(--looks-secondary);
+}
+
+.extension-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-right: 0.55rem;
+}
+
+.extension-heading p {
+    margin: -0.2rem 0 0.75rem;
+    padding-left: 0.65rem;
+    color: var(--text-primary-transparent);
+    font-size: 0.6rem;
+}
+
+.add-extension {
+    min-height: var(--textwarp-control-height, 2.25rem);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.55rem;
+    padding: 0 0.55rem;
+    color: white;
+    background: var(--motion-primary);
+    border: 0;
+    border-radius: 0.35rem;
+    cursor: pointer;
+    font-size: 0.62rem;
+    font-weight: 700;
+}
+
+.extension-list > div {
+    min-height: 3rem;
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.45rem;
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.45rem;
+}
+
+.extension-list > div > span:last-child {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.extension-list strong {
+    overflow: hidden;
+    font-size: 0.66rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.extension-icon {
+    width: 2rem;
+    height: 2rem;
+    display: grid;
+    place-items: center;
+    color: white;
+    background: var(--motion-primary);
+    border-radius: 0.45rem;
+}
+
+.extension-list > p {
+    margin: 0;
+    padding: 0.75rem 0.2rem;
+    color: var(--text-primary-transparent);
+    font-size: 0.65rem;
+}
+
 @media (max-width: 900px) {
     .root {
         width: 12rem;
-    }
-
-    .tabs {
-        grid-template-columns: repeat(2, 1fr);
     }
 }

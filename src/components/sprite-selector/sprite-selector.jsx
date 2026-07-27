@@ -1,5 +1,6 @@
 import PropTypes from 'prop-types';
 import React from 'react';
+import classNames from 'classnames';
 import {defineMessages, injectIntl, intlShape} from 'react-intl';
 
 import Box from '../box/box.jsx';
@@ -18,6 +19,16 @@ import surpriseIcon from '../action-menu/icon--surprise.svg';
 import searchIcon from '../action-menu/icon--search.svg';
 
 const messages = defineMessages({
+    actors: {
+        id: 'tw.targetPane.actors',
+        description: 'Tab containing the actors in the target pane',
+        defaultMessage: 'Actors'
+    },
+    backdrops: {
+        id: 'tw.targetPane.backdrops',
+        description: 'Tab containing the stage and backdrops in the target pane',
+        defaultMessage: 'Backdrops'
+    },
     addSpriteFromLibrary: {
         id: 'gui.spriteSelector.addSpriteFromLibrary',
         description: 'Button to add a sprite in the target pane from library',
@@ -66,9 +77,12 @@ const SpriteSelectorComponent = function (props) {
         selectedId,
         spriteFileInput,
         sprites,
+        stageSelector,
         stageSize,
         ...componentProps
     } = props;
+    const [activePanel, setActivePanel] = React.useState('actors');
+    const handlePanelChange = event => setActivePanel(event.currentTarget.dataset.panel);
     let selectedSprite = sprites[selectedId];
     let spriteInfoDisabled = false;
     if (typeof selectedSprite === 'undefined') {
@@ -100,48 +114,85 @@ const SpriteSelectorComponent = function (props) {
                 onChangeY={onChangeSpriteY}
             />
 
-            <SpriteList
-                editingTarget={editingTarget}
-                hoveredTarget={hoveredTarget}
-                items={Object.keys(sprites).map(id => sprites[id])}
-                raised={raised}
-                selectedId={selectedId}
-                onDeleteSprite={onDeleteSprite}
-                onDrop={onDrop}
-                onDuplicateSprite={onDuplicateSprite}
-                onExportSprite={onExportSprite}
-                onSelectSprite={onSelectSprite}
-            />
-            <ActionMenu
-                className={styles.addButton}
-                img={spriteIcon}
-                moreButtons={[
-                    {
-                        title: intl.formatMessage(messages.addSpriteFromFile),
-                        img: fileUploadIcon,
-                        onClick: onFileUploadClick,
-                        fileAccept: '.svg, .png, .bmp, .jpg, .jpeg, .jfif, .webp, .sprite2, .sprite3, .gif',
-                        fileChange: onSpriteUpload,
-                        fileInput: spriteFileInput,
-                        fileMultiple: true
-                    }, {
-                        title: intl.formatMessage(messages.addSpriteFromSurprise),
-                        img: surpriseIcon,
-                        onClick: onSurpriseSpriteClick // TODO need real function for this
-                    }, {
-                        title: intl.formatMessage(messages.addSpriteFromPaint),
-                        img: paintIcon,
-                        onClick: onPaintSpriteClick // TODO need real function for this
-                    }, {
-                        title: intl.formatMessage(messages.addSpriteFromLibrary),
-                        img: searchIcon,
-                        onClick: onNewSpriteClick
-                    }
-                ]}
-                title={intl.formatMessage(messages.addSpriteFromLibrary)}
-                tooltipPlace={isRtl(intl.locale) ? 'right' : 'left'}
-                onClick={onNewSpriteClick}
-            />
+            <div
+                aria-label={intl.formatMessage(messages.actors)}
+                className={styles.targetTabs}
+                role="tablist"
+            >
+                {[
+                    ['actors', messages.actors],
+                    ['backdrops', messages.backdrops]
+                ].map(([id, message]) => (
+                    <button
+                        aria-selected={activePanel === id}
+                        className={activePanel === id ? styles.activeTargetTab : ''}
+                        data-panel={id}
+                        key={id}
+                        role="tab"
+                        type="button"
+                        // eslint-disable-next-line react/jsx-no-bind
+                        onClick={handlePanelChange}
+                    >
+                        {intl.formatMessage(message)}
+                    </button>
+                ))}
+            </div>
+            {activePanel === 'actors' ? (
+                <div
+                    className={styles.targetPanel}
+                    role="tabpanel"
+                >
+                    <SpriteList
+                        editingTarget={editingTarget}
+                        hoveredTarget={hoveredTarget}
+                        items={Object.keys(sprites).map(id => sprites[id])}
+                        raised={raised}
+                        selectedId={selectedId}
+                        onDeleteSprite={onDeleteSprite}
+                        onDrop={onDrop}
+                        onDuplicateSprite={onDuplicateSprite}
+                        onExportSprite={onExportSprite}
+                        onSelectSprite={onSelectSprite}
+                    />
+                    <ActionMenu
+                        className={styles.addButton}
+                        img={spriteIcon}
+                        moreButtons={[
+                            {
+                                title: intl.formatMessage(messages.addSpriteFromFile),
+                                img: fileUploadIcon,
+                                onClick: onFileUploadClick,
+                                fileAccept: '.svg, .png, .bmp, .jpg, .jpeg, .jfif, .webp, .sprite2, .sprite3, .gif',
+                                fileChange: onSpriteUpload,
+                                fileInput: spriteFileInput,
+                                fileMultiple: true
+                            }, {
+                                title: intl.formatMessage(messages.addSpriteFromSurprise),
+                                img: surpriseIcon,
+                                onClick: onSurpriseSpriteClick
+                            }, {
+                                title: intl.formatMessage(messages.addSpriteFromPaint),
+                                img: paintIcon,
+                                onClick: onPaintSpriteClick
+                            }, {
+                                title: intl.formatMessage(messages.addSpriteFromLibrary),
+                                img: searchIcon,
+                                onClick: onNewSpriteClick
+                            }
+                        ]}
+                        title={intl.formatMessage(messages.addSpriteFromLibrary)}
+                        tooltipPlace={isRtl(intl.locale) ? 'right' : 'left'}
+                        onClick={onNewSpriteClick}
+                    />
+                </div>
+            ) : (
+                <div
+                    className={classNames(styles.targetPanel, styles.backdropPanel)}
+                    role="tabpanel"
+                >
+                    {stageSelector}
+                </div>
+            )}
         </Box>
     );
 };
@@ -186,6 +237,7 @@ SpriteSelectorComponent.propTypes = {
             order: PropTypes.number.isRequired
         })
     }),
+    stageSelector: PropTypes.node,
     stageSize: PropTypes.oneOf(Object.keys(STAGE_DISPLAY_SIZES)).isRequired
 };
 

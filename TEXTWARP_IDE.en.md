@@ -74,14 +74,27 @@ watch expressions. Breakpoints can pause concurrent scripts independently.
 
 ## Productivity and recovery
 
-Autosave snapshots remain local to the device. Templates, formatting, project-wide replacement and `.textwarp`
-packages help recover and transfer editable work.
+Autosave snapshots remain local to the device. Each manual text/blocks conversion creates an additional snapshot
+and exposes **Undo** and **View differences**. Formatting, project-wide replacement and `.textwarp` packages help
+recover and transfer editable work.
+
+Preferences includes a persistent **Compact interface** option for denser toolbars, tabs, sidebars, and panels on
+larger screens. **Programming** contains Text, Blocks, Split, and Documentation directly above the editor. Files,
+Search, Actors, Extensions, Debugging, Documentation, and Settings live in the activity bar.
+Conversion is a file-level menu with explicit synchronization state; **More actions** contains the command palette,
+formatting, split editor, documentation, external editor, and preferences. On mobile, the sidebar becomes a dismissible
+overlay and the stage starts collapsed to preserve code space.
+
+The right dock follows Stage, Actor Inspector, then one Actors/Backdrops tabbed area. The explorer groups modules
+under Actors and Stage, while Outline groups Variables, Procedures, and Events. When text and blocks differ, the
+in-app conflict surface offers Compare, Use text, Use blocks, and Cancel instead of silently replacing work.
 
 Configurable shortcuts support letters, digits, function keys, arrows, navigation keys, Space, Tab, Escape,
 Backspace and Delete. Invalid or duplicate shortcuts produce visible feedback and retain the default binding.
 Breakpoints use tracked Monaco decorations, so persisted line positions follow inserted and deleted lines.
 
-The Problems tab always offers **Copy technical report** and **Download technical report**. The report includes
+Problem entries show file, line, and column and navigate to that location. The Problems tab always offers
+**Copy technical report** and **Download technical report**. The report includes
 editor status, Monaco loader failures, Blocks-to-Text conversion results, unavailable opcodes, original variable/list
 names and IDs, runtime errors, console entries, and the current source. Review it before sharing because the complete
 module source is included. The same actions remain available in the basic-editor fallback.
@@ -103,15 +116,17 @@ offers copy/download technical reports, and provides a retry action.
 
 ## Usability and accessibility
 
-The toolbar wraps into accessible groups on small screens. The stage moves below the editor on phone-sized
-windows. Side, split and bottom panels are resizable; the project sidebar becomes an overlay when space is
-limited. All important commands remain keyboard reachable.
+The interface uses a fixed IDE layout with an activity bar, contextual sidebar, editor, resizable stage/inspector,
+bottom panel, and status bar. The stage can be resized or collapsed and remembers its width. Side, split and bottom
+panels are resizable; the sidebar becomes an overlay when space is limited. All important commands remain keyboard
+reachable. The legacy permanent Find field stays hidden; `Ctrl+F` opens Monaco Find over the text editor.
 
 ## Default shortcuts
 
 | Command | Shortcut |
 | --- | --- |
 | Compile | `F7` |
+| Run project | `F5` |
 | Run project | `Ctrl+Enter` |
 | Run selection | `Ctrl+Shift+Enter` |
 | Stop | `Shift+F5` |
@@ -119,6 +134,9 @@ limited. All important commands remain keyboard reachable.
 | Format | `Ctrl+Shift+I` |
 | Project explorer | `Ctrl+Shift+E` |
 | Project search | `Ctrl+Shift+F` |
+| Command palette | `Ctrl+Shift+P` |
+| Toggle sidebar | `Ctrl+B` |
+| Toggle bottom panel | `Ctrl+J` |
 | Save `.textwarp` | `Ctrl+S` |
 | Save `.textwarp` as | `Ctrl+Shift+S` |
 | Increase editor text | `Ctrl++` |

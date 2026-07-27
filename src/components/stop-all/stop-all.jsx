@@ -34,7 +34,7 @@ const StopAllComponent = function (props) {
 StopAllComponent.propTypes = {
     active: PropTypes.bool,
     className: PropTypes.string,
-    onClick: PropTypes.func.isRequired,
+    onClick: PropTypes.func,
     title: PropTypes.string
 };
 

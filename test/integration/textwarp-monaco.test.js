@@ -123,16 +123,16 @@ describe('TextWarp Monaco editor', () => {
                 root.style.height = '900px';
                 requestAnimationFrame(() => requestAnimationFrame(() => {
                     const toolbar = root.querySelector('[role="toolbar"]');
-                    const buttons = Array.from(toolbar.querySelectorAll('button'));
-                    const columns = getComputedStyle(toolbar).gridTemplateColumns
-                        .split(' ')
-                        .filter(Boolean)
-                        .length;
+                    const buttons = Array.from(toolbar.querySelectorAll('button'))
+                        .filter(button => button.getClientRects().length > 0);
+                    const actionRows = new Set(buttons.map(button =>
+                        Math.round(button.getBoundingClientRect().top)
+                    )).size;
                     const rootRect = root.getBoundingClientRect();
                     done({
-                        actionColumns: columns,
-                        allPrimaryActionsVisible: buttons.length === 6 &&
-                            buttons.every(button => button.getClientRects().length > 0),
+                        actionBarHeight: Math.round(toolbar.getBoundingClientRect().height),
+                        actionRows,
+                        directActionCount: buttons.length,
                         minimumControlHeight: Math.min(...buttons.map(button =>
                             Math.round(button.getBoundingClientRect().height)
                         )),
@@ -148,8 +148,11 @@ describe('TextWarp Monaco editor', () => {
                     });
                 }));
             `, width);
-            expect(actual.actionColumns).toBe(interfaceLayoutBaseline[width].actionColumns);
-            expect(actual.allPrimaryActionsVisible).toBe(true);
+            expect(actual.actionRows).toBe(interfaceLayoutBaseline[width].actionRows);
+            expect(actual.directActionCount).toBe(interfaceLayoutBaseline[width].directActionCount);
+            expect(actual.actionBarHeight).toBeLessThanOrEqual(
+                interfaceLayoutBaseline[width].maximumActionBarHeight
+            );
             expect(actual.minimumControlHeight).toBeGreaterThanOrEqual(
                 interfaceLayoutBaseline[width].minimumControlHeight
             );
@@ -163,65 +166,85 @@ describe('TextWarp Monaco editor', () => {
             const alternateLayouts = await driver.executeAsyncScript(`
                 const done = arguments[arguments.length - 1];
                 const root = document.querySelector('[data-tabs="textwarp"]');
-                const projects = root.querySelector('[aria-controls="textwarp-projects-sidebar"]');
+                const files = root.querySelector('[aria-label="Files"]');
                 const code = root.querySelector('#textwarp-view-tab-code');
-                const dual = root.querySelector('#textwarp-view-tab-dual');
+                const split = root.querySelector('#textwarp-view-tab-split');
                 const afterLayout = callback => requestAnimationFrame(() =>
                     requestAnimationFrame(callback)
                 );
-                projects.click();
+                files.click();
                 afterLayout(() => {
                     const withoutSidebarOverflow = root.scrollWidth > root.clientWidth + 1;
-                    projects.click();
+                    files.click();
                     afterLayout(() => {
-                        dual.click();
+                        split.click();
                         afterLayout(() => {
-                            const dualEditorOverflow = root.scrollWidth > root.clientWidth + 1;
+                            const splitEditorOverflow = root.scrollWidth > root.clientWidth + 1;
                             code.click();
-                            afterLayout(() => done({dualEditorOverflow, withoutSidebarOverflow}));
+                            afterLayout(() => done({splitEditorOverflow, withoutSidebarOverflow}));
                         });
                     });
                 });
             `);
             expect(alternateLayouts).toEqual({
-                dualEditorOverflow: false,
+                splitEditorOverflow: false,
                 withoutSidebarOverflow: false
             });
         }
 
-        const projects = await driver.findElement(By.xpath(
-            '//*[@data-tabs="textwarp"]//*[@role="toolbar"]//button[normalize-space()="Projects"]'
+        const files = await driver.findElement(By.css(
+            '[data-tabs="textwarp"] button[aria-label="Files"]'
         ));
-        await projects.click();
-        expect(await projects.getAttribute('aria-expanded')).toBe('false');
-        await projects.click();
-        expect(await projects.getAttribute('aria-expanded')).toBe('true');
+        if (await files.getAttribute('aria-expanded') === 'true') await files.click();
+        expect(await files.getAttribute('aria-expanded')).toBe('false');
+        await files.click();
+        expect(await files.getAttribute('aria-expanded')).toBe('true');
         await driver.executeAsyncScript(`
             const root = document.querySelector('[data-tabs="textwarp"]');
             const done = arguments[arguments.length - 1];
             root.style.width = '320px';
             requestAnimationFrame(() => requestAnimationFrame(done));
         `);
-        await projects.click();
-        await projects.click();
+        if (await files.getAttribute('aria-expanded') === 'false') await files.click();
         await driver.wait(() => driver.executeScript(`
-            const sidebar = document.querySelector('#textwarp-projects-sidebar');
+            const sidebar = document.querySelector('#textwarp-ide-sidebar');
             return sidebar && sidebar.contains(document.activeElement);
         `), 5000);
         expect(await driver.executeScript(`
-            return document.querySelector('#textwarp-projects-sidebar').getAttribute('aria-modal');
+            return document.querySelector('#textwarp-ide-sidebar').getAttribute('aria-modal');
         `)).toBe('true');
         await driver.actions()
             .sendKeys(Key.chord(Key.SHIFT, Key.TAB))
             .perform();
         expect(await driver.executeScript(`
-            return document.querySelector('#textwarp-projects-sidebar').contains(document.activeElement);
+            return document.querySelector('#textwarp-ide-sidebar').contains(document.activeElement);
         `)).toBe(true);
         await driver.actions()
             .sendKeys(Key.ESCAPE)
             .perform();
-        expect(await projects.getAttribute('aria-expanded')).toBe('false');
-        expect(await driver.switchTo().activeElement().getText()).toContain('Projects');
+        expect(await files.getAttribute('aria-expanded')).toBe('false');
+        expect(await driver.switchTo().activeElement().getAttribute('aria-label')).toBe('Files');
+
+        const moreActions = await driver.findElement(By.css(
+            '[data-tabs="textwarp"] button[aria-controls="textwarp-action-menu"]'
+        ));
+        await moreActions.click();
+        const mobileCommands = await driver.wait(
+            until.elementLocated(By.xpath(
+                '//*[@id="textwarp-action-menu"]//*[@role="menuitem" and contains(normalize-space(), "Command palette")]'
+            )),
+            5000
+        );
+        expect(await mobileCommands.isDisplayed()).toBe(true);
+        expect(await driver.executeScript(`
+            const root = document.querySelector('[data-tabs="textwarp"]').getBoundingClientRect();
+            const menu = document.querySelector('#textwarp-action-menu').getBoundingClientRect();
+            return menu.left >= root.left && menu.right <= root.right;
+        `)).toBe(true);
+        await driver.actions()
+            .sendKeys(Key.ESCAPE)
+            .perform();
+
         await driver.executeAsyncScript(`
             const root = document.querySelector('[data-tabs="textwarp"]');
             const done = arguments[arguments.length - 1];
@@ -229,19 +252,38 @@ describe('TextWarp Monaco editor', () => {
             requestAnimationFrame(() => requestAnimationFrame(done));
         `);
 
-        const templates = await driver.findElement(By.xpath(
-            '//*[@data-tabs="textwarp"]//*[@role="toolbar"]//button[normalize-space()="Templates"]'
-        ));
-        await templates.click();
-        const dialog = await driver.wait(
-            until.elementLocated(By.css('#textwarp-templates-panel[role="dialog"]')),
+        await moreActions.click();
+        const menu = await driver.wait(
+            until.elementLocated(By.css('#textwarp-action-menu[role="menu"]')),
             5000
         );
-        expect(await dialog.getAttribute('aria-modal')).toBe('false');
         await driver.actions()
             .sendKeys(Key.ESCAPE)
             .perform();
-        await driver.wait(until.stalenessOf(dialog), 5000);
-        expect(await driver.switchTo().activeElement().getText()).toContain('Templates');
+        await driver.wait(until.stalenessOf(menu), 5000);
+        expect(await driver.switchTo().activeElement().getAttribute('aria-label')).toBe('More actions');
+
+        await moreActions.click();
+        const preferences = await driver.wait(
+            until.elementLocated(By.xpath(
+                '//*[@id="textwarp-action-menu"]//*[@role="menuitem" and normalize-space()="Preferences"]'
+            )),
+            5000
+        );
+        await preferences.click();
+        const compactUi = await driver.wait(
+            until.elementLocated(By.css('#textwarp-settings-panel input[type="checkbox"]')),
+            5000
+        );
+        await compactUi.click();
+        expect(await driver.executeScript(`
+            return JSON.parse(localStorage.getItem('textwarp.ide.preferences')).compactUi;
+        `)).toBe(true);
+        await driver.get(uri);
+        await driver.wait(until.elementLocated(By.css('[data-tabs="textwarp"]')), 20000);
+        expect(await driver.executeScript(`
+            return getComputedStyle(document.querySelector('[data-tabs="textwarp"]'))
+                .getPropertyValue('--textwarp-control-height').trim();
+        `)).toBe('1.85rem');
     });
 });

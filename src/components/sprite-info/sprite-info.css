@@ -3,7 +3,7 @@
 @import "../../css/filters.css";
 
 .sprite-info {
-    padding: 0.75rem;
+    padding: 0.65rem;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     background-color: $ui-white;
     color: $text-primary;
@@ -12,9 +12,48 @@
     border-bottom: 1px solid $ui-black-transparent;
 }
 
+.name-row label {
+    width: 100%;
+}
+
+.name-row label > span {
+    margin-bottom: 0.25rem;
+}
+
+.name-row .sprite-input {
+    width: 100%;
+}
+
+.inspector-section {
+    margin-top: 0.6rem;
+}
+
+.inspector-section > strong {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: $text-primary-transparent;
+    font-size: 0.58rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.position-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+}
+
+.position-grid .group,
+.position-grid label,
+.position-grid input {
+    width: 100%;
+}
+
 .row {
     display: flex;
-    justify-content: space-between;
+    align-items: flex-end;
+    justify-content: flex-start;
+    gap: 0.7rem;
 }
 
 .row-primary {
@@ -27,6 +66,10 @@
     display: inline-flex;
     flex-direction: row; /* makes columns, for each label/form group */
     align-items: center;
+}
+
+.group label {
+    min-width: 0;
 }
 
 .column {
@@ -73,5 +116,81 @@
 }
 
 .sprite-input {
-    width: 8rem;
+    width: 100%;
+}
+
+.visibility-switch {
+    min-height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 0.45rem;
+    color: $text-primary;
+    background: transparent;
+    border: 0;
+    border-radius: $form-radius;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.7rem;
+}
+
+.visibility-switch > span {
+    width: 1.7rem;
+    height: 0.95rem;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem;
+    background: $text-primary-transparent;
+    border-radius: 999px;
+}
+
+.visibility-switch > span > span {
+    width: 0.75rem;
+    height: 0.75rem;
+    display: block;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: transform 120ms ease;
+}
+
+.visibility-switch[aria-checked="true"] > span {
+    background: $pen-primary;
+}
+
+.visibility-switch[aria-checked="true"] > span > span {
+    transform: translateX(0.75rem);
+}
+
+.visibility-switch:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.unit-input {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.unit-input > span {
+    position: absolute;
+    right: 0.4rem;
+    color: $text-primary-transparent;
+    pointer-events: none;
+    font-size: 0.65rem;
+}
+
+.unit-input input {
+    padding-right: 1.2rem;
+}
+
+@media (max-width: 520px) {
+    .sprite-info {
+        overflow-x: auto;
+    }
+
+    .row {
+        min-width: 22rem;
+    }
 }

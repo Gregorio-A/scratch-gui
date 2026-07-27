@@ -21,7 +21,6 @@ import CostumeLibrary from '../../containers/costume-library.jsx';
 import BackdropLibrary from '../../containers/backdrop-library.jsx';
 import Watermark from '../../containers/watermark.jsx';
 
-import Backpack from '../../containers/backpack.jsx';
 import BrowserModal from '../browser-modal/browser-modal.jsx';
 import TipsLibrary from '../../containers/tips-library.jsx';
 import Cards from '../../containers/cards.jsx';
@@ -55,6 +54,21 @@ const messages = defineMessages({
         id: 'gui.gui.addExtension',
         description: 'Button to add an extension in the target pane',
         defaultMessage: 'Add Extension'
+    },
+    hideStage: {
+        id: 'tw.stageDock.hide',
+        description: 'Button to collapse the stage dock',
+        defaultMessage: 'Hide stage'
+    },
+    resizeStage: {
+        id: 'tw.stageDock.resize',
+        description: 'Accessible label for the stage resize handle',
+        defaultMessage: 'Resize stage'
+    },
+    showStage: {
+        id: 'tw.stageDock.showLabel',
+        description: 'Button to restore the collapsed stage dock',
+        defaultMessage: 'Show stage'
     }
 });
 
@@ -70,6 +84,195 @@ const getFullscreenBackgroundColor = () => {
 };
 
 const fullscreenBackgroundColor = getFullscreenBackgroundColor();
+
+const STAGE_LAYOUT_STORAGE_KEY = 'textwarp.workspace.stage-layout';
+
+const readStageLayout = () => {
+    const defaultLayout = {
+        mobileHeight: 320,
+        visible: typeof window === 'undefined' || window.innerWidth > 640,
+        width: 510
+    };
+    try {
+        const saved = JSON.parse(window.localStorage.getItem(STAGE_LAYOUT_STORAGE_KEY));
+        if (!saved || typeof saved !== 'object') return defaultLayout;
+        return {
+            mobileHeight: Math.max(180, Math.min(600, Number(saved.mobileHeight) || defaultLayout.mobileHeight)),
+            visible: saved.visible !== false,
+            width: Math.max(300, Math.min(720, Number(saved.width) || defaultLayout.width))
+        };
+    } catch (error) {
+        return defaultLayout;
+    }
+};
+
+/* eslint-disable react/jsx-no-bind */
+const ResizableStagePane = ({
+    isFullScreen,
+    intl,
+    isRendererSupported: rendererSupported,
+    isRtl,
+    stageSize,
+    vm
+}) => {
+    const [layout, setLayout] = React.useState(readStageLayout);
+    const resizeSession = React.useRef(null);
+    const persistLayout = nextLayout => {
+        try {
+            window.localStorage.setItem(STAGE_LAYOUT_STORAGE_KEY, JSON.stringify(nextLayout));
+        } catch (error) {
+            // The layout remains active for this session when browser storage is unavailable.
+        }
+    };
+    React.useEffect(() => {
+        const handlePointerMove = event => {
+            if (!resizeSession.current) return;
+            if (resizeSession.current.mobile) {
+                const rawHeight = resizeSession.current.bottom - event.clientY;
+                const maxHeight = Math.max(240, Math.min(600, window.innerHeight * 0.7));
+                setLayout(current => Object.assign({}, current, {
+                    mobileHeight: Math.max(180, Math.min(maxHeight, rawHeight))
+                }));
+                return;
+            }
+            const rawWidth = resizeSession.current.isRtl ?
+                event.clientX - resizeSession.current.left :
+                resizeSession.current.right - event.clientX;
+            const maxWidth = Math.max(320, Math.min(720, window.innerWidth * 0.7));
+            setLayout(current => Object.assign({}, current, {
+                width: Math.max(300, Math.min(maxWidth, rawWidth))
+            }));
+        };
+        const handlePointerUp = () => {
+            if (!resizeSession.current) return;
+            resizeSession.current = null;
+            document.body.classList.remove('textwarp-resizing');
+            setLayout(current => {
+                persistLayout(current);
+                return current;
+            });
+            window.dispatchEvent(new Event('resize'));
+        };
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        return () => {
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            document.body.classList.remove('textwarp-resizing');
+        };
+    }, []);
+    const setVisible = visible => {
+        const nextLayout = Object.assign({}, layout, {visible});
+        setLayout(nextLayout);
+        persistLayout(nextLayout);
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+    };
+    if (!layout.visible) {
+        return (
+            <div className={styles.collapsedStageDock}>
+                <button
+                    aria-label={intl.formatMessage(messages.showStage)}
+                    title={intl.formatMessage(messages.showStage)}
+                    type="button"
+                    onClick={() => setVisible(true)}
+                >
+                    <span aria-hidden="true">{'◧'}</span>
+                    <FormattedMessage
+                        defaultMessage="Stage"
+                        description="Button to restore the collapsed stage"
+                        id="tw.stageDock.show"
+                    />
+                </button>
+            </div>
+        );
+    }
+    const renderedStageSize = layout.width < 410 ? STAGE_SIZE_MODES.small : stageSize;
+    return (
+        <Box
+            className={classNames(styles.stageAndTargetWrapper, styles.stageDock)}
+            style={{
+                '--textwarp-stage-pane-height': `${layout.mobileHeight}px`,
+                '--textwarp-stage-pane-width': `${layout.width}px`
+            }}
+        >
+            <div
+                aria-label={intl.formatMessage(messages.resizeStage)}
+                className={styles.stageResizeHandle}
+                role="separator"
+                tabIndex="0"
+                onPointerDown={event => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    const bounds = event.currentTarget.parentElement.getBoundingClientRect();
+                    resizeSession.current = {
+                        bottom: bounds.bottom,
+                        isRtl,
+                        left: bounds.left,
+                        mobile: window.innerWidth <= 640,
+                        right: bounds.right
+                    };
+                    document.body.classList.add('textwarp-resizing');
+                }}
+                onKeyDown={event => {
+                    const mobile = window.innerWidth <= 640;
+                    const supportedKeys = mobile ?
+                        ['ArrowUp', 'ArrowDown', 'Home'] :
+                        ['ArrowLeft', 'ArrowRight', 'Home'];
+                    if (!supportedKeys.includes(event.key)) return;
+                    event.preventDefault();
+                    if (mobile) {
+                        const mobileHeight = event.key === 'Home' ? 320 :
+                            Math.max(180, Math.min(
+                                600,
+                                layout.mobileHeight + (event.key === 'ArrowUp' ? 20 : -20)
+                            ));
+                        const nextLayout = Object.assign({}, layout, {mobileHeight});
+                        setLayout(nextLayout);
+                        persistLayout(nextLayout);
+                        window.dispatchEvent(new Event('resize'));
+                        return;
+                    }
+                    const width = event.key === 'Home' ? 510 :
+                        Math.max(300, Math.min(720, layout.width + (event.key === 'ArrowLeft' ? 20 : -20)));
+                    const nextLayout = Object.assign({}, layout, {width});
+                    setLayout(nextLayout);
+                    persistLayout(nextLayout);
+                    window.dispatchEvent(new Event('resize'));
+                }}
+            >
+                <button
+                    aria-label={intl.formatMessage(messages.hideStage)}
+                    title={intl.formatMessage(messages.hideStage)}
+                    type="button"
+                    onClick={() => setVisible(false)}
+                >{'›'}</button>
+            </div>
+            <StageWrapper
+                isFullScreen={isFullScreen}
+                isRendererSupported={rendererSupported}
+                isRtl={isRtl}
+                stageSize={renderedStageSize}
+                vm={vm}
+            />
+            <Box className={styles.targetWrapper}>
+                <TargetPane
+                    stageSize={renderedStageSize}
+                    vm={vm}
+                />
+            </Box>
+        </Box>
+    );
+};
+
+ResizableStagePane.propTypes = {
+    isFullScreen: PropTypes.bool,
+    intl: intlShape.isRequired,
+    isRendererSupported: PropTypes.bool.isRequired,
+    isRtl: PropTypes.bool.isRequired,
+    stageSize: PropTypes.string.isRequired,
+    vm: PropTypes.instanceOf(VM).isRequired
+};
+/* eslint-enable react/jsx-no-bind */
 
 const GUIComponent = props => {
     const {
@@ -346,9 +549,9 @@ const GUIComponent = props => {
                                                 src={codeIcon()}
                                             />
                                             <FormattedMessage
-                                                defaultMessage="Code"
-                                                description="Button to get to the code panel"
-                                                id="gui.gui.codeTab"
+                                                defaultMessage="Programming"
+                                                description="Button to get to the programming panel"
+                                                id="tw.gui.programmingTab"
                                             />
                                         </Tab>
                                         <Tab
@@ -391,6 +594,8 @@ const GUIComponent = props => {
                                     <TabPanel className={tabClassNames.tabPanel}>
                                         <Box className={styles.blocksWrapper}>
                                             <TextWarpEditor
+                                                backpackHost={backpackHost}
+                                                backpackVisible={backpackVisible}
                                                 key={`${blocksId}/${theme.id}`}
                                                 canUseCloud={canUseCloud}
                                                 grow={1}
@@ -400,6 +605,7 @@ const GUIComponent = props => {
                                                 }}
                                                 stageSize={stageSize}
                                                 onOpenCustomExtensionModal={onOpenCustomExtensionModal}
+                                                onOpenExtensionLibrary={onExtensionButtonClick}
                                                 theme={theme}
                                                 vm={vm}
                                             />
@@ -430,26 +636,16 @@ const GUIComponent = props => {
                                         {soundsTabVisible ? <SoundTab vm={vm} /> : null}
                                     </TabPanel>
                                 </Tabs>
-                                {backpackVisible ? (
-                                    <Backpack host={backpackHost} />
-                                ) : null}
                             </Box>
 
-                            <Box className={classNames(styles.stageAndTargetWrapper, styles[stageSize])}>
-                                <StageWrapper
-                                    isFullScreen={isFullScreen}
-                                    isRendererSupported={isRendererSupported()}
-                                    isRtl={isRtl}
-                                    stageSize={stageSize}
-                                    vm={vm}
-                                />
-                                <Box className={styles.targetWrapper}>
-                                    <TargetPane
-                                        stageSize={stageSize}
-                                        vm={vm}
-                                    />
-                                </Box>
-                            </Box>
+                            <ResizableStagePane
+                                isFullScreen={isFullScreen}
+                                intl={intl}
+                                isRendererSupported={isRendererSupported()}
+                                isRtl={isRtl}
+                                stageSize={stageSize}
+                                vm={vm}
+                            />
                         </Box>
                     </Box>
                     <DragLayer />

@@ -15,15 +15,19 @@ import {isWideLocale} from '../../lib/locale-utils.js';
 
 import styles from './sprite-info.css';
 
-import xIcon from './icon--x.svg';
-import yIcon from './icon--y.svg';
-import showIcon from '!../../lib/tw-recolor/build!./icon--show.svg';
-import hideIcon from '!../../lib/tw-recolor/build!./icon--hide.svg';
-import ToggleButtons from '../toggle-buttons/toggle-buttons.jsx';
-
 const BufferedInput = BufferedInputHOC(Input);
 
 const messages = defineMessages({
+    appearance: {
+        id: 'tw.spriteInfo.appearance',
+        defaultMessage: 'Appearance',
+        description: 'Heading for sprite appearance controls'
+    },
+    position: {
+        id: 'tw.spriteInfo.position',
+        defaultMessage: 'Position',
+        description: 'Heading for sprite position controls'
+    },
     spritePlaceholder: {
         id: 'gui.SpriteInfo.spritePlaceholder',
         defaultMessage: 'Name',
@@ -42,6 +46,13 @@ const messages = defineMessages({
 });
 
 class SpriteInfo extends React.Component {
+    constructor (props) {
+        super(props);
+        this.handleResetDirection = this.handleResetDirection.bind(this);
+        this.handleResetSize = this.handleResetSize.bind(this);
+        this.handleResetX = this.handleResetX.bind(this);
+        this.handleResetY = this.handleResetY.bind(this);
+    }
     shouldComponentUpdate (nextProps) {
         return (
             this.props.rotationStyle !== nextProps.rotationStyle ||
@@ -56,11 +67,19 @@ class SpriteInfo extends React.Component {
             Math.round(this.props.y) !== Math.round(nextProps.y)
         );
     }
+    handleResetDirection () {
+        if (!this.props.disabled) this.props.onChangeDirection(90);
+    }
+    handleResetSize () {
+        if (!this.props.disabled) this.props.onChangeSize(100);
+    }
+    handleResetX () {
+        if (!this.props.disabled) this.props.onChangeX(0);
+    }
+    handleResetY () {
+        if (!this.props.disabled) this.props.onChangeY(0);
+    }
     render () {
-        const {
-            stageSize
-        } = this.props;
-
         const sprite = (
             <FormattedMessage
                 defaultMessage="Sprite"
@@ -104,18 +123,6 @@ class SpriteInfo extends React.Component {
 
         const xPosition = (
             <div className={styles.group}>
-                {
-                    (stageSize === STAGE_DISPLAY_SIZES.full || stageSize === STAGE_DISPLAY_SIZES.large) ?
-                        <div className={styles.iconWrapper}>
-                            <img
-                                aria-hidden="true"
-                                className={classNames(styles.xIcon, styles.icon)}
-                                src={xIcon}
-                                draggable={false}
-                            />
-                        </div> :
-                        null
-                }
                 <Label text="x">
                     <BufferedInput
                         small
@@ -124,6 +131,7 @@ class SpriteInfo extends React.Component {
                         tabIndex="0"
                         type="number"
                         value={this.props.disabled ? '' : Math.round(this.props.x)}
+                        onDoubleClick={this.handleResetX}
                         onSubmit={this.props.onChangeX}
                     />
                 </Label>
@@ -132,18 +140,6 @@ class SpriteInfo extends React.Component {
 
         const yPosition = (
             <div className={styles.group}>
-                {
-                    (stageSize === STAGE_DISPLAY_SIZES.full || stageSize === STAGE_DISPLAY_SIZES.large) ?
-                        <div className={styles.iconWrapper}>
-                            <img
-                                aria-hidden="true"
-                                className={classNames(styles.yIcon, styles.icon)}
-                                src={yIcon}
-                                draggable={false}
-                            />
-                        </div> :
-                        null
-                }
                 <Label text="y">
                     <BufferedInput
                         small
@@ -152,96 +148,83 @@ class SpriteInfo extends React.Component {
                         tabIndex="0"
                         type="number"
                         value={this.props.disabled ? '' : Math.round(this.props.y)}
+                        onDoubleClick={this.handleResetY}
                         onSubmit={this.props.onChangeY}
                     />
                 </Label>
             </div>
         );
 
-        if (stageSize === STAGE_DISPLAY_SIZES.small) {
-            return (
-                <Box className={styles.spriteInfo}>
-                    <div className={classNames(styles.row, styles.rowPrimary)}>
-                        <div className={styles.group}>
-                            {spriteNameInput}
-                        </div>
-                    </div>
-                    <div className={classNames(styles.row, styles.rowSecondary)}>
+        return (
+            <Box className={styles.spriteInfo}>
+                <div className={styles.nameRow}>
+                    <Label
+                        above
+                        text={sprite}
+                    >
+                        {spriteNameInput}
+                    </Label>
+                </div>
+                <div className={styles.inspectorSection}>
+                    <strong>{this.props.intl.formatMessage(messages.position)}</strong>
+                    <div className={styles.positionGrid}>
                         {xPosition}
                         {yPosition}
                     </div>
-                </Box>
-            );
-        }
-
-        return (
-            <Box className={styles.spriteInfo}>
-                <div className={classNames(styles.row, styles.rowPrimary)}>
-                    <div className={styles.group}>
-                        <Label
-                            above={labelAbove}
-                            text={sprite}
-                        >
-                            {spriteNameInput}
-                        </Label>
-                    </div>
-                    {xPosition}
-                    {yPosition}
                 </div>
-                <div className={classNames(styles.row, styles.rowSecondary)}>
-                    <div className={labelAbove ? styles.column : styles.group}>
-                        {
-                            stageSize === STAGE_DISPLAY_SIZES.full || stageSize === STAGE_DISPLAY_SIZES.large ?
-                                <Label
-                                    secondary
-                                    text={showLabel}
-                                /> :
-                                null
-                        }
-                        <ToggleButtons
-                            buttons={[
-                                {
-                                    handleClick: this.props.onClickVisible,
-                                    icon: showIcon,
-                                    isSelected: this.props.visible && !this.props.disabled,
-                                    title: this.props.intl.formatMessage(messages.showSpriteAction)
-                                },
-                                {
-                                    handleClick: this.props.onClickNotVisible,
-                                    icon: hideIcon,
-                                    isSelected: !this.props.visible && !this.props.disabled,
-                                    title: this.props.intl.formatMessage(messages.hideSpriteAction)
-                                }
-                            ]}
-                            disabled={this.props.disabled}
-                        />
-                    </div>
-                    <div className={classNames(styles.group, styles.largerInput)}>
-                        <Label
-                            secondary
-                            above={labelAbove}
-                            text={sizeLabel}
-                        >
-                            <BufferedInput
-                                small
+                <div className={styles.inspectorSection}>
+                    <strong>{this.props.intl.formatMessage(messages.appearance)}</strong>
+                    <div className={classNames(styles.row, styles.rowSecondary)}>
+                        <div className={labelAbove ? styles.column : styles.group}>
+                            <button
+                                aria-checked={this.props.visible && !this.props.disabled}
+                                className={styles.visibilitySwitch}
                                 disabled={this.props.disabled}
-                                label={sizeLabel}
-                                tabIndex="0"
-                                type="number"
-                                value={this.props.disabled ? '' : Math.round(this.props.size)}
-                                onSubmit={this.props.onChangeSize}
+                                role="switch"
+                                title={this.props.intl.formatMessage(
+                                    this.props.visible ? messages.hideSpriteAction : messages.showSpriteAction
+                                )}
+                                type="button"
+                                onClick={this.props.visible ? this.props.onClickNotVisible : this.props.onClickVisible}
+                            >
+                                <span aria-hidden="true"><span /></span>
+                                {showLabel}
+                            </button>
+                        </div>
+                        <div className={classNames(styles.group, styles.largerInput)}>
+                            <Label
+                                secondary
+                                above={labelAbove}
+                                text={sizeLabel}
+                            >
+                                <span className={styles.unitInput}>
+                                    <BufferedInput
+                                        small
+                                        disabled={this.props.disabled}
+                                        label={sizeLabel}
+                                        tabIndex="0"
+                                        type="number"
+                                        value={this.props.disabled ? '' : Math.round(this.props.size)}
+                                        onDoubleClick={this.handleResetSize}
+                                        onSubmit={this.props.onChangeSize}
+                                    />
+                                    <span>{'%'}</span>
+                                </span>
+                            </Label>
+                        </div>
+                        <div
+                            className={classNames(styles.group, styles.largerInput)}
+                            onDoubleClick={this.handleResetDirection}
+                        >
+                            <DirectionPicker
+                                direction={Math.round(this.props.direction)}
+                                disabled={this.props.disabled}
+                                labelAbove={labelAbove}
+                                rotationStyle={this.props.rotationStyle}
+                                onChangeDirection={this.props.onChangeDirection}
+                                onChangeRotationStyle={this.props.onChangeRotationStyle}
                             />
-                        </Label>
-                    </div>
-                    <div className={classNames(styles.group, styles.largerInput)}>
-                        <DirectionPicker
-                            direction={Math.round(this.props.direction)}
-                            disabled={this.props.disabled}
-                            labelAbove={labelAbove}
-                            rotationStyle={this.props.rotationStyle}
-                            onChangeDirection={this.props.onChangeDirection}
-                            onChangeRotationStyle={this.props.onChangeRotationStyle}
-                        />
+                        </div>
                     </div>
                 </div>
             </Box>

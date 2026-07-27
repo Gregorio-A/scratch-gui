@@ -3,10 +3,14 @@
 @import "../../css/z-index.css";
 
 .sprite-selector {
-    flex-grow: 1;
+    display: flex;
+    flex-grow: 0;
+    flex-direction: column;
     position: relative;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    margin-right: calc($space / 2);
+    min-width: 0;
+    min-height: 0;
+    margin-right: 0;
     background-color: $ui-secondary;
     border-top-right-radius: $space;
     border-top-left-radius: $space;
@@ -14,6 +18,50 @@
     border-width: 1px;
     border-style: solid;
     border-bottom: 0;
+}
+
+.target-tabs {
+    height: 2.15rem;
+    display: grid;
+    flex: none;
+    grid-template-columns: 1fr 1fr;
+    padding: 0 0.45rem;
+    background: $ui-white;
+    border-bottom: 1px solid $ui-black-transparent;
+}
+
+.target-tabs button {
+    color: $text-primary;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.target-tabs button:hover {
+    background: $ui-black-transparent;
+}
+
+.target-tabs .active-target-tab {
+    color: $motion-primary;
+    border-bottom-color: $motion-primary;
+}
+
+.target-panel {
+    min-height: 6.4rem;
+    height: 6.4rem;
+    position: relative;
+    display: flex;
+    flex: none;
+    overflow: hidden;
+}
+
+.backdrop-panel {
+    min-height: 10rem;
+    height: 10rem;
 }
 
 .sprite-wrapper {
@@ -30,10 +78,10 @@
         @todo: make room for the scrollbar
     */
     box-sizing: border-box;
-    width: calc((100% / $sprites-per-row ) - $space);
-    max-width: 6rem;
-    min-width: 4rem;
-    min-height: 4rem; /* @todo: calc height same as width */
+    width: calc(50% - $space);
+    max-width: 10rem;
+    min-width: 5rem;
+    min-height: 3.6rem;
     margin: calc($space / 2);
 }
 
@@ -51,7 +99,9 @@
               also introduces a new bug in Chrome when vertically resizing window down,
               then back up, introduces white space in the outside the page container.
     */
-    height: calc(100% - $sprite-info-height);
+    height: auto;
+    min-height: 4rem;
+    flex: 1;
     overflow-y: auto;
 }
 
@@ -62,6 +112,7 @@
 .items-wrapper {
     display: flex;
     flex-wrap: wrap;
+    align-content: flex-start;
     flex-direction: row;
 
     padding-top: calc($space / 2);
@@ -75,6 +126,13 @@
 .add-button {
     position: absolute;
     bottom: 0.75rem;
+}
+
+.target-panel > :global([class^="stage-selector_stage-selector"]) {
+    min-height: 7rem;
+    margin: 0.45rem;
+    border: 1px solid $ui-black-transparent;
+    border-radius: $space;
 }
 
 [dir="ltr"] .add-button {

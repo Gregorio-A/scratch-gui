@@ -53,7 +53,7 @@ test('persisted interface state accepts only known views and panels', () => {
         bottomPanelCollapsed: true,
         sidebarPanel: 'history',
         sidebarVisible: false,
-        viewMode: 'dual'
+        viewMode: 'code'
     });
 
     assert.deepEqual(normalizeUiState({

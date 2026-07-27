@@ -58,7 +58,7 @@ class Backpack extends React.Component {
             itemsPerPage: 20,
             moreToLoad: false,
             loading: false,
-            expanded: false,
+            expanded: Boolean(props.embedded),
             contents: []
         };
 
@@ -265,8 +265,9 @@ class Backpack extends React.Component {
             <DroppableBackpack
                 blockDragOver={this.state.blockDragOverBackpack}
                 contents={this.state.contents}
+                embedded={this.props.embedded}
                 error={this.state.error}
-                expanded={this.state.expanded}
+                expanded={this.props.embedded || this.state.expanded}
                 loading={this.state.loading}
                 showMore={this.state.moreToLoad}
                 onDelete={this.handleDelete}
@@ -275,18 +276,23 @@ class Backpack extends React.Component {
                 onMore={this.handleMore}
                 onMouseEnter={this.handleMouseEnter}
                 onMouseLeave={this.handleMouseLeave}
-                onToggle={this.props.host ? this.handleToggle : null}
+                onToggle={!this.props.embedded && this.props.host ? this.handleToggle : null}
             />
         );
     }
 }
 
 Backpack.propTypes = {
+    embedded: PropTypes.bool,
     intl: intlShape,
     host: PropTypes.string,
     token: PropTypes.string,
     username: PropTypes.string,
     vm: PropTypes.instanceOf(VM)
+};
+
+Backpack.defaultProps = {
+    embedded: false
 };
 
 const getTokenAndUsername = state => {

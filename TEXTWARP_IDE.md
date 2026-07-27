@@ -6,7 +6,7 @@ O editor TextWarp é uma IDE integrada ao projeto TurboWarp. Cada palco ou ator 
 
 O Monaco fornece destaque de sintaxe, linhas numeradas, indentação e fechamento automáticos, múltiplos cursores, histórico de desfazer/refazer, minimapa e busca/substituição no arquivo. O painel **Buscar** opera em todos os scripts editáveis e só confirma uma substituição global depois de validar todos os módulos.
 
-Use **Editor duplo** para abrir dois módulos independentes. O seletor do segundo painel nunca repete o alvo principal:
+Use **Dividir editor** para abrir dois módulos independentes. O seletor do segundo painel nunca repete o alvo principal:
 é possível editar, por exemplo, `Sprite1.tw` e `stage.tw` simultaneamente, cada um com sua própria fonte,
 diagnósticos, modelo Monaco, compilação e sincronização com blocos. Use as abas de arquivos e o explorador para
 alternar entre os demais módulos sem perder a posição e o histórico dos modelos já abertos.
@@ -106,12 +106,16 @@ O painel de depuração mostra:
 
 ## Produtividade e recuperação
 
-A paleta **Comandos** reúne as ações do Monaco e do TextWarp. **Atalhos** permite alterar e persistir as teclas de compilar, executar, executar seleção, parar, reiniciar e formatar. **Modelos** insere estruturas iniciais para palco de jogo, movimento e animação.
+A paleta **Comandos** reúne as ações do Monaco e do TextWarp. **Atalhos** permite alterar e persistir as teclas de compilar, executar, executar seleção, parar, reiniciar e formatar.
 
-A fonte é salva imediatamente no projeto e recebe snapshots locais após a edição. O painel **Histórico** restaura até 30 versões por módulo mesmo sem Git e continua disponível após fechar inesperadamente a aplicação. As abas recentes também são restauradas localmente.
+A fonte é salva imediatamente no projeto e recebe snapshots locais após a edição. Antes de cada conversão manual,
+outro snapshot é criado e a faixa **Conversão realizada** oferece **Desfazer** e **Ver diferenças**. O painel
+**Histórico** restaura até 30 versões por módulo mesmo sem Git e continua disponível após fechar inesperadamente
+a aplicação. As abas recentes também são restauradas localmente.
 
 O tamanho do texto do Monaco é persistido por dispositivo. Ele pode ser alterado em **Preferências**, pelo controle
 deslizante na barra inferior ou por `Ctrl++`/`Ctrl+-`; `Ctrl+0` restaura 15 px.
+**Interface compacta** reduz barras, abas e controles em telas maiores. A escolha também fica salva no navegador.
 
 Atalhos aceitam letras, números, teclas de função, setas, navegação, espaço, Tab, Escape, Backspace e Delete.
 Configurações inválidas ou duplicadas mostram um erro e mantêm o atalho padrão. Breakpoints usam decorações
@@ -119,23 +123,33 @@ rastreáveis: inserir ou remover linhas move também a posição persistida do b
 
 ## Layout responsivo e painéis
 
-**Problemas**, **Console**, **Depuração** e **Extensões** dividem a área inferior por abas e só a ferramenta ativa
-ocupa espaço. Divisores arrastáveis redimensionam a barra do projeto, a área inferior e a proporção dos modos
-**Dividido** e **Editor duplo**; os valores ficam salvos localmente.
+**Problemas**, **Console**, **Depurador**, **Saída** e **Mochila** dividem a área inferior por abas e só a ferramenta
+ativa ocupa espaço. A barra de atividades abre **Arquivos**, **Pesquisa**, **Atores**, **Extensões**,
+**Documentação** e **Configurações**. A coluna direita segue a ordem **Palco**, **Inspetor** e uma área única com
+abas **Atores/Cenários**. Divisores arrastáveis redimensionam a barra lateral, o painel inferior, o palco e a
+proporção de **Dividido**; os valores ficam salvos localmente.
 
 O painel **Problemas** oferece **Copiar relatório técnico** e **Baixar relatório técnico** mesmo quando não há
 diagnósticos. O relatório reúne estado do editor, falha de carregamento do Monaco, resultado Blocos → Texto, opcodes
 indisponíveis, variáveis/listas com IDs e nomes originais, erros de runtime, console e a fonte atual. Revise o arquivo
 antes de compartilhá-lo, pois ele inclui o código completo do módulo.
 
-Em telas compactas, as ações secundárias ficam em **Ferramentas**, a barra do projeto vira uma sobreposição e os
-dois editores são empilhados. Em largura de celular, o palco e a lista de atores ficam abaixo da IDE, sem cobrir o
-editor nem sair da viewport. Os links opcionais da barra superior são ocultados antes dos comandos de arquivo e
-edição.
+**Programação** reúne os modos **Texto**, **Blocos**, **Dividido** e **Documentação** diretamente acima do editor.
+O explorador organiza o projeto em Atores e Palco, enquanto o Outline agrupa Variáveis, Procedimentos e Eventos.
+Cada arquivo aberto aparece como uma aba comum, com indicador de alteração, fechamento, reordenação e menu de contexto.
+**Converter** reúne Texto → Blocos, Blocos → Texto, sincronização automática e comparação. **Mais ações** concentra
+Paleta de comandos, Formatar, Dividir editor, Documentação, Editor externo e Preferências; o antigo botão Modelos não
+ocupa mais a interface. Em telas estreitas, a barra lateral vira uma sobreposição fechável por Escape e o palco começa
+recolhido. Em telas maiores, o palco pode ser arrastado, recolhido e restaurado; sua largura e a densidade compacta são
+persistidas no navegador. O campo permanente **Localizar** fica oculto; `Ctrl+F` abre a busca do Monaco sobre o editor.
+
+Quando texto e blocos divergem, a própria IDE oferece **Comparar alterações**, **Usar texto**, **Usar blocos** e
+**Cancelar**; não há confirmação isolada do navegador nem substituição silenciosa. Os itens de **Problemas** exibem
+arquivo, linha e coluna e navegam para a localização correspondente.
 
 ## Editores externos
 
-Abra **Ferramentas → Editor externo → Conectar arquivo** para associar o módulo atual a um arquivo `.tw`. Depois de
+Abra **Mais ações → Editor externo → Conectar arquivo** para associar o módulo atual a um arquivo `.tw`. Depois de
 editar no VS Code, Zed, Neovim, Sublime Text ou outro editor, use **Reler arquivo**. **Salvar fonte** grava a versão
 atual do TextWarp no mesmo handle.
 
@@ -172,9 +186,13 @@ Salvar, compilar, executar, pausar e parar sempre atualizam o status visível. P
 | --- | --- |
 | Salvar projeto | `Ctrl+S` |
 | Salvar como | `Ctrl+Shift+S` |
+| Executar | `F5` |
+| Parar | `Shift+F5` |
 | Explorador | `Ctrl+Shift+E` |
 | Busca no projeto | `Ctrl+Shift+F` |
-| Paleta de comandos | `F1` |
+| Paleta de comandos | `Ctrl+Shift+P` |
+| Alternar barra lateral | `Ctrl+B` |
+| Alternar painel inferior | `Ctrl+J` |
 | Compilar | `F7` |
 | Executar projeto | `Ctrl+Enter` |
 | Executar seleção/unidade | `Ctrl+Shift+Enter` |

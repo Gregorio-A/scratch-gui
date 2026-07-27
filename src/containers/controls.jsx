@@ -5,14 +5,30 @@ import VM from 'scratch-vm';
 import {connect} from 'react-redux';
 
 import ControlsComponent from '../components/controls/controls.jsx';
+import {
+    isPaused,
+    onPauseChanged,
+    setPaused,
+    setup as setupPause
+} from '../addons/addons/debugger/module.js';
 
 class Controls extends React.Component {
     constructor (props) {
         super(props);
         bindAll(this, [
             'handleGreenFlagClick',
+            'handlePauseClick',
+            'handleRestartClick',
             'handleStopAllClick'
         ]);
+        this.state = {paused: isPaused()};
+    }
+    componentDidMount () {
+        setupPause({tab: {traps: {vm: this.props.vm}}});
+        this.unsubscribePause = onPauseChanged(paused => this.setState({paused}));
+    }
+    componentWillUnmount () {
+        if (this.unsubscribePause) this.unsubscribePause();
     }
     handleGreenFlagClick (e) {
         e.preventDefault();
@@ -37,7 +53,19 @@ class Controls extends React.Component {
     }
     handleStopAllClick (e) {
         e.preventDefault();
+        setPaused(false);
         this.props.vm.stopAll();
+    }
+    handlePauseClick (e) {
+        e.preventDefault();
+        setPaused(!this.state.paused);
+    }
+    handleRestartClick (e) {
+        e.preventDefault();
+        setPaused(false);
+        if (!this.props.isStarted) this.props.vm.start();
+        this.props.vm.stopAll();
+        this.props.vm.greenFlag();
     }
     render () {
         const {
@@ -50,9 +78,12 @@ class Controls extends React.Component {
         return (
             <ControlsComponent
                 {...props}
-                active={projectRunning && isStarted}
+                active={(projectRunning && isStarted) || this.state.paused}
+                paused={this.state.paused}
                 turbo={turbo}
                 onGreenFlagClick={this.handleGreenFlagClick}
+                onPauseClick={this.handlePauseClick}
+                onRestartClick={this.handleRestartClick}
                 onStopAllClick={this.handleStopAllClick}
             />
         );
@@ -66,6 +97,7 @@ Controls.propTypes = {
     framerate: PropTypes.number.isRequired,
     interpolation: PropTypes.bool.isRequired,
     isSmall: PropTypes.bool,
+    showFramerate: PropTypes.bool,
     vm: PropTypes.instanceOf(VM)
 };
 

@@ -388,3 +388,198 @@ $fade-out-distance: 15px;
     /* overridden by JS; this will be used if the browser can't understand that color */
     background-color: white;
 }
+
+.tab-list {
+    width: 100%;
+    align-items: stretch;
+    padding-left: 0;
+    background: $ui-secondary;
+    border-bottom: 1px solid $ui-black-transparent !important;
+}
+
+.tab {
+    max-width: 8rem;
+    height: 100%;
+    flex-grow: 0;
+    margin: 0 !important;
+    padding: 0 0.75rem;
+    color: $text-primary-transparent;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+}
+
+.tab:hover {
+    background: $ui-black-transparent;
+}
+
+.tab.is-selected {
+    height: 100%;
+    color: $motion-primary;
+    background: transparent;
+    border-bottom-color: $motion-primary;
+}
+
+.tab img {
+    width: 1rem;
+}
+
+.extension-button-container,
+.watermark {
+    display: none;
+}
+
+.stage-dock {
+    width: var(--textwarp-stage-pane-width, 510px);
+    max-width: min(72vw, 720px);
+    position: relative;
+    flex-basis: var(--textwarp-stage-pane-width, 510px);
+    padding-right: $space;
+    padding-left: calc($space + 6px);
+    overflow: auto;
+    background: $ui-primary;
+    border-left: 1px solid $ui-black-transparent;
+}
+
+.stage-dock > :nth-child(2) {
+    align-self: center;
+}
+
+.stage-resize-handle {
+    position: absolute;
+    z-index: 9;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 8px;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+.stage-resize-handle:hover,
+.stage-resize-handle:focus-visible {
+    background: $motion-primary;
+}
+
+.stage-resize-handle button {
+    position: absolute;
+    top: calc($stage-menu-height + 0.4rem);
+    left: -0.55rem;
+    width: 1.25rem;
+    height: 2.4rem;
+    padding: 0;
+    color: $text-primary;
+    background: $ui-white;
+    border: 1px solid $ui-black-transparent;
+    border-radius: 0.35rem;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.collapsed-stage-dock {
+    width: 2.6rem;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    background: $ui-primary;
+    border-left: 1px solid $ui-black-transparent;
+}
+
+.collapsed-stage-dock button {
+    width: 2.2rem;
+    min-height: 7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0;
+    color: $text-primary;
+    background: $ui-secondary;
+    border: 1px solid $ui-black-transparent;
+    border-radius: 0.4rem;
+    cursor: pointer;
+    font-size: 0.62rem;
+    font-weight: 700;
+    writing-mode: vertical-rl;
+}
+
+.stage-dock .target-wrapper {
+    min-height: 14rem;
+    padding-top: $space;
+}
+
+:global(.textwarp-compact-ui) .tab-list {
+    height: 2.35rem;
+}
+
+:global(.textwarp-compact-ui) .tab {
+    font-size: 0.66rem;
+}
+
+@media (max-width: 800px) {
+    .tab {
+        min-width: 0;
+        flex: 1 1 0 !important;
+        padding: 0 0.35rem;
+    }
+
+    .tab img {
+        display: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .tab-list {
+        height: 2.75rem;
+        padding-left: 0;
+    }
+
+    .stage-dock {
+        width: 100%;
+        height: min(var(--textwarp-stage-pane-height, 320px), 70vh);
+        max-width: none;
+        min-height: 12rem;
+        max-height: 70vh;
+        flex: 0 0 min(var(--textwarp-stage-pane-height, 320px), 70vh);
+        flex-direction: column;
+        padding: calc($space + 6px) $space $space;
+    }
+
+    .stage-resize-handle {
+        right: 0;
+        bottom: auto;
+        width: auto;
+        height: 8px;
+        cursor: row-resize;
+    }
+
+    .stage-resize-handle button {
+        top: -0.55rem;
+        left: calc(50% - 1.2rem);
+        width: 2.4rem;
+        height: 1.25rem;
+        transform: rotate(90deg);
+    }
+
+    .collapsed-stage-dock {
+        width: 100%;
+        height: 2.75rem;
+        border-top: 1px solid $ui-black-transparent;
+        border-left: 0;
+    }
+
+    .collapsed-stage-dock button {
+        width: auto;
+        min-height: 2.2rem;
+        padding: 0 0.8rem;
+        writing-mode: horizontal-tb;
+    }
+
+    .stage-dock .target-wrapper {
+        min-height: 10rem;
+        padding-top: $space;
+        padding-left: 0;
+    }
+}

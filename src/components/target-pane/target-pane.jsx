@@ -59,6 +59,25 @@ const TargetPane = ({
             selectedId={editingTarget}
             spriteFileInput={fileInputRef}
             sprites={sprites}
+            stageSelector={<React.Fragment>
+                {stage.id && <StageSelector
+                    asset={
+                        stage.costume &&
+                        stage.costume.asset
+                    }
+                    backdropCount={stage.costumeCount}
+                    id={stage.id}
+                    selected={stage.id === editingTarget}
+                    onSelect={onSelectSprite}
+                />}
+                {spriteLibraryVisible ? (
+                    <SpriteLibrary
+                        vm={vm}
+                        onActivateBlocksTab={onActivateBlocksTab}
+                        onRequestClose={onRequestCloseSpriteLibrary}
+                    />
+                ) : null}
+            </React.Fragment>}
             stageSize={stageSize}
             onChangeSpriteDirection={onChangeSpriteDirection}
             onChangeSpriteName={onChangeSpriteName}
@@ -78,27 +97,6 @@ const TargetPane = ({
             onSpriteUpload={onSpriteUpload}
             onSurpriseSpriteClick={onSurpriseSpriteClick}
         />
-        <div className={styles.stageSelectorWrapper}>
-            {stage.id && <StageSelector
-                asset={
-                    stage.costume &&
-                    stage.costume.asset
-                }
-                backdropCount={stage.costumeCount}
-                id={stage.id}
-                selected={stage.id === editingTarget}
-                onSelect={onSelectSprite}
-            />}
-            <div>
-                {spriteLibraryVisible ? (
-                    <SpriteLibrary
-                        vm={vm}
-                        onActivateBlocksTab={onActivateBlocksTab}
-                        onRequestClose={onRequestCloseSpriteLibrary}
-                    />
-                ) : null}
-            </div>
-        </div>
     </div>
 );
 

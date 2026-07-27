@@ -94,6 +94,38 @@
     gap: 0.5rem;
 }
 
+.textwarp-brand {
+    height: 100%;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0 0.65rem;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.textwarp-brand:hover,
+.textwarp-brand:focus-visible {
+    background: $ui-black-transparent;
+}
+
+.textwarp-brand img {
+    width: 1.65rem;
+    max-height: 1.65rem;
+    object-fit: contain;
+}
+
+.top-menu-label {
+    margin: 0 0.3rem 0 0.5rem;
+}
+
 .file-group .menu-bar-item {
     padding: 0 0.5rem;
 }
@@ -285,9 +317,43 @@
     .feedback-link {
         display: none;
     }
+
+    .textwarp-brand {
+        padding: 0 0.35rem;
+        border-right: 0;
+    }
+
+    .textwarp-brand span,
+    .top-menu-label {
+        display: none;
+    }
 }
 
 .menu-item-link {
     color: inherit;
     text-decoration: none;
+}
+
+:global(.textwarp-compact-ui) .menu-bar,
+:global(.textwarp-compact-ui) .menu-bar-item {
+    height: 2.35rem;
+}
+
+:global(.textwarp-compact-ui) .menu-bar-menu {
+    margin-top: 2.35rem;
+}
+
+:global(.textwarp-compact-ui) .menu-bar {
+    gap: 0.25rem;
+    font-size: 0.7rem;
+}
+
+:global(.textwarp-compact-ui) .file-group,
+:global(.textwarp-compact-ui) .main-menu {
+    gap: 0.2rem;
+}
+
+:global(.textwarp-compact-ui) .textwarp-brand {
+    padding-right: 0.45rem;
+    padding-left: 0.45rem;
 }

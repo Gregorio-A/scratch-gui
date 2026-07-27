@@ -7,16 +7,12 @@ import VM from 'scratch-vm';
 
 import Box from '../box/box.jsx';
 import Button from '../button/button.jsx';
-import ToggleButtons from '../toggle-buttons/toggle-buttons.jsx';
 import Controls from '../../containers/controls.jsx';
 import {getStageDimensions, getMinWidth} from '../../lib/screen-utils';
 import {STAGE_DISPLAY_SIZES, STAGE_SIZE_MODES} from '../../lib/layout-constants';
 
 import fullScreenIcon from './icon--fullscreen.svg';
 import unFullScreenIcon from './icon--unfullscreen.svg';
-import largeStageIcon from '!../../lib/tw-recolor/build!./icon--large-stage.svg';
-import smallStageIcon from '!../../lib/tw-recolor/build!./icon--small-stage.svg';
-import fullStageIcon from '!../../lib/tw-recolor/build!./icon--full-stage.svg';
 import settingsIcon from './icon--settings.svg';
 
 import styles from './stage-header.css';
@@ -24,16 +20,6 @@ import styles from './stage-header.css';
 import FullscreenAPI from '../../lib/tw-fullscreen-api';
 
 const messages = defineMessages({
-    largeStageSizeMessage: {
-        defaultMessage: 'Switch to large stage',
-        description: 'Button to change stage size to large',
-        id: 'gui.stageHeader.stageSizeLarge'
-    },
-    smallStageSizeMessage: {
-        defaultMessage: 'Switch to small stage',
-        description: 'Button to change stage size to small',
-        id: 'gui.stageHeader.stageSizeSmall'
-    },
     fullStageSizeMessage: {
         defaultMessage: 'Switch to full stage',
         description: 'Button to change stage size to its full size',
@@ -58,6 +44,26 @@ const messages = defineMessages({
         defaultMessage: 'Open advanced settings',
         description: 'Button to open advanced settings in embeds',
         id: 'tw.openAdvanced'
+    },
+    stageView: {
+        defaultMessage: 'View',
+        description: 'Label for the stage view selector',
+        id: 'tw.stageHeader.view'
+    },
+    compactStage: {
+        defaultMessage: 'Compact',
+        description: 'Compact stage option',
+        id: 'tw.stageHeader.compact'
+    },
+    normalStage: {
+        defaultMessage: 'Normal',
+        description: 'Normal stage option',
+        id: 'tw.stageHeader.normal'
+    },
+    expandedStage: {
+        defaultMessage: 'Expanded stage',
+        description: 'Expanded stage option',
+        id: 'tw.stageHeader.expanded'
     }
 });
 
@@ -157,39 +163,34 @@ const StageHeaderComponent = function (props) {
             </Box>
         );
     } else {
+        const setStageView = event => {
+            const next = event.target.value;
+            if (next === STAGE_SIZE_MODES.small) onSetStageSmall();
+            else if (next === STAGE_SIZE_MODES.large) onSetStageLarge();
+            else onSetStageFull();
+        };
         const stageControls =
             isPlayerOnly ? (
                 []
             ) : (
-                <div className={styles.stageSizeToggleGroup}>
-                    <ToggleButtons
-                        buttons={[
-                            {
-                                handleClick: onSetStageSmall,
-                                icon: smallStageIcon,
-                                iconClassName: styles.stageButtonIcon,
-                                isSelected: stageSizeMode === STAGE_SIZE_MODES.small,
-                                title: props.intl.formatMessage(messages.smallStageSizeMessage)
-                            },
-                            ...(showFixedLargeSize ? [
-                                {
-                                    handleClick: onSetStageLarge,
-                                    icon: largeStageIcon,
-                                    iconClassName: styles.stageButtonIcon,
-                                    isSelected: stageSizeMode === STAGE_SIZE_MODES.large,
-                                    title: props.intl.formatMessage(messages.largeStageSizeMessage)
-                                }
-                            ] : []),
-                            {
-                                handleClick: onSetStageFull,
-                                icon: showFixedLargeSize ? fullStageIcon : largeStageIcon,
-                                iconClassName: styles.stageButtonIcon,
-                                isSelected: stageSizeMode === STAGE_SIZE_MODES.full,
-                                title: props.intl.formatMessage(messages.fullStageSizeMessage)
-                            }
-                        ]}
-                    />
-                </div>
+                <label className={styles.stageViewSelector}>
+                    <span>{props.intl.formatMessage(messages.stageView)}</span>
+                    <select
+                        value={stageSizeMode}
+                        // eslint-disable-next-line react/jsx-no-bind
+                        onChange={setStageView}
+                    >
+                        <option value={STAGE_SIZE_MODES.small}>
+                            {props.intl.formatMessage(messages.compactStage)}
+                        </option>
+                        {showFixedLargeSize && <option value={STAGE_SIZE_MODES.large}>
+                            {props.intl.formatMessage(messages.normalStage)}
+                        </option>}
+                        <option value={STAGE_SIZE_MODES.full}>
+                            {props.intl.formatMessage(messages.expandedStage)}
+                        </option>
+                    </select>
+                </label>
             );
         header = (
             <Box
@@ -199,6 +200,7 @@ const StageHeaderComponent = function (props) {
             >
                 <Box className={styles.stageMenuWrapper}>
                     <Controls
+                        showFramerate={false}
                         vm={vm}
                         isSmall={stageSizeMode === STAGE_SIZE_MODES.small}
                     />

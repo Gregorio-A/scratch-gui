@@ -1,27 +1,32 @@
 {
     "320": {
-        "actionColumns": 2,
-        "allPrimaryActionsVisible": true,
+        "actionRows": 1,
+        "directActionCount": 4,
+        "maximumActionBarHeight": 53,
         "minimumControlHeight": 44
     },
-  "600": {
-    "actionColumns": 3,
-    "allPrimaryActionsVisible": true,
-    "minimumControlHeight": 44
-  },
-  "768": {
-    "actionColumns": 3,
-    "allPrimaryActionsVisible": true,
-    "minimumControlHeight": 44
-  },
-  "1024": {
-        "actionColumns": 3,
-        "allPrimaryActionsVisible": true,
-        "minimumControlHeight": 44
+    "600": {
+        "actionRows": 1,
+        "directActionCount": 4,
+        "maximumActionBarHeight": 45,
+        "minimumControlHeight": 36
+    },
+    "768": {
+        "actionRows": 1,
+        "directActionCount": 4,
+        "maximumActionBarHeight": 45,
+        "minimumControlHeight": 36
+    },
+    "1024": {
+        "actionRows": 1,
+        "directActionCount": 4,
+        "maximumActionBarHeight": 45,
+        "minimumControlHeight": 36
     },
     "1440": {
-        "actionColumns": 6,
-        "allPrimaryActionsVisible": true,
-        "minimumControlHeight": 44
+        "actionRows": 1,
+        "directActionCount": 4,
+        "maximumActionBarHeight": 45,
+        "minimumControlHeight": 36
     }
 }

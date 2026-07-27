@@ -3,11 +3,13 @@
 .sa-find-bar {
   display: flex;
   align-items: center;
+  flex: 0 0 0;
   white-space: nowrap;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  width: 100%;
+  width: auto;
   height: 100%;
-  margin-left: 1em;
+  margin-left: 0;
+  overflow: hidden;
 }
 .sa-find-bar[hidden] {
   /* !important to override displayNoneWhileDisabled */
@@ -15,11 +17,24 @@
 }
 
 .sa-find-wrapper {
-  overflow: visible;
+  overflow: hidden;
   position: relative;
   height: 2rem;
-  width: 100%;
+  width: 0;
   max-width: 16em;
+  opacity: 0;
+  transition: width 120ms ease, opacity 120ms ease;
+}
+
+.sa-find-bar.revealed .sa-find-wrapper {
+  overflow: visible;
+  width: min(16em, 46vw);
+  opacity: 1;
+}
+
+.sa-find-bar.revealed {
+  flex: 1 1 auto;
+  overflow: visible;
 }
 
 .sa-find-dropdown-out {

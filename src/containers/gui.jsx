@@ -156,6 +156,12 @@ const mapStateToProps = state => {
         costumeLibraryVisible: state.scratchGui.modals.costumeLibrary,
         costumesTabVisible: state.scratchGui.editorTab.activeTabIndex === COSTUMES_TAB_INDEX,
         error: state.scratchGui.projectState.error,
+        editingTargetName: (() => {
+            const editingTargetId = state.scratchGui.targets.editingTarget;
+            const editingTarget = state.scratchGui.targets.sprites[editingTargetId] ||
+                (state.scratchGui.targets.stage.id === editingTargetId ? state.scratchGui.targets.stage : null);
+            return editingTarget ? editingTarget.name : '';
+        })(),
         isError: getIsError(loadingState),
         isEmbedded: state.scratchGui.mode.isEmbedded,
         isFullScreen: state.scratchGui.mode.isFullScreen || state.scratchGui.mode.isEmbedded,

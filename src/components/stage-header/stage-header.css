@@ -45,6 +45,31 @@
     display: flex;
 }
 
+.stage-view-selector {
+    min-height: calc(2rem + 2px);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 0.25rem 0 0.55rem;
+    color: $text-primary;
+    background: $ui-white;
+    border: 1px solid $ui-black-transparent;
+    border-radius: $form-radius;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.stage-view-selector select {
+    height: 1.7rem;
+    max-width: 8rem;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.65rem;
+}
+
 .stage-size-row > *, .unselect-wrapper {
     /* Use a white background so semi-transparent selection states look correct */
     background-color: $ui-white;

@@ -45,6 +45,7 @@ const Backpack = ({
     containerRef,
     contents,
     dragOver,
+    embedded,
     error,
     expanded,
     intl,
@@ -57,8 +58,8 @@ const Backpack = ({
     onMouseLeave,
     onMore
 }) => (
-    <div className={styles.backpackContainer}>
-        <div
+    <div className={classNames(styles.backpackContainer, embedded && styles.embedded)}>
+        {!embedded && <div
             className={styles.backpackHeader}
             onClick={onToggle}
         >
@@ -80,11 +81,12 @@ const Backpack = ({
                     />
                 </ComingSoonTooltip>
             )}
-        </div>
+        </div>}
         {expanded ? (
             <div
                 className={classNames(styles.backpackList, {
-                    [styles.dragOver]: dragOver || blockDragOver
+                    [styles.dragOver]: dragOver || blockDragOver,
+                    [styles.embeddedList]: embedded
                 })}
                 ref={containerRef}
                 onMouseEnter={onMouseEnter}
@@ -168,6 +170,7 @@ Backpack.propTypes = {
         name: PropTypes.string
     })),
     dragOver: PropTypes.bool,
+    embedded: PropTypes.bool,
     error: PropTypes.oneOfType([PropTypes.bool, PropTypes.string]),
     expanded: PropTypes.bool,
     intl: intlShape,
@@ -185,6 +188,7 @@ Backpack.defaultProps = {
     blockDragOver: false,
     contents: [],
     dragOver: false,
+    embedded: false,
     expanded: false,
     loading: false,
     showMore: false,
