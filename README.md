@@ -18,6 +18,8 @@ The Electron-specific implementation remains in
 the editor here prevents the web and desktop applications from maintaining two
 separate implementations.
 
+Live Preview Now: [`gregorioalves.com/textwarp/editor`](https://gregorioalves.com/textwarp/editor)
+
 TextWarp is derived from [TurboWarp scratch-gui](https://github.com/TurboWarp/scratch-gui)
 and [Scratch GUI](https://github.com/scratchfoundation/scratch-gui). TextWarp is
 not affiliated with, sponsored by, or endorsed by TurboWarp, Scratch, the
