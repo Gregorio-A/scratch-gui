@@ -24,6 +24,7 @@ import SB3Downloader from '../../containers/sb3-downloader.jsx';
 import DeletionRestorer from '../../containers/deletion-restorer.jsx';
 import TurboMode from '../../containers/turbo-mode.jsx';
 import MenuBarHOC from '../../containers/menu-bar-hoc.jsx';
+import LanguageMenu from './language-menu.jsx';
 
 import FramerateChanger from '../../containers/tw-framerate-changer.jsx';
 import ChangeUsername from '../../containers/tw-change-username.jsx';
@@ -956,6 +957,7 @@ class MenuBar extends React.Component {
                                     place={this.props.isRtl ? 'left' : 'right'}
                                 >
                                     <MenuSection>
+                                        <LanguageMenu />
                                         <MenuItem onClick={this.handleClickTextwarpPreferences}>
                                             <FormattedMessage
                                                 defaultMessage="Preferences"
