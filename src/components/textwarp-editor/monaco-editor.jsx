@@ -26,6 +26,7 @@ class MonacoEditor extends React.Component {
         this.modelStates = new Map();
         this.changeSubscription = null;
         this.cursorSubscription = null;
+        this.focusSubscription = null;
         this.mouseSubscription = null;
         this.modelChangeSubscription = null;
         this.editorOpenerDisposable = null;
@@ -112,15 +113,19 @@ class MonacoEditor extends React.Component {
                     });
                 }
             });
+            this.focusSubscription = this.editor.onDidFocusEditorText(() => {
+                if (this.props.onFocus) this.props.onFocus();
+            });
             if (typeof window !== 'undefined' && window.ResizeObserver) {
                 this.resizeObserver = new window.ResizeObserver(() => this.updateAdaptiveOptions());
                 this.resizeObserver.observe(this.container);
             }
             this.registerEditorOpener();
             this.mouseSubscription = this.editor.onMouseDown(event => {
-                const gutter = event.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ||
-                    event.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS;
-                if (gutter && event.target.position) {
+                if (
+                    event.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN &&
+                    event.target.position
+                ) {
                     this.toggleBreakpoint(event.target.position.lineNumber);
                     return;
                 }
@@ -228,6 +233,7 @@ class MonacoEditor extends React.Component {
         this.initializationId++;
         if (this.changeSubscription) this.changeSubscription.dispose();
         if (this.cursorSubscription) this.cursorSubscription.dispose();
+        if (this.focusSubscription) this.focusSubscription.dispose();
         if (this.mouseSubscription) this.mouseSubscription.dispose();
         if (this.modelChangeSubscription) this.modelChangeSubscription.dispose();
         if (this.editorOpenerDisposable) this.editorOpenerDisposable.dispose();
@@ -399,9 +405,11 @@ class MonacoEditor extends React.Component {
                 }
             }
         ];
-        const enabledActions = actions.filter(action => action.run).map(action => Object.assign({}, action, {
-            keybinding: parse(action.value, action.fallback)
-        }));
+        const enabledActions = actions
+            .filter(action => action.run && String(action.value || '').trim())
+            .map(action => Object.assign({}, action, {
+                keybinding: parse(action.value, action.fallback)
+            }));
         const reportedCollisions = new Set();
         for (let attempt = 0; attempt < enabledActions.length; attempt++) {
             const bindings = new Map();
@@ -444,6 +452,11 @@ class MonacoEditor extends React.Component {
         if (breakpoints.has(line)) breakpoints.delete(line);
         else breakpoints.add(line);
         this.props.onBreakpointsChange(Array.from(breakpoints).sort((left, right) => left - right));
+    }
+    toggleBreakpointAtCursor () {
+        if (!this.editor) return;
+        const position = this.editor.getPosition();
+        if (position) this.toggleBreakpoint(position.lineNumber);
     }
     registerEditorOpener () {
         this.editorOpenerDisposable = this.monaco.editor.registerEditorOpener({
@@ -692,6 +705,7 @@ MonacoEditor.propTypes = {
     onCopyDiagnosticReport: PropTypes.func,
     onCursorPositionChange: PropTypes.func,
     onDownloadDiagnosticReport: PropTypes.func,
+    onFocus: PropTypes.func,
     onLoadError: PropTypes.func,
     onOpenModel: PropTypes.func,
     onReady: PropTypes.func,

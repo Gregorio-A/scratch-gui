@@ -66,7 +66,9 @@ O catálogo combina a API interna de blocos nativos, eventos, operadores e exten
 
 O painel **Projeto** separa scripts editáveis, recursos e artefatos gerados somente para leitura. Clicar em um ator ou palco muda também a seleção do TurboWarp. `Ctrl` ou `Cmd` + clique sobre uma referência no código abre o recurso correspondente; o botão `＋` do explorador insere o nome correto no cursor.
 
-Abas recentes, busca/substituição global, símbolos do arquivo e a hierarquia palco/atores/recursos permitem navegar pelo projeto sem tratar artefatos compilados como fonte editável.
+Abas recentes, busca/substituição global, símbolos do arquivo e a hierarquia palco/atores/recursos permitem navegar
+pelo projeto sem tratar artefatos compilados como fonte editável. **Abertura rápida** (`Ctrl+P`) filtra atores e o
+palco por nome amigável ou nome de arquivo sem sair do editor.
 
 ## Integração com o software principal
 
@@ -93,7 +95,9 @@ O console registra início, término, parada, falhas, perguntas e mensagens de `
 
 ## Depuração
 
-Clique na margem de uma linha para alternar um breakpoint. A IDE destaca as linhas atuais e permite pausar, continuar, entrar, passar ou sair de chamadas no interpretador. Threads JIT preservam seu estado e oferecem passo por frame quando uma pausa global exige isso.
+Clique na margem de glifos ou pressione `F9` para alternar um breakpoint na linha do cursor; clicar no número da linha
+apenas move o cursor. A IDE destaca as linhas atuais e permite pausar, continuar, entrar, passar ou sair de chamadas
+no interpretador. Threads JIT preservam seu estado e oferecem passo por frame quando uma pausa global exige isso.
 
 O painel de depuração mostra:
 
@@ -119,8 +123,9 @@ deslizante na barra inferior ou por `Ctrl++`/`Ctrl+-`; `Ctrl+0` restaura 15 px.
 **Interface compacta** reduz barras, abas e controles em telas maiores. A escolha também fica salva no navegador.
 
 Atalhos aceitam letras, números, teclas de função, setas, navegação, espaço, Tab, Escape, Backspace e Delete.
-Configurações inválidas ou duplicadas mostram um erro e mantêm o atalho padrão. Breakpoints usam decorações
-rastreáveis: inserir ou remover linhas move também a posição persistida do breakpoint.
+As alterações ficam em rascunho até escolher **Aplicar atalhos**, duplicatas são rejeitadas e um campo vazio
+desativa intencionalmente o comando. Breakpoints usam decorações rastreáveis: inserir ou remover linhas move também
+a posição persistida do breakpoint.
 
 ## Layout responsivo e painéis
 
@@ -142,14 +147,17 @@ Cada arquivo aberto aparece como uma aba comum, com indicador de alteração, fe
 **Converter** reúne Texto → Blocos, Blocos → Texto, Blocos → Texto para o projeto inteiro, sincronização automática
 e comparação. A conversão do projeto inteiro processa palco e atores originais como módulos separados, só aplica
 depois de validar todos e pode ser desfeita em uma ação. **Mais ações** concentra Paleta de comandos, Formatar,
-Dividir editor, Documentação, Editor externo e Preferências; o antigo botão Modelos não ocupa mais a interface.
+Abertura rápida, alternar breakpoint, navegar em Problemas, Dividir editor, Documentação, Editor externo e
+Preferências; o antigo botão Modelos não ocupa mais a interface. No editor duplo, esses comandos seguem o painel
+focado por último.
 Em telas estreitas, a barra lateral vira uma sobreposição fechável por Escape e o palco começa recolhido. Em telas
 maiores, o palco pode ser arrastado, recolhido e restaurado; sua largura e a densidade compacta são persistidas no
 navegador. O campo permanente **Localizar** fica oculto; `Ctrl+F` abre a busca do Monaco sobre o editor.
 
 Quando texto e blocos divergem, a própria IDE oferece **Comparar alterações**, **Usar texto**, **Usar blocos** e
 **Cancelar**; não há confirmação isolada do navegador nem substituição silenciosa. Os itens de **Problemas** exibem
-arquivo, linha e coluna e navegam para a localização correspondente.
+arquivo, linha e coluna e navegam para a localização correspondente. `F8` e `Shift+F8` avançam e voltam pelos
+problemas do painel de editor que está focado.
 
 ## Editores externos
 
@@ -194,7 +202,11 @@ Salvar, compilar, executar, pausar e parar sempre atualizam o status visível. P
 | Parar | `Shift+F5` |
 | Explorador | `Ctrl+Shift+E` |
 | Busca no projeto | `Ctrl+Shift+F` |
+| Abertura rápida | `Ctrl+P` |
 | Paleta de comandos | `Ctrl+Shift+P` |
+| Próximo problema | `F8` |
+| Problema anterior | `Shift+F8` |
+| Alternar breakpoint no cursor | `F9` |
 | Alternar barra lateral | `Ctrl+B` |
 | Alternar painel inferior | `Ctrl+J` |
 | Compilar | `F7` |

@@ -47,6 +47,7 @@ different actors own resources with the same name.
 
 Every target is an editable `.tw` module. The explorer distinguishes editable source from generated artifacts.
 Open-file tabs, project-wide search and replacement, recent targets and local history support larger projects.
+**Quick Open** (`Ctrl+P`) filters actors and the stage by friendly name or filename without leaving the editor.
 The Convert menu can turn the stage and all original actors into text modules in one transactional action, with
 one Undo snapshot for the complete project.
 
@@ -72,7 +73,8 @@ runtime errors and target context.
 ## Debugging
 
 The Debugger tab exposes threads, execution state, source location, call stacks, variables, target state and safe
-watch expressions. Breakpoints can pause concurrent scripts independently.
+watch expressions. Breakpoints can pause concurrent scripts independently. Click the glyph margin or press `F9`
+to toggle a breakpoint at the caret; clicking a line number only moves the caret.
 
 ## Productivity and recovery
 
@@ -84,8 +86,9 @@ Preferences includes a persistent **Compact interface** option for denser toolba
 larger screens. **Programming** contains Text, Blocks, Split, and Documentation directly above the editor. Files,
 Search, Actors, Extensions, Debugging, Documentation, and Settings live in the activity bar.
 Conversion is a file-level menu with explicit synchronization state; **More actions** contains the command palette,
-formatting, split editor, documentation, external editor, and preferences. On mobile, the sidebar becomes a dismissible
-overlay and the stage starts collapsed to preserve code space.
+Quick Open, formatting, breakpoint and Problems navigation, split editor, documentation, external editor, and
+preferences. In dual view these editor commands follow the last-focused pane. On mobile, the sidebar becomes a
+dismissible overlay and the stage starts collapsed to preserve code space.
 
 The right dock follows Stage, Actor Inspector, then one Actors/Backdrops tabbed area. Both target tabs expand with
 the dock, retain at least 12 rem of working height, and scroll long actor lists inside that area. The explorer groups
@@ -93,14 +96,16 @@ modules under Actors and Stage, while Outline groups Variables, Procedures, and 
 the in-app conflict surface offers Compare, Use text, Use blocks, and Cancel instead of silently replacing work.
 
 Configurable shortcuts support letters, digits, function keys, arrows, navigation keys, Space, Tab, Escape,
-Backspace and Delete. Invalid or duplicate shortcuts produce visible feedback and retain the default binding.
+Backspace and Delete. Preferences stages edits until **Apply shortcuts** is selected, rejects duplicates, and accepts
+an empty field as an intentionally disabled command.
 Breakpoints use tracked Monaco decorations, so persisted line positions follow inserted and deleted lines.
 
 Problem entries show file, line, and column and navigate to that location. The Problems tab always offers
 **Copy technical report** and **Download technical report**. The report includes
 editor status, Monaco loader failures, Blocks-to-Text conversion results, unavailable opcodes, original variable/list
 names and IDs, runtime errors, console entries, and the current source. Review it before sharing because the complete
-module source is included. The same actions remain available in the basic-editor fallback.
+module source is included. `F8` and `Shift+F8` move to the next and previous problem in the focused editor pane.
+The same report actions remain available in the basic-editor fallback.
 
 ## Integrated documentation
 
@@ -137,7 +142,11 @@ reachable. The legacy permanent Find field stays hidden; `Ctrl+F` opens Monaco F
 | Format | `Ctrl+Shift+I` |
 | Project explorer | `Ctrl+Shift+E` |
 | Project search | `Ctrl+Shift+F` |
+| Quick Open | `Ctrl+P` |
 | Command palette | `Ctrl+Shift+P` |
+| Next problem | `F8` |
+| Previous problem | `Shift+F8` |
+| Toggle breakpoint at caret | `F9` |
 | Toggle sidebar | `Ctrl+B` |
 | Toggle bottom panel | `Ctrl+J` |
 | Save `.textwarp` | `Ctrl+S` |

@@ -123,6 +123,41 @@ describe('TextWarp Monaco editor lifecycle and fallback', () => {
         expect(onBreakpointsChange).toHaveBeenCalledWith([3, 5]);
     });
 
+    test('blank shortcuts disable actions and F9 support uses the caret line', () => {
+        const onBreakpointsChange = jest.fn();
+        const wrapper = shallow(
+            <MonacoEditor
+                {...makeProps({
+                    breakpoints: [2],
+                    onBreakpointsChange,
+                    onCompile: jest.fn(),
+                    onRun: jest.fn(),
+                    shortcuts: {compile: '', run: 'Ctrl+Enter'}
+                })}
+            />,
+            {disableLifecycleMethods: true}
+        );
+        const instance = wrapper.instance();
+        const actions = [];
+        instance.monaco = {
+            KeyCode: {Enter: 3, F5: 63, F7: 65, KeyI: 39},
+            KeyMod: {CtrlCmd: 1 << 11, Shift: 1 << 10}
+        };
+        instance.editor = {
+            addAction: action => {
+                actions.push(action);
+                return {dispose: jest.fn()};
+            },
+            getAction: jest.fn(),
+            getPosition: () => ({lineNumber: 7})
+        };
+        instance.registerActions();
+        expect(actions.some(action => action.id === 'textwarp.compile')).toBe(false);
+        expect(actions.some(action => action.id === 'textwarp.run')).toBe(true);
+        instance.toggleBreakpointAtCursor();
+        expect(onBreakpointsChange).toHaveBeenCalledWith([2, 7]);
+    });
+
     test('cross-file editor opener switches only models owned by the editor instance', async () => {
         const wrapper = shallow(
             <MonacoEditor {...makeProps()} />,

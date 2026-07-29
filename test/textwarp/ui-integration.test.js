@@ -35,6 +35,26 @@ test('editor actions use file tabs plus contextual conversion and action menus',
     assert.match(editorStyles, /\.narrow-layout \.convert-menu-trigger span,[\s\S]*?display: none/);
 });
 
+test('keyboard navigation is scoped, pane-aware and exposes discoverable project commands', () => {
+    const editorSource = readSource('src/containers/textwarp-editor.jsx');
+    const monacoSource = readSource('src/components/textwarp-editor/monaco-editor.jsx');
+
+    assert.match(editorSource, /!this\.props\.isVisible[\s\S]*?!this\.rootElement\.contains\(event\.target\)/);
+    assert.match(editorSource, /isEditableElement\(event\.target\) && !insideMonaco/);
+    assert.match(editorSource, /key === 'p'[\s\S]*?quickOpenOpen: true/);
+    assert.match(editorSource, /event\.key === 'F8'[\s\S]*?navigateProblem/);
+    assert.match(editorSource, /event\.key === 'F9'[\s\S]*?toggleBreakpointAtCursor/);
+    assert.match(editorSource, /getActiveMonacoEditor \(\)/);
+    assert.match(editorSource, /event\.key === 'ContextMenu'[\s\S]*?event\.key === 'F10'/);
+    assert.match(editorSource, /MENU_ITEM_SELECTOR[\s\S]*?menuitemcheckbox/);
+    assert.match(editorSource, /quickOpenModules\.map/);
+    assert.match(monacoSource, /GUTTER_GLYPH_MARGIN[\s\S]*?toggleBreakpoint/);
+    assert.doesNotMatch(
+        monacoSource.match(/this\.mouseSubscription = this\.editor\.onMouseDown[\s\S]*?this\.registerActions\(\)/)[0],
+        /GUTTER_LINE_NUMBERS/
+    );
+});
+
 test('Extensions lives in the activity sidebar and the bottom panel contains IDE output areas', () => {
     const editorSource = readSource('src/containers/textwarp-editor.jsx');
     const activitySource = readSource('src/components/textwarp-editor/activity-bar.jsx');

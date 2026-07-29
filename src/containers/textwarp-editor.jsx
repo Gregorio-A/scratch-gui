@@ -45,6 +45,7 @@ import {sanitizeIdentifier} from '../lib/textwarp/identifier';
 import {getDiagnosticSuggestion, getOutline} from '../lib/textwarp/language-service';
 import MonacoEditor from '../components/textwarp-editor/monaco-editor.jsx';
 import {mergeVisualSource} from '../lib/textwarp/source-merge';
+import {shortcutParts} from '../lib/textwarp/shortcut-service';
 import {exportTextwarpProject, importTextwarpProject} from '../lib/textwarp/textwarp-package';
 import {
     clearTextwarpHandle,
@@ -104,6 +105,21 @@ const SHORTCUT_MESSAGE_KEYS = Object.freeze({
     runSelection: 'shortcutRunSelection',
     stop: 'shortcutStop'
 });
+const MENU_ITEM_SELECTOR = [
+    '[role="menuitem"]:not([disabled])',
+    '[role="menuitemcheckbox"]:not([disabled])',
+    '[role="menuitemradio"]:not([disabled])'
+].join(',');
+const isEditableElement = element => Boolean(element && (
+    ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName) ||
+    element.isContentEditable ||
+    (typeof element.closest === 'function' && element.closest('[contenteditable="true"]'))
+));
+const normalizeShortcut = value => shortcutParts(value).map(part => {
+    if (['ctrl', 'cmd', 'command', 'meta', 'mod', 'ctrlcmd'].includes(part)) return 'ctrlcmd';
+    if (part === 'option') return 'alt';
+    return part;
+}).sort().join('+');
 
 const getTemplate = target => target && target.isStage ? `stage
 
@@ -180,7 +196,11 @@ class TextEditor extends React.Component {
             actionMenuOpen: false,
             convertMenuOpen: false,
             fileTabMenu: null,
-            shortcuts: DEFAULT_SHORTCUTS,
+            shortcuts: Object.assign({}, DEFAULT_SHORTCUTS),
+            shortcutDrafts: Object.assign({}, DEFAULT_SHORTCUTS),
+            quickOpenOpen: false,
+            quickOpenQuery: '',
+            activeEditorPane: 'primary',
             fontSize: DEFAULT_FONT_SIZE,
             compactUi: false,
             autoSync: true,
@@ -267,6 +287,8 @@ class TextEditor extends React.Component {
         this.actionMenuButton = null;
         this.convertMenuElement = null;
         this.convertMenuButton = null;
+        this.fileTabMenuElement = null;
+        this.fileTabMenuReturnFocus = null;
         this.fileCommandReturnFocus = null;
         this.handleChange = this.handleChange.bind(this);
         this.handleCompile = this.handleCompile.bind(this);
@@ -290,6 +312,8 @@ class TextEditor extends React.Component {
         this.handleKeyDown = this.handleKeyDown.bind(this);
         this.handleDocumentPointerDown = this.handleDocumentPointerDown.bind(this);
         this.handleActionMenuKeyDown = this.handleActionMenuKeyDown.bind(this);
+        this.openFileTabMenu = this.openFileTabMenu.bind(this);
+        this.closeFileTabMenu = this.closeFileTabMenu.bind(this);
         this.handleMobileCommands = this.handleMobileCommands.bind(this);
         this.handleOpenExternalPanel = this.handleOpenExternalPanel.bind(this);
         this.handleOpenSettingsPanel = this.handleOpenSettingsPanel.bind(this);
@@ -320,6 +344,7 @@ class TextEditor extends React.Component {
         this.handleDownloadDiagnosticReport = this.handleDownloadDiagnosticReport.bind(this);
         this.handleMonacoLoadError = this.handleMonacoLoadError.bind(this);
         this.handleProjectRunStop = this.handleProjectRunStop.bind(this);
+        this.navigateProblem = this.navigateProblem.bind(this);
     }
 
     componentDidMount () {
@@ -327,7 +352,10 @@ class TextEditor extends React.Component {
         const storage = this.getStorage();
         try {
             const savedShortcuts = storage && JSON.parse(storage.getItem('textwarp.ide.shortcuts'));
-            if (savedShortcuts) this.setState({shortcuts: Object.assign({}, DEFAULT_SHORTCUTS, savedShortcuts)});
+            if (savedShortcuts) {
+                const shortcuts = Object.assign({}, DEFAULT_SHORTCUTS, savedShortcuts);
+                this.setState({shortcuts, shortcutDrafts: Object.assign({}, shortcuts)});
+            }
             const savedPreferences = storage && JSON.parse(storage.getItem('textwarp.ide.preferences'));
             if (savedPreferences) {
                 this.setState({
@@ -797,7 +825,7 @@ class TextEditor extends React.Component {
             );
         }, () => {
             if (!this.state.actionMenuOpen || !this.actionMenuElement) return;
-            const firstItem = Array.from(this.actionMenuElement.querySelectorAll('[role="menuitem"]'))
+            const firstItem = Array.from(this.actionMenuElement.querySelectorAll(MENU_ITEM_SELECTOR))
                 .find(element => element.getClientRects().length);
             if (firstItem) firstItem.focus();
         });
@@ -816,7 +844,7 @@ class TextEditor extends React.Component {
             fileTabMenu: null
         }), () => {
             if (!this.state.convertMenuOpen || !this.convertMenuElement) return;
-            const firstItem = Array.from(this.convertMenuElement.querySelectorAll('[role="menuitem"]'))
+            const firstItem = Array.from(this.convertMenuElement.querySelectorAll(MENU_ITEM_SELECTOR))
                 .find(element => element.getClientRects().length);
             if (firstItem) firstItem.focus();
         });
@@ -988,14 +1016,30 @@ class TextEditor extends React.Component {
             if (this.actionMenuButton) this.actionMenuButton.focus();
             this.setState({
                 externalOpen: panel === 'external',
-                settingsOpen: panel === 'settings'
+                settingsOpen: panel === 'settings',
+                shortcutDrafts: panel === 'settings' ?
+                    Object.assign({}, this.state.shortcuts) : this.state.shortcutDrafts
             });
         });
     }
 
+    getActiveMonacoEditor () {
+        if (
+            this.state.viewMode === 'dual' &&
+            this.state.activeEditorPane === 'secondary' &&
+            this.secondaryMonacoEditor
+        ) return this.secondaryMonacoEditor;
+        return this.monacoEditor;
+    }
+
+    handleEditorFocus (activeEditorPane) {
+        if (this.state.activeEditorPane !== activeEditorPane) this.setState({activeEditorPane});
+    }
+
     handleMobileCommands () {
         this.closeActionMenu();
-        if (this.monacoEditor) this.monacoEditor.openCommandPalette();
+        const editor = this.getActiveMonacoEditor();
+        if (editor) editor.openCommandPalette();
     }
 
     handleOpenExternalPanel () {
@@ -1021,22 +1065,25 @@ class TextEditor extends React.Component {
             this.convertMenuElement &&
             !this.convertMenuElement.contains(event.target)
         ) this.closeConvertMenu();
-        if (this.state.fileTabMenu && !event.target.closest('[data-textwarp-tab-menu]')) {
-            this.setState({fileTabMenu: null});
+        const tabMenuOwner = event.target && typeof event.target.closest === 'function' ?
+            event.target.closest('[data-textwarp-tab-menu]') : null;
+        if (this.state.fileTabMenu && !tabMenuOwner) {
+            this.closeFileTabMenu();
         }
     }
 
     handleActionMenuKeyDown (event) {
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-        const items = Array.from(event.currentTarget.querySelectorAll('[role="menuitem"]'))
+        const items = Array.from(event.currentTarget.querySelectorAll(MENU_ITEM_SELECTOR))
             .filter(element => element.getClientRects().length);
         if (!items.length) return;
         event.preventDefault();
-        const currentIndex = Math.max(0, items.indexOf(document.activeElement));
+        const currentIndex = items.indexOf(document.activeElement);
         const nextIndex = event.key === 'Home' ? 0 :
             event.key === 'End' ? items.length - 1 :
-                event.key === 'ArrowDown' ? (currentIndex + 1) % items.length :
-                    (currentIndex - 1 + items.length) % items.length;
+                event.key === 'ArrowDown' ?
+                    (currentIndex < 0 ? 0 : (currentIndex + 1) % items.length) :
+                    (currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length);
         items[nextIndex].focus();
     }
 
@@ -1050,16 +1097,110 @@ class TextEditor extends React.Component {
         if (nextTab) nextTab.focus();
     }
 
-    updateShortcut (name, value) {
-        const shortcuts = Object.assign({}, this.state.shortcuts, {[name]: value});
-        this.setState({shortcuts});
+    openFileTabMenu (event, targetId, anchor = event.currentTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        const tab = anchor && anchor.querySelector ? anchor.querySelector('[role="tab"]') : anchor;
+        const bounds = tab && tab.getBoundingClientRect ? tab.getBoundingClientRect() : {left: 0, bottom: 0};
+        this.fileTabMenuReturnFocus = tab || document.activeElement;
+        this.setState({
+            actionMenuOpen: false,
+            convertMenuOpen: false,
+            fileTabMenu: {
+                targetId,
+                x: event.clientX || bounds.left,
+                y: event.clientY || bounds.bottom
+            }
+        }, () => {
+            const firstItem = this.fileTabMenuElement &&
+                this.fileTabMenuElement.querySelector(MENU_ITEM_SELECTOR);
+            if (firstItem) firstItem.focus();
+        });
+    }
+
+    closeFileTabMenu (returnFocus = false) {
+        this.setState({fileTabMenu: null}, () => {
+            if (
+                returnFocus &&
+                this.fileTabMenuReturnFocus &&
+                typeof this.fileTabMenuReturnFocus.focus === 'function'
+            ) this.fileTabMenuReturnFocus.focus();
+            this.fileTabMenuReturnFocus = null;
+        });
+    }
+
+    updateShortcutDraft (name, value) {
+        this.setState(state => ({
+            shortcutDrafts: Object.assign({}, state.shortcutDrafts, {[name]: value})
+        }));
+    }
+
+    applyShortcuts (shortcuts = this.state.shortcutDrafts) {
+        const normalized = Object.entries(shortcuts)
+            .filter(([, value]) => String(value || '').trim())
+            .map(([name, value]) => [name, normalizeShortcut(value)]);
+        const duplicate = normalized.find((entry, index) =>
+            normalized.some((candidate, candidateIndex) => candidateIndex !== index && candidate[1] === entry[1])
+        );
+        if (duplicate) {
+            this.setState({
+                status: this.t('invalidShortcut', {shortcut: duplicate[1]}),
+                statusKind: 'error'
+            });
+            return;
+        }
+        const applied = Object.assign({}, shortcuts);
+        this.setState({
+            shortcuts: applied,
+            shortcutDrafts: Object.assign({}, applied),
+            status: this.t('shortcutsApplied'),
+            statusKind: 'success'
+        });
         const storage = this.getStorage();
         try {
-            if (storage) storage.setItem('textwarp.ide.shortcuts', JSON.stringify(shortcuts));
+            if (storage) storage.setItem('textwarp.ide.shortcuts', JSON.stringify(applied));
         } catch (error) {
             this.setState({
                 status: this.t('shortcutStorageUnavailable'),
                 statusKind: 'working'
+            });
+        }
+    }
+
+    navigateProblem (direction = 1) {
+        const secondaryActive = this.state.viewMode === 'dual' &&
+            this.state.activeEditorPane === 'secondary' &&
+            this.secondaryMonacoEditor;
+        const diagnostics = secondaryActive ? this.state.secondaryDiagnostics : this.state.diagnostics;
+        if (!diagnostics.length) {
+            this.openBottomPanel('problems');
+            this.setState({status: this.t('noProblems'), statusKind: 'idle'});
+            return;
+        }
+        const current = this.state.cursorPosition;
+        const ordered = diagnostics.slice().sort((left, right) =>
+            (left.line - right.line) || (left.column - right.column)
+        );
+        let diagnostic;
+        if (direction < 0) {
+            diagnostic = ordered.slice().reverse().find(item =>
+                item.line < current.line ||
+                (item.line === current.line && item.column < current.column)
+            ) || ordered[ordered.length - 1];
+        } else {
+            diagnostic = ordered.find(item =>
+                item.line > current.line ||
+                (item.line === current.line && item.column > current.column)
+            ) || ordered[0];
+        }
+        this.openBottomPanel('problems');
+        if (secondaryActive) {
+            this.secondaryMonacoEditor.revealPosition(diagnostic.line, diagnostic.column);
+        } else {
+            this.openLocation({
+                targetId: this.props.editingTargetId,
+                line: diagnostic.line,
+                column: diagnostic.column
             });
         }
     }
@@ -1416,6 +1557,12 @@ class TextEditor extends React.Component {
     }
 
     handleKeyDown (event) {
+        if (
+            !this.props.isVisible ||
+            event.defaultPrevented ||
+            !this.rootElement ||
+            !this.rootElement.contains(event.target)
+        ) return;
         if (event.key === 'Escape' && (
             this.state.actionMenuOpen || this.state.convertMenuOpen || this.state.fileTabMenu
         )) {
@@ -1423,10 +1570,26 @@ class TextEditor extends React.Component {
             event.stopPropagation();
             if (this.state.actionMenuOpen) this.closeActionMenu(true);
             else if (this.state.convertMenuOpen) this.closeConvertMenu(true);
-            else this.setState({fileTabMenu: null});
+            else this.closeFileTabMenu(true);
             return;
         }
+        const insideMonaco = event.target && typeof event.target.closest === 'function' &&
+            event.target.closest('.monaco-editor');
+        if (isEditableElement(event.target) && !insideMonaco) return;
         if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+            if (event.key === 'F8') {
+                event.preventDefault();
+                this.navigateProblem(event.shiftKey ? -1 : 1);
+                return;
+            }
+            if (event.key === 'F9') {
+                const editor = this.getActiveMonacoEditor();
+                if (editor) {
+                    event.preventDefault();
+                    editor.toggleBreakpointAtCursor();
+                }
+                return;
+            }
             if (event.key === 'F5' && !event.shiftKey) {
                 event.preventDefault();
                 this.handleRun();
@@ -1477,9 +1640,14 @@ class TextEditor extends React.Component {
         }
         if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
         const key = String(event.key).toLowerCase();
-        if (event.shiftKey && key === 'p') {
+        if (key === 'p') {
             event.preventDefault();
-            if (this.monacoEditor) this.monacoEditor.openCommandPalette();
+            if (event.shiftKey) {
+                const editor = this.getActiveMonacoEditor();
+                if (editor) editor.openCommandPalette();
+            } else {
+                this.setState({quickOpenOpen: true, quickOpenQuery: ''});
+            }
             return;
         }
         if (!event.shiftKey && key === 'b') {
@@ -3258,6 +3426,12 @@ class TextEditor extends React.Component {
             '--textwarp-sidebar-width': `${this.state.sidebarWidth}px`,
             '--textwarp-split-ratio': `${this.state.splitRatio}%`
         };
+        const quickOpenQuery = this.state.quickOpenQuery.trim().toLowerCase();
+        const quickOpenModules = this.state.workspace.modules.filter(module =>
+            !quickOpenQuery ||
+            module.fileName.toLowerCase().includes(quickOpenQuery) ||
+            String(module.name || '').toLowerCase().includes(quickOpenQuery)
+        );
         return (
             <section
                 aria-label={t('editor')}
@@ -3328,18 +3502,7 @@ class TextEditor extends React.Component {
                                     data-textwarp-tab-menu
                                     draggable
                                     key={targetId}
-                                    onContextMenu={event => {
-                                        event.preventDefault();
-                                        this.setState({
-                                            actionMenuOpen: false,
-                                            convertMenuOpen: false,
-                                            fileTabMenu: {
-                                                targetId,
-                                                x: event.clientX,
-                                                y: event.clientY
-                                            }
-                                        });
-                                    }}
+                                    onContextMenu={event => this.openFileTabMenu(event, targetId)}
                                     onDragEnd={() => this.setState({draggedTargetId: null})}
                                     onDragOver={event => event.preventDefault()}
                                     onDragStart={event => {
@@ -3369,12 +3532,21 @@ class TextEditor extends React.Component {
                                             }
                                         }}
                                         onClick={() => this.openTarget(targetId)}
-                                        onKeyDown={event => this.handleTabKeyDown(
-                                            event,
-                                            this.state.openTargetIds,
-                                            targetId,
-                                            this.openTarget
-                                        )}
+                                        onKeyDown={event => {
+                                            if (
+                                                event.key === 'ContextMenu' ||
+                                                (event.key === 'F10' && event.shiftKey)
+                                            ) {
+                                                this.openFileTabMenu(event, targetId, event.currentTarget);
+                                                return;
+                                            }
+                                            this.handleTabKeyDown(
+                                                event,
+                                                this.state.openTargetIds,
+                                                targetId,
+                                                this.openTarget
+                                            );
+                                        }}
                                     >
                                         <span>{module.fileName}</span>
                                         {active && dirty && (
@@ -3393,6 +3565,9 @@ class TextEditor extends React.Component {
                                         <div
                                             aria-label={t('fileTabActions')}
                                             className={styles.fileTabContextMenu}
+                                            ref={element => {
+                                                this.fileTabMenuElement = element;
+                                            }}
                                             role="menu"
                                             style={{
                                                 left: this.state.fileTabMenu.x,
@@ -3557,8 +3732,28 @@ class TextEditor extends React.Component {
                                 </button>
                                 <button role="menuitem" type="button" onClick={() => {
                                     this.closeActionMenu();
-                                    if (this.monacoEditor) this.monacoEditor.formatDocument();
+                                    this.setState({quickOpenOpen: true, quickOpenQuery: ''});
+                                }}>
+                                    {t('quickOpen')} <small>{'Ctrl+P'}</small>
+                                </button>
+                                <button role="menuitem" type="button" onClick={() => {
+                                    this.closeActionMenu();
+                                    const editor = this.getActiveMonacoEditor();
+                                    if (editor) editor.formatDocument();
                                 }}>{t('formatDocument')}</button>
+                                <button role="menuitem" type="button" onClick={() => {
+                                    this.closeActionMenu();
+                                    const editor = this.getActiveMonacoEditor();
+                                    if (editor) editor.toggleBreakpointAtCursor();
+                                }}>
+                                    {t('toggleBreakpoint')} <small>{'F9'}</small>
+                                </button>
+                                <button role="menuitem" type="button" onClick={() => {
+                                    this.closeActionMenu();
+                                    this.navigateProblem(1);
+                                }}>
+                                    {t('nextProblem')} <small>{'F8'}</small>
+                                </button>
                                 <button role="menuitem" type="button" onClick={() => {
                                     this.closeActionMenu();
                                     this.setViewMode('dual');
@@ -3643,30 +3838,62 @@ class TextEditor extends React.Component {
                                 <small>{t('compactUiDescription')}</small>
                             </span>
                         </label>
-                        {Object.entries(this.state.shortcuts).map(([name, value]) => (
+                        <span className={styles.quickPanelHelp}>{t('shortcutHelp')}</span>
+                        {Object.entries(this.state.shortcutDrafts).map(([name, value]) => (
                             <label key={name}>
                                 <span>{t(SHORTCUT_MESSAGE_KEYS[name])}</span>
-                                <input value={value} onChange={event => this.updateShortcut(name, event.target.value)} />
+                                <input
+                                    value={value}
+                                    onChange={event => this.updateShortcutDraft(name, event.target.value)}
+                                />
                             </label>
                         ))}
+                        <button type="button" onClick={() => this.applyShortcuts()}>
+                            {t('applyShortcuts')}
+                        </button>
                         <button type="button" onClick={() => {
                             const shortcuts = Object.assign({}, DEFAULT_SHORTCUTS);
-                            this.setState({shortcuts});
-                            const storage = this.getStorage();
-                            try {
-                                if (storage) storage.setItem('textwarp.ide.shortcuts', JSON.stringify(shortcuts));
-                            } catch (error) {
-                                this.setState({
-                                    status: this.t('defaultsSessionOnly'),
-                                    statusKind: 'working'
-                                });
-                            }
-                            this.setFontSize(DEFAULT_FONT_SIZE);
+                            this.setState({shortcutDrafts: shortcuts});
+                            this.applyShortcuts(shortcuts);
                         }}>{t('resetDefaults')}</button>
                         <button type="button" onClick={this.resetLayout}>
                             <InterfaceIcon name="reset" />
                             {t('resetLayout')}
                         </button>
+                    </QuickPanel>
+                )}
+                {this.state.quickOpenOpen && (
+                    <QuickPanel
+                        closeLabel={t('close')}
+                        id="textwarp-quick-open-panel"
+                        label={t('quickOpen')}
+                        onClose={() => this.setState({quickOpenOpen: false, quickOpenQuery: ''})}
+                    >
+                        <input
+                            autoFocus
+                            aria-label={t('quickOpen')}
+                            placeholder={t('quickOpenPlaceholder')}
+                            value={this.state.quickOpenQuery}
+                            onChange={event => this.setState({quickOpenQuery: event.target.value})}
+                        />
+                        <div className={styles.quickOpenResults} role="listbox">
+                            {quickOpenModules.map(module => (
+                                <button
+                                    aria-selected={module.id === this.props.editingTargetId}
+                                    key={module.id}
+                                    role="option"
+                                    type="button"
+                                    onClick={() => {
+                                        this.setState({quickOpenOpen: false, quickOpenQuery: ''});
+                                        this.openTarget(module.id);
+                                    }}
+                                >
+                                    <span>{module.fileName}</span>
+                                    <small>{module.kindLabel || (module.isStage ? t('stage') : t('actor'))}</small>
+                                </button>
+                            ))}
+                            {!quickOpenModules.length && <span>{t('noMatchingFiles')}</span>}
+                        </div>
                     </QuickPanel>
                 )}
                 {this.state.externalOpen && (
@@ -3894,6 +4121,8 @@ class TextEditor extends React.Component {
                     <div className={classNames(
                         styles.viewPane,
                         styles.codePane,
+                        (this.state.viewMode === 'dual' &&
+                            this.state.activeEditorPane === 'primary') && styles.activeEditorPane,
                         !['code', 'split', 'dual'].includes(this.state.viewMode) && styles.hiddenPane
                     )}>
                         <MonacoEditor
@@ -3916,6 +4145,7 @@ class TextEditor extends React.Component {
                             onCopyDiagnosticReport={this.handleCopyDiagnosticReport}
                             onCursorPositionChange={cursorPosition => this.setState({cursorPosition})}
                             onDownloadDiagnosticReport={this.handleDownloadDiagnosticReport}
+                            onFocus={() => this.handleEditorFocus('primary')}
                             onLoadError={this.handleMonacoLoadError}
                             onOpenModel={this.handleOpenModel}
                             onReady={editor => { this.monacoEditor = editor; }}
@@ -3931,6 +4161,8 @@ class TextEditor extends React.Component {
                     <div className={classNames(
                         styles.viewPane,
                         styles.secondaryCodePane,
+                        (this.state.viewMode === 'dual' &&
+                            this.state.activeEditorPane === 'secondary') && styles.activeEditorPane,
                         this.state.viewMode !== 'dual' && styles.hiddenPane
                     )}>
                         {secondaryTarget ? (
@@ -3969,6 +4201,8 @@ class TextEditor extends React.Component {
                                         onChange={source => this.handleSecondaryChange(source)}
                                         onBreakpointsChange={this.handleSecondaryBreakpointsChange}
                                         onCompile={() => this.compileSecondary(false)}
+                                        onCursorPositionChange={cursorPosition => this.setState({cursorPosition})}
+                                        onFocus={() => this.handleEditorFocus('secondary')}
                                         onInvalidShortcut={this.handleInvalidShortcut}
                                         onNavigateResource={this.handleNavigateResource}
                                         onOpenModel={this.handleSecondaryOpenModel}
@@ -4129,7 +4363,18 @@ class TextEditor extends React.Component {
                     <span>{this.state.saveState === 'salvo' ? t('saved') : t('saving')}</span>
                     <span>{activeFileName}</span>
                     <span>{t('cursorPosition', this.state.cursorPosition)}</span>
-                    <span>{t('problemCount', {count: this.state.diagnostics.length})}</span>
+                    <button
+                        className={styles.statusBarButton}
+                        title={`${t('nextProblem')} (F8)`}
+                        type="button"
+                        onClick={() => this.navigateProblem(1)}
+                    >
+                        {t('problemCount', {
+                            count: this.state.viewMode === 'dual' &&
+                                this.state.activeEditorPane === 'secondary' ?
+                                this.state.secondaryDiagnostics.length : this.state.diagnostics.length
+                        })}
+                    </button>
                     <span className={styles.statusSync}>{syncLabel}</span>
                     <span>{`${this.props.framerate} FPS`}</span>
                     <span>{({
