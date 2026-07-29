@@ -135,4 +135,4 @@ ActivityBar.defaultProps = {
     locale: 'en'
 };
 
-export default ActivityBar;
+export default React.memo(ActivityBar);

@@ -321,7 +321,10 @@ const IdeSidebar = props => {
                             onClick={props.onReplaceAll}
                         >{t('replaceAllScripts')}</button>
                         <div className={styles.resultCount}>
-                            {t('resultCount', {count: props.searchResults.length})}
+                            {t(
+                                props.searchResults.truncated ? 'resultCountTruncated' : 'resultCount',
+                                {count: props.searchResults.length}
+                            )}
                         </div>
                         <div className={styles.results}>
                             <PagedList
@@ -465,4 +468,4 @@ IdeSidebar.defaultProps = {
     overlay: false
 };
 
-export default IdeSidebar;
+export default React.memo(IdeSidebar);

@@ -23,7 +23,7 @@ class TextWarpDebugController {
         this.runtimeErrors = [];
         this.consoleEntries = [];
         this.executionState = 'stopped';
-        this.listeners = new Set();
+        this.listeners = new Map();
         this.originalCompilerEnabled = null;
         this.interpreterRequired = false;
         this.notificationTimer = null;
@@ -162,7 +162,7 @@ class TextWarpDebugController {
             this.instrumentThreadCreation();
             this.instrumentThreadStepping();
             this.instrumentPrimitives();
-            this.pollTimer = setInterval(() => this.notify(), 80);
+            this.pollTimer = setInterval(() => this.notify(), 200);
             this.updateExecutionMode();
         } else {
             this.clearPaused(true);
@@ -258,7 +258,6 @@ class TextWarpDebugController {
         const location = this.sourceLocation(thread, blockId);
         const threadId = thread.getId ? thread.getId() : String(this.activeByThread.size + 1);
         this.activeByThread.set(thread, {threadId, blockId, opcode, location, target: thread.target});
-        this.notify();
         if (!this.shouldPause(thread, blockId, block, location)) return this.invokePrimitive(original, args, util, location);
         return new Promise((resolve, reject) => {
             this.paused.set(thread, {
@@ -434,7 +433,7 @@ class TextWarpDebugController {
         this.notify();
     }
 
-    snapshot () {
+    snapshot (includeDetails = true) {
         const runtimeThreads = new Set(this.runtime && this.runtime.threads || []);
         Array.from(this.activeByThread.keys()).forEach(thread => {
             if (!runtimeThreads.has(thread) && !this.paused.has(thread) && !this.compiledPaused.has(thread)) {
@@ -452,7 +451,7 @@ class TextWarpDebugController {
             const paused = interpretedPause || compiledPause;
             const blockId = paused ? paused.blockId : (thread.peekStack && thread.peekStack()) || active.blockId;
             const location = paused ? paused.location : this.sourceLocation(thread, blockId) || active.location;
-            const callStack = Array.from(thread.stack || []).reverse().map(stackBlockId => {
+            const callStack = includeDetails ? Array.from(thread.stack || []).reverse().map(stackBlockId => {
                 const stackLocation = this.sourceLocation(thread, stackBlockId);
                 const block = thread.target && thread.target.blocks && thread.target.blocks.getBlock(stackBlockId);
                 return {
@@ -460,7 +459,7 @@ class TextWarpDebugController {
                     opcode: block && block.opcode || '',
                     line: stackLocation && stackLocation.startLine || null
                 };
-            });
+            }) : [];
             const stage = this.runtime && this.runtime.getTargetForStage && this.runtime.getTargetForStage();
             return {
                 id: paused ? paused.threadId : (thread.getId ? thread.getId() : active.threadId),
@@ -474,7 +473,7 @@ class TextWarpDebugController {
                 canStepOut: !compiledPause && callStack.length > 1,
                 status: Boolean(paused) ? 'paused' : 'running',
                 callStack,
-                inspector: inspectTarget(thread.target, stage)
+                inspector: includeDetails ? inspectTarget(thread.target, stage) : null
             };
         });
         const activeLinesByTarget = {};
@@ -498,19 +497,46 @@ class TextWarpDebugController {
         };
     }
 
-    subscribe (listener) {
-        this.listeners.add(listener);
-        listener(this.snapshot());
+    subscribe (listener, options = {}) {
+        const includeDetails = options.includeDetails !== false;
+        const snapshot = this.snapshot(includeDetails);
+        this.listeners.set(listener, {
+            includeDetails,
+            lastSignature: this.snapshotSignature(snapshot)
+        });
+        listener(snapshot);
         return () => this.listeners.delete(listener);
+    }
+
+    snapshotSignature (snapshot) {
+        try {
+            return JSON.stringify(snapshot);
+        } catch (error) {
+            return null;
+        }
     }
 
     notify () {
         if (this.notificationTimer !== null) return;
         this.notificationTimer = setTimeout(() => {
             this.notificationTimer = null;
-            const snapshot = this.snapshot();
-            this.listeners.forEach(listener => listener(snapshot));
-        }, 16);
+            let detailedSnapshot = null;
+            let lightweightSnapshot = null;
+            this.listeners.forEach((options, listener) => {
+                let snapshot;
+                if (options.includeDetails) {
+                    if (!detailedSnapshot) detailedSnapshot = this.snapshot(true);
+                    snapshot = detailedSnapshot;
+                } else {
+                    if (!lightweightSnapshot) lightweightSnapshot = this.snapshot(false);
+                    snapshot = lightweightSnapshot;
+                }
+                const signature = this.snapshotSignature(snapshot);
+                if (signature !== null && signature === options.lastSignature) return;
+                options.lastSignature = signature;
+                listener(snapshot);
+            });
+        }, 50);
     }
 }
 

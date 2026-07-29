@@ -15,8 +15,9 @@ const KEYWORDS = new Set([
     'any', 'number', 'string', 'boolean', 'and', 'or', 'not', 'true', 'false'
 ]);
 
-const INDEX_CACHE_LIMIT = 80;
+const INDEX_CACHE_BYTE_LIMIT = 16 * 1024 * 1024;
 const indexCache = new Map();
+let indexCacheBytes = 0;
 
 const normalizedSource = source => String(source || '').replace(/\r\n?/g, '\n');
 const lineRange = (line, column, text) => ({
@@ -143,14 +144,15 @@ const scanSource = source => {
     return tokens;
 };
 
-const identifierRanges = source => scanSource(source).filter(token => token.type === 'identifier').map(token => ({
+const identifierRanges = (source, modelKey = 'target') =>
+    createDocumentIndex(source, modelKey).tokens.filter(token => token.type === 'identifier').map(token => ({
     name: token.value,
     line: token.line,
     column: token.column,
     endColumn: token.endColumn
 }));
 
-const findIdentifierAt = (source, line, column) => identifierRanges(source).find(range =>
+const findIdentifierAt = (source, line, column, modelKey = 'target') => identifierRanges(source, modelKey).find(range =>
     range.line === line && column >= range.column && column <= range.endColumn
 ) || null;
 
@@ -180,8 +182,16 @@ const maxStatementLine = statements => {
 
 const createDocumentIndex = (source, modelKey = 'target') => {
     const text = normalizedSource(source);
-    const cacheKey = `${modelKey}\u0000${text}`;
-    if (indexCache.has(cacheKey)) return indexCache.get(cacheKey);
+    const cached = indexCache.get(modelKey);
+    if (cached && cached.source === text) {
+        indexCache.delete(modelKey);
+        indexCache.set(modelKey, cached);
+        return cached.index;
+    }
+    if (cached) {
+        indexCache.delete(modelKey);
+        indexCacheBytes -= cached.bytes;
+    }
     const lines = text.split('\n');
     const parsed = parseText(text);
     const ast = parsed.ast;
@@ -338,10 +348,37 @@ const createDocumentIndex = (source, modelKey = 'target') => {
         symbols,
         tokens: scanSource(text)
     };
-    indexCache.set(cacheKey, index);
-    if (indexCache.size > INDEX_CACHE_LIMIT) indexCache.delete(indexCache.keys().next().value);
+    const bytes = (text.length + lines.reduce((total, line) => total + line.length, 0)) * 2 +
+        index.tokens.length * 96 +
+        index.symbols.length * 160;
+    if (bytes <= INDEX_CACHE_BYTE_LIMIT) {
+        indexCache.set(modelKey, {bytes, index, source: text});
+        indexCacheBytes += bytes;
+        while (indexCacheBytes > INDEX_CACHE_BYTE_LIMIT && indexCache.size > 1) {
+            const oldestKey = indexCache.keys().next().value;
+            const oldest = indexCache.get(oldestKey);
+            indexCache.delete(oldestKey);
+            indexCacheBytes -= oldest.bytes;
+        }
+    }
     return index;
 };
+
+const clearDocumentIndexes = modelKeys => {
+    const keys = modelKeys ? Array.from(modelKeys) : Array.from(indexCache.keys());
+    keys.forEach(modelKey => {
+        const cached = indexCache.get(modelKey);
+        if (!cached) return;
+        indexCache.delete(modelKey);
+        indexCacheBytes -= cached.bytes;
+    });
+};
+
+const getDocumentIndexCacheStats = () => ({
+    bytes: indexCacheBytes,
+    entries: indexCache.size,
+    modelKeys: Array.from(indexCache.keys())
+});
 
 const getDocumentSymbols = (source, options = {}) => createDocumentIndex(
     source,
@@ -523,7 +560,8 @@ const getRenamePlan = (source, line, column, newName, context = {}) => {
 };
 
 const canRename = (source, name, options = {}) => {
-    const ranges = identifierRanges(source).filter(range => range.name === name);
+    const modelKey = options.modelKey || options.context && options.context.targetId || 'target';
+    const ranges = identifierRanges(source, modelKey).filter(range => range.name === name);
     return ranges.some(range => {
         const plan = getRenamePlan(
             source,
@@ -538,7 +576,8 @@ const canRename = (source, name, options = {}) => {
 
 const renameEdits = (source, oldName, newName, options = {}) => {
     if (!validRename(newName)) return [];
-    const ranges = identifierRanges(source).filter(range => range.name === oldName);
+    const modelKey = options.modelKey || options.context && options.context.targetId || 'target';
+    const ranges = identifierRanges(source, modelKey).filter(range => range.name === oldName);
     const selected = ranges.find(range => !options.line || range.line === options.line) || ranges[0];
     if (!selected) return [];
     const plan = getRenamePlan(source, options.line || selected.line, selected.column, newName, options.context || {});
@@ -1404,9 +1443,13 @@ const getInlayHints = (source, context = {}) => {
     );
 };
 
-const clearLanguageServiceCache = () => indexCache.clear();
+const clearLanguageServiceCache = () => {
+    indexCache.clear();
+    indexCacheBytes = 0;
+};
 
 module.exports = {
+    clearDocumentIndexes,
     KEYWORDS,
     canRename,
     clearLanguageServiceCache,
@@ -1420,6 +1463,7 @@ module.exports = {
     getCompletions,
     getDefinitionLocations,
     getDiagnosticSuggestion,
+    getDocumentIndexCacheStats,
     getDocumentSymbols,
     getFoldingRanges,
     getHover,

@@ -2,7 +2,11 @@ import PropTypes from 'prop-types';
 import React from 'react';
 
 import {createTranslator} from '../../lib/textwarp/i18n';
-import {getDiagnosticSuggestion, getResourceAt} from '../../lib/textwarp/language-service';
+import {
+    clearDocumentIndexes,
+    getDiagnosticSuggestion,
+    getResourceAt
+} from '../../lib/textwarp/language-service';
 import {
     clearModelContext,
     clampMarkerRange,
@@ -38,6 +42,9 @@ class MonacoEditor extends React.Component {
         this.mounted = false;
         this.initializationId = 0;
         this.currentNamespace = null;
+        this.adaptiveLineBand = null;
+        this.lastAdaptiveOptions = null;
+        this.runtimeActiveLines = props.activeLines;
         this.setContainer = element => {
             this.container = element;
         };
@@ -96,7 +103,8 @@ class MonacoEditor extends React.Component {
                 this.monaco.editor.setModelMarkers(activeModel, 'textwarp', []);
                 if (key && key !== this.props.modelKey) return;
                 this.props.onChange(this.editor.getValue());
-                this.updateAdaptiveOptions();
+                const lineBand = this.getAdaptiveLineBand();
+                if (lineBand !== this.adaptiveLineBand) this.updateAdaptiveOptions();
                 setTimeout(() => this.syncTrackedBreakpoints(), 0);
             });
             this.modelChangeSubscription = this.editor.onDidChangeModel(() => {
@@ -147,6 +155,7 @@ class MonacoEditor extends React.Component {
             this.registerActions();
             this.updateMarkers();
             this.updateDecorations();
+            this.updateAdaptiveOptions();
             if (this.props.onLoadError) this.props.onLoadError(null);
             if (this.props.onReady) this.props.onReady(this);
         }).catch(error => {
@@ -225,7 +234,12 @@ class MonacoEditor extends React.Component {
             previousProps.activeLines !== this.props.activeLines ||
             previousProps.breakpoints !== this.props.breakpoints ||
             previousProps.modelKey !== this.props.modelKey
-        ) this.updateDecorations();
+        ) {
+            if (previousProps.activeLines !== this.props.activeLines) {
+                this.runtimeActiveLines = this.props.activeLines;
+            }
+            this.updateDecorations();
+        }
         if (this.props.visible && !previousProps.visible) this.editor.layout();
     }
     componentWillUnmount () {
@@ -244,6 +258,7 @@ class MonacoEditor extends React.Component {
         this.currentNamespace = null;
     }
     disposeModels () {
+        clearDocumentIndexes(this.models.keys());
         this.modelSubscriptions.forEach(subscription => subscription.dispose());
         this.modelSubscriptions.clear();
         this.models.forEach(model => {
@@ -504,6 +519,15 @@ class MonacoEditor extends React.Component {
     focus () {
         if (this.editor) this.editor.focus();
     }
+    setRuntimeActiveLines (activeLines) {
+        const normalized = activeLines || [];
+        if (
+            normalized.length === this.runtimeActiveLines.length &&
+            normalized.every((line, index) => line === this.runtimeActiveLines[index])
+        ) return;
+        this.runtimeActiveLines = normalized.slice();
+        this.updateDecorations();
+    }
     openCommandPalette () {
         if (!this.editor) return;
         this.editor.focus();
@@ -548,7 +572,7 @@ class MonacoEditor extends React.Component {
                 glyphMarginHoverMessage: {value: `${t('debug')} · ${t('language')} ${line}`}
             }
         }));
-        this.props.activeLines.forEach(line => decorations.push({
+        this.runtimeActiveLines.forEach(line => decorations.push({
             range: new this.monaco.Range(line, 1, line, 1),
             options: {
                 isWholeLine: true,
@@ -564,12 +588,32 @@ class MonacoEditor extends React.Component {
         const model = this.editor.getModel();
         if (!model) return;
         const compact = this.container.clientWidth > 0 && this.container.clientWidth < 700;
+        const lineBand = this.getAdaptiveLineBand();
+        const nextOptions = {
+            minimap: !compact && lineBand === 'small',
+            stickyScroll: !compact && lineBand !== 'large',
+            compact
+        };
+        if (
+            this.lastAdaptiveOptions &&
+            Object.keys(nextOptions).every(key => nextOptions[key] === this.lastAdaptiveOptions[key])
+        ) {
+            this.adaptiveLineBand = lineBand;
+            return;
+        }
+        this.lastAdaptiveOptions = nextOptions;
+        this.adaptiveLineBand = lineBand;
         this.editor.updateOptions({
-            minimap: {enabled: !compact && model.getLineCount() < 500},
-            stickyScroll: {enabled: !compact && model.getLineCount() < 1000},
+            minimap: {enabled: nextOptions.minimap},
+            stickyScroll: {enabled: nextOptions.stickyScroll},
             wordWrap: compact ? 'on' : 'bounded',
             wordWrapColumn: compact ? 80 : 120
         });
+    }
+    getAdaptiveLineBand () {
+        if (!this.editor || !this.editor.getModel()) return 'small';
+        const lineCount = this.editor.getModel().getLineCount();
+        return lineCount < 500 ? 'small' : lineCount < 1000 ? 'medium' : 'large';
     }
     syncTrackedBreakpoints () {
         if (

@@ -25,6 +25,7 @@
     "start": "webpack-dev-server",
     "test": "npm run test:lint && npm run test:unit && npm run build && npm run test:integration",
     "test:textwarp": "node --test test/textwarp/*.test.js",
+    "perf:textwarp": "node scripts/check-textwarp-performance.mjs",
     "docs:textwarp": "node scripts/generate-textwarp-block-docs.mjs",
     "docs:textwarp:check": "node scripts/generate-textwarp-block-docs.mjs --check",
     "test:integration": "jest --maxWorkers=4 test[\\\\/]integration",

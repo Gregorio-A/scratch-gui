@@ -303,7 +303,7 @@ const writeSourceRecord = (vm, target, record) => {
     return normalized;
 };
 
-const saveTextSource = (vm, target, source) => {
+const saveTextSource = (vm, target, source, options = {}) => {
     let current = readSourceRecord(target);
     if (!current) {
         current = writeSourceRecord(vm, target, defaultRecord('', target.id));
@@ -324,7 +324,12 @@ const saveTextSource = (vm, target, source) => {
         markersText: markerSignature(target),
         record: normalized
     });
-    if (vm && vm.runtime && typeof vm.runtime.emitProjectChanged === 'function') vm.runtime.emitProjectChanged();
+    if (
+        options.emitProjectChanged !== false &&
+        vm &&
+        vm.runtime &&
+        typeof vm.runtime.emitProjectChanged === 'function'
+    ) vm.runtime.emitProjectChanged();
     return normalized;
 };
 

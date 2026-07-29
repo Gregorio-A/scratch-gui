@@ -1,10 +1,19 @@
 'use strict';
 
 const {readSourceRecord} = require('./vm-adapter');
+const {
+    loadHistory: loadStoredHistory,
+    loadHistoryAsync: loadStoredHistoryAsync,
+    saveHistory,
+    whenHistoryPersisted
+} = require('./history-storage');
 
 const HISTORY_LIMIT = 30;
 const RECENT_LIMIT = 10;
+const SEARCH_RESULT_LIMIT = 500;
+const SEARCH_RESULT_PER_MODULE_LIMIT = 200;
 const STORAGE_PREFIX = 'textwarp.ide.v1';
+const searchLinesByModule = new WeakMap();
 
 const safeName = target => target && target.getName ? target.getName() : target && target.sprite && target.sprite.name || 'Sem nome';
 
@@ -80,16 +89,40 @@ const buildWorkspace = vm => {
     };
 };
 
-const searchWorkspace = (workspace, query) => {
+const searchWorkspace = (workspace, query, options = {}) => {
     const needle = String(query || '').trim();
     if (!needle) return [];
+    const limit = Math.max(1, Number(options.limit) || SEARCH_RESULT_LIMIT);
+    const perModuleLimit = Math.max(1, Number(options.perModuleLimit) || SEARCH_RESULT_PER_MODULE_LIMIT);
     const pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
     const results = [];
+    let truncated = false;
     (workspace.modules || []).forEach(module => {
-        String(module.source || '').split(/\r?\n/).forEach((text, index) => {
+        if (results.length >= limit) {
+            truncated = true;
+            return;
+        }
+        let moduleMatches = 0;
+        const source = String(module.source || '');
+        const cachedLines = searchLinesByModule.get(module);
+        const lines = cachedLines && cachedLines.source === source ?
+            cachedLines.lines :
+            source.split(/\r?\n/);
+        if (!cachedLines || cachedLines.source !== source) {
+            searchLinesByModule.set(module, {lines, source});
+        }
+        lines.forEach((text, index) => {
+            if (results.length >= limit || moduleMatches >= perModuleLimit) {
+                truncated = true;
+                return;
+            }
             pattern.lastIndex = 0;
             let match;
             while ((match = pattern.exec(text))) {
+                if (results.length >= limit || moduleMatches >= perModuleLimit) {
+                    truncated = true;
+                    break;
+                }
                 results.push({
                     targetId: module.id,
                     fileName: module.fileName,
@@ -98,8 +131,14 @@ const searchWorkspace = (workspace, query) => {
                     endColumn: match.index + match[0].length + 1,
                     text: text.trim()
                 });
+                moduleMatches++;
             }
         });
+    });
+    Object.defineProperty(results, 'truncated', {
+        configurable: true,
+        enumerable: false,
+        value: truncated
     });
     return results;
 };
@@ -168,25 +207,20 @@ const parseStored = (storage, key, fallback) => {
 };
 
 const saveHistorySnapshot = (storage, projectId, targetId, source, reason = 'autosave', now = Date.now()) => {
-    if (!storageAvailable(storage) || !targetId) return [];
+    if (!targetId) return [];
     const key = storageKey(projectId, targetId, 'history');
-    const history = parseStored(storage, key, []);
+    const history = loadStoredHistory(storage, key);
     const latest = history[0];
     if (latest && latest.source === source) return history;
     const next = [{timestamp: now, reason, source: String(source || '')}].concat(history).slice(0, HISTORY_LIMIT);
-    try {
-        storage.setItem(key, JSON.stringify(next));
-    } catch (error) {
-        return history;
-    }
-    return next;
+    return saveHistory(storage, key, projectId, next);
 };
 
-const loadHistory = (storage, projectId, targetId) => parseStored(
-    storage,
-    storageKey(projectId, targetId, 'history'),
-    []
-);
+const loadHistory = (storage, projectId, targetId) =>
+    loadStoredHistory(storage, storageKey(projectId, targetId, 'history'));
+
+const loadHistoryAsync = (storage, projectId, targetId) =>
+    loadStoredHistoryAsync(storage, storageKey(projectId, targetId, 'history'));
 
 const rememberRecentTarget = (storage, projectId, targetId) => {
     if (!storageAvailable(storage) || !targetId) return [];
@@ -209,8 +243,11 @@ const loadRecentTargets = (storage, projectId) => parseStored(
 
 module.exports = {
     HISTORY_LIMIT,
+    SEARCH_RESULT_LIMIT,
+    SEARCH_RESULT_PER_MODULE_LIMIT,
     buildWorkspace,
     loadHistory,
+    loadHistoryAsync,
     loadRecentTargets,
     rememberRecentTarget,
     replaceWorkspace,
@@ -218,5 +255,6 @@ module.exports = {
     searchWorkspace,
     synchronizeStableReferences,
     targetFileName,
-    targetResources
+    targetResources,
+    whenHistoryPersisted
 };

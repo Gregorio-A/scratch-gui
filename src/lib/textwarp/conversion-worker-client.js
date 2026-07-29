@@ -83,6 +83,10 @@ class ConversionWorkerClient {
     cancelPending () {
         this.pending.forEach(pending => pending.reject(new Error('Conversão cancelada.')));
         this.pending.clear();
+    }
+
+    dispose () {
+        this.cancelPending();
         if (this.worker) {
             this.worker.terminate();
             this.worker = null;

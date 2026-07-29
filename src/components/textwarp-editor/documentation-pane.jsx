@@ -4,16 +4,6 @@ import React from 'react';
 import DOMPurify from 'dompurify';
 import {marked} from 'marked';
 
-import guideMarkdown from '../../../TEXTWARP.md';
-import guideMarkdownEnglish from '../../../TEXTWARP.en.md';
-import ideMarkdown from '../../../TEXTWARP_IDE.md';
-import ideMarkdownEnglish from '../../../TEXTWARP_IDE.en.md';
-import legalMarkdown from '../../../TEXTWARP_LEGAL.md';
-import legalMarkdownEnglish from '../../../TEXTWARP_LEGAL.en.md';
-import prioritiesMarkdown from '../../../TEXTWARP_PRIORIDADES.md';
-import prioritiesMarkdownEnglish from '../../../TEXTWARP_PRIORIDADES.en.md';
-import referenceMarkdown from '../../../TEXTWARP_BLOCOS.md';
-import referenceMarkdownEnglish from '../../../TEXTWARP_BLOCOS.en.md';
 import {buildDocumentationSections, filterDocumentationSections} from '../../lib/textwarp/documentation-content';
 import {createTranslator, normalizeLocale} from '../../lib/textwarp/i18n';
 import styles from './documentation-pane.css';
@@ -35,7 +25,9 @@ const groupSections = sections => Array.from(new Set(sections.map(section => sec
 class DocumentationPane extends React.PureComponent {
     constructor (props) {
         super(props);
-        this.state = {activeId: null, query: props.initialQuery || ''};
+        this.state = {activeId: null, documents: null, query: props.initialQuery || ''};
+        this.documentLoadId = 0;
+        this.mounted = false;
         this.article = null;
         this.markdownBody = null;
         this.copyTimer = null;
@@ -43,10 +35,15 @@ class DocumentationPane extends React.PureComponent {
     }
 
     componentDidMount () {
-        this.addCopyButtons();
+        this.mounted = true;
+        this.loadDocuments(this.props.locale);
     }
 
     componentDidUpdate (previousProps) {
+        if (previousProps.locale !== this.props.locale) {
+            this.loadDocuments(this.props.locale);
+            return;
+        }
         if (previousProps.initialQuery !== this.props.initialQuery && this.props.initialQuery !== this.state.query) {
             this.setState({query: this.props.initialQuery || ''});
             return;
@@ -55,21 +52,29 @@ class DocumentationPane extends React.PureComponent {
     }
 
     componentWillUnmount () {
+        this.mounted = false;
+        this.documentLoadId++;
         clearTimeout(this.copyTimer);
     }
 
+    loadDocuments (locale) {
+        const loadId = ++this.documentLoadId;
+        const loader = normalizeLocale(locale) === 'pt' ?
+            import(/* webpackChunkName: "textwarp-docs-pt" */ './documentation-content-pt') :
+            import(/* webpackChunkName: "textwarp-docs-en" */ './documentation-content-en');
+        loader.then(module => {
+            if (!this.mounted || loadId !== this.documentLoadId) return;
+            this.setState({documents: module.default || module});
+        });
+    }
+
     getSections () {
-        const english = normalizeLocale(this.props.locale) !== 'pt';
-        return buildDocumentationSections({
+        if (!this.state.documents) return [];
+        return buildDocumentationSections(Object.assign({
             extensionCatalog: this.props.extensionCatalog,
             extensionPalette: this.props.extensionPalette,
-            guideMarkdown: english ? guideMarkdownEnglish : guideMarkdown,
-            ideMarkdown: english ? ideMarkdownEnglish : ideMarkdown,
-            legalMarkdown: english ? legalMarkdownEnglish : legalMarkdown,
-            locale: this.props.locale,
-            prioritiesMarkdown: english ? prioritiesMarkdownEnglish : prioritiesMarkdown,
-            referenceMarkdown: english ? referenceMarkdownEnglish : referenceMarkdown
-        });
+            locale: this.props.locale
+        }, this.state.documents));
     }
 
     selectSection (activeId) {

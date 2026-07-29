@@ -10,32 +10,17 @@ import tabStyles from 'react-tabs/style/react-tabs.css';
 import VM from 'scratch-vm';
 
 import TextWarpEditor from '../../containers/textwarp-editor.jsx';
-import CostumeTab from '../../containers/costume-tab.jsx';
 import TargetPane from '../../containers/target-pane.jsx';
-import SoundTab from '../../containers/sound-tab.jsx';
 import StageWrapper from '../../containers/stage-wrapper.jsx';
 import Loader from '../loader/loader.jsx';
 import Box from '../box/box.jsx';
 import MenuBar from '../menu-bar/menu-bar.jsx';
-import CostumeLibrary from '../../containers/costume-library.jsx';
-import BackdropLibrary from '../../containers/backdrop-library.jsx';
 import Watermark from '../../containers/watermark.jsx';
 
-import BrowserModal from '../browser-modal/browser-modal.jsx';
-import TipsLibrary from '../../containers/tips-library.jsx';
-import Cards from '../../containers/cards.jsx';
 import Alerts from '../../containers/alerts.jsx';
 import DragLayer from '../../containers/drag-layer.jsx';
-import ConnectionModal from '../../containers/connection-modal.jsx';
-import TelemetryModal from '../telemetry-modal/telemetry-modal.jsx';
-import TWUsernameModal from '../../containers/tw-username-modal.jsx';
-import TWSettingsModal from '../../containers/tw-settings-modal.jsx';
 import TWSecurityManager from '../../containers/tw-security-manager.jsx';
-import TWCustomExtensionModal from '../../containers/tw-custom-extension-modal.jsx';
 import TWRestorePointManager from '../../containers/tw-restore-point-manager.jsx';
-import TWFontsModal from '../../containers/tw-fonts-modal.jsx';
-import TWUnknownPlatformModal from '../../containers/tw-unknown-platform-modal.jsx';
-import TWInvalidProjectModal from '../../containers/tw-invalid-project-modal.jsx';
 
 import {STAGE_SIZE_MODES, FIXED_WIDTH, UNCONSTRAINED_NON_STAGE_WIDTH} from '../../lib/layout-constants';
 import {resolveStageSize} from '../../lib/screen-utils';
@@ -86,6 +71,49 @@ const getFullscreenBackgroundColor = () => {
 const fullscreenBackgroundColor = getFullscreenBackgroundColor();
 
 const STAGE_LAYOUT_STORAGE_KEY = 'textwarp.workspace.stage-layout';
+const CostumeTab = React.lazy(() =>
+    import(/* webpackChunkName: "costume-editor" */ '../../containers/costume-tab.jsx')
+);
+const SoundTab = React.lazy(() =>
+    import(/* webpackChunkName: "sound-editor" */ '../../containers/sound-tab.jsx')
+);
+const CostumeLibrary = React.lazy(() =>
+    import(/* webpackChunkName: "costume-library" */ '../../containers/costume-library.jsx')
+);
+const BackdropLibrary = React.lazy(() =>
+    import(/* webpackChunkName: "backdrop-library" */ '../../containers/backdrop-library.jsx')
+);
+const BrowserModal = React.lazy(() =>
+    import(/* webpackChunkName: "browser-modal" */ '../browser-modal/browser-modal.jsx')
+);
+const TipsLibrary = React.lazy(() =>
+    import(/* webpackChunkName: "tips-library" */ '../../containers/tips-library.jsx')
+);
+const Cards = React.lazy(() => import(/* webpackChunkName: "cards" */ '../../containers/cards.jsx'));
+const ConnectionModal = React.lazy(() =>
+    import(/* webpackChunkName: "connection-modal" */ '../../containers/connection-modal.jsx')
+);
+const TelemetryModal = React.lazy(() =>
+    import(/* webpackChunkName: "telemetry-modal" */ '../telemetry-modal/telemetry-modal.jsx')
+);
+const TWUsernameModal = React.lazy(() =>
+    import(/* webpackChunkName: "username-modal" */ '../../containers/tw-username-modal.jsx')
+);
+const TWSettingsModal = React.lazy(() =>
+    import(/* webpackChunkName: "settings-modal" */ '../../containers/tw-settings-modal.jsx')
+);
+const TWCustomExtensionModal = React.lazy(() =>
+    import(/* webpackChunkName: "custom-extension-modal" */ '../../containers/tw-custom-extension-modal.jsx')
+);
+const TWFontsModal = React.lazy(() =>
+    import(/* webpackChunkName: "fonts-modal" */ '../../containers/tw-fonts-modal.jsx')
+);
+const TWUnknownPlatformModal = React.lazy(() =>
+    import(/* webpackChunkName: "unknown-platform-modal" */ '../../containers/tw-unknown-platform-modal.jsx')
+);
+const TWInvalidProjectModal = React.lazy(() =>
+    import(/* webpackChunkName: "invalid-project-modal" */ '../../containers/tw-invalid-project-modal.jsx')
+);
 
 const readStageLayout = () => {
     const defaultLayout = {
@@ -392,12 +420,14 @@ const GUIComponent = props => {
                 <React.Fragment>
                     <TWSecurityManager securityManager={securityManager} />
                     <TWRestorePointManager />
-                    {usernameModalVisible && <TWUsernameModal />}
-                    {settingsModalVisible && <TWSettingsModal />}
-                    {customExtensionModalVisible && <TWCustomExtensionModal />}
-                    {fontsModalVisible && <TWFontsModal />}
-                    {unknownPlatformModalVisible && <TWUnknownPlatformModal />}
-                    {invalidProjectModalVisible && <TWInvalidProjectModal />}
+                    <React.Suspense fallback={null}>
+                        {usernameModalVisible && <TWUsernameModal />}
+                        {settingsModalVisible && <TWSettingsModal />}
+                        {customExtensionModalVisible && <TWCustomExtensionModal />}
+                        {fontsModalVisible && <TWFontsModal />}
+                        {unknownPlatformModalVisible && <TWUnknownPlatformModal />}
+                        {invalidProjectModalVisible && <TWInvalidProjectModal />}
+                    </React.Suspense>
                 </React.Fragment>
             );
 
@@ -440,17 +470,18 @@ const GUIComponent = props => {
                     {...componentProps}
                 >
                     {alwaysEnabledModals}
-                    {telemetryModalVisible ? (
-                        <TelemetryModal
-                            isRtl={isRtl}
-                            isTelemetryEnabled={isTelemetryEnabled}
-                            onCancel={onTelemetryModalCancel}
-                            onOptIn={onTelemetryModalOptIn}
-                            onOptOut={onTelemetryModalOptOut}
-                            onRequestClose={onRequestCloseTelemetryModal}
-                            onShowPrivacyPolicy={onShowPrivacyPolicy}
-                        />
-                    ) : null}
+                    <React.Suspense fallback={null}>
+                        {telemetryModalVisible ? (
+                            <TelemetryModal
+                                isRtl={isRtl}
+                                isTelemetryEnabled={isTelemetryEnabled}
+                                onCancel={onTelemetryModalCancel}
+                                onOptIn={onTelemetryModalOptIn}
+                                onOptOut={onTelemetryModalOptOut}
+                                onRequestClose={onRequestCloseTelemetryModal}
+                                onShowPrivacyPolicy={onShowPrivacyPolicy}
+                            />
+                        ) : null}
                     {loading ? (
                         <Loader isFullScreen />
                     ) : null}
@@ -492,6 +523,7 @@ const GUIComponent = props => {
                             onRequestClose={onRequestCloseBackdropLibrary}
                         />
                     ) : null}
+                    </React.Suspense>
                     <MenuBar
                         accountNavOpen={accountNavOpen}
                         authorId={authorId}
@@ -628,12 +660,16 @@ const GUIComponent = props => {
                                         </Box>
                                     </TabPanel>
                                     <TabPanel className={tabClassNames.tabPanel}>
-                                        {costumesTabVisible ? <CostumeTab
-                                            vm={vm}
-                                        /> : null}
+                                        <React.Suspense fallback={<Loader />}>
+                                            {costumesTabVisible ? <CostumeTab
+                                                vm={vm}
+                                            /> : null}
+                                        </React.Suspense>
                                     </TabPanel>
                                     <TabPanel className={tabClassNames.tabPanel}>
-                                        {soundsTabVisible ? <SoundTab vm={vm} /> : null}
+                                        <React.Suspense fallback={<Loader />}>
+                                            {soundsTabVisible ? <SoundTab vm={vm} /> : null}
+                                        </React.Suspense>
                                     </TabPanel>
                                 </Tabs>
                             </Box>

@@ -40,6 +40,9 @@ jobs:
       - name: Build web application
         run: npm run build:textwarp:web
 
+      - name: Check TextWarp performance budgets
+        run: npm run perf:textwarp
+
       - name: Publish Hostinger branch
         uses: peaceiris/actions-gh-pages@v4
         with:

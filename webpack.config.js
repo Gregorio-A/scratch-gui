@@ -1,4 +1,5 @@
 const defaultsDeep = require('lodash.defaultsdeep');
+const glob = require('glob');
 const path = require('path');
 const webpack = require('webpack');
 
@@ -28,6 +29,25 @@ const htmlWebpackPluginCommon = {
 
 // When this changes, the path for all JS files will change, bypassing any HTTP caches
 const CACHE_EPOCH = 'pentapod';
+const MONACO_ROOT = path.resolve(__dirname, 'node_modules/monaco-editor/min/vs');
+const MONACO_RUNTIME_PATTERNS = [
+    'loader.js',
+    'nls.messages-loader.js',
+    'nls.messages.js.js',
+    'nls.messages.pt-br.js.js',
+    'editor/**',
+    'editor.api-*.js',
+    'monaco.contribution-*.js',
+    'basic-languages/monaco.contribution.js',
+    'workers-*.js',
+    'assets/editor.worker-*.js'
+];
+const monacoRuntimePatterns = MONACO_RUNTIME_PATTERNS.flatMap(pattern =>
+    glob.sync(pattern, {cwd: MONACO_ROOT, nodir: true})
+).map(file => ({
+    from: path.join(MONACO_ROOT, file),
+    to: `static/monaco/vs/${file}`
+}));
 
 const base = {
     mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
@@ -135,11 +155,7 @@ const base = {
                     to: 'static/blocks-media/high-contrast',
                     force: true
                 },
-                {
-                    from: 'node_modules/monaco-editor/min/vs',
-                    to: 'static/monaco/vs'
-                }
-            ]
+            ].concat(monacoRuntimePatterns)
         })
     ]
 };
@@ -169,7 +185,6 @@ module.exports = [
     defaultsDeep({}, base, {
         entry: {
             'editor': './src/playground/editor.jsx',
-            'player': './src/playground/player.jsx',
             'fullscreen': './src/playground/fullscreen.jsx',
             'embed': './src/playground/embed.jsx',
             'addon-settings': './src/playground/addon-settings.jsx',
@@ -196,7 +211,8 @@ module.exports = [
                 chunks: 'all',
                 minChunks: 2,
                 minSize: 50000,
-                maxInitialRequests: 5
+                maxAsyncRequests: 20,
+                maxInitialRequests: 12
             }
         },
         plugins: base.plugins.concat([
@@ -217,7 +233,7 @@ module.exports = [
                 ...htmlWebpackPluginCommon
             }),
             new HtmlWebpackPlugin({
-                chunks: ['player'],
+                chunks: ['editor'],
                 template: 'src/playground/index.ejs',
                 filename: 'index.html',
                 title: `${APP_NAME} - Text IDE compatible with Scratch and TurboWarp`,

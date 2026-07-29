@@ -2,9 +2,8 @@ import classNames from 'classnames';
 import PropTypes from 'prop-types';
 import React from 'react';
 import {connect} from 'react-redux';
-import VisualBlocks from './blocks.jsx';
 import downloadBlob from '../lib/download-blob';
-import {setProjectUnchanged} from '../reducers/project-changed';
+import {setProjectChanged, setProjectUnchanged} from '../reducers/project-changed';
 import {setFileHandle, setTextwarpUiOperation, TEXTWARP_UI_COMMANDS} from '../reducers/tw';
 
 import {compileText} from '../lib/textwarp/compiler';
@@ -14,8 +13,6 @@ import {inspectExpression} from '../lib/textwarp/debug-inspector';
 import {decompileTarget} from '../lib/textwarp/decompiler';
 import {createDiagnosticReport} from '../lib/textwarp/diagnostic-report';
 import ActivityBar from '../components/textwarp-editor/activity-bar.jsx';
-import DocumentationPane from '../components/textwarp-editor/documentation-pane.jsx';
-import Backpack from './backpack.jsx';
 import {buildExtensionInventory, summarizeExtensionCatalog} from '../lib/textwarp/extension-catalog';
 import IdeSidebar from '../components/textwarp-editor/ide-sidebar.jsx';
 import InterfaceIcon from '../components/textwarp-editor/interface-icon.jsx';
@@ -73,19 +70,22 @@ import {
 import {
     buildWorkspace,
     loadHistory,
+    loadHistoryAsync,
     loadRecentTargets,
     rememberRecentTarget,
     replaceWorkspace,
-    saveHistorySnapshot,
+    saveHistorySnapshot as saveWorkspaceHistorySnapshot,
     searchWorkspace,
     synchronizeStableReferences,
-    targetFileName
+    targetFileName,
+    whenHistoryPersisted
 } from '../lib/textwarp/workspace-service';
 import styles from '../components/textwarp-editor/text-editor.css';
 
 const AUTO_COMPILE_DELAY = 300;
 const ANALYSIS_DELAY = 120;
 const HISTORY_DELAY = 1200;
+const SEARCH_DELAY = 160;
 const MAX_AUTO_SOURCE_LENGTH = 100000;
 const MAX_AUTO_BLOCKS = 10000;
 const emptyWorkspace = () => ({modules: [], resources: [], editableFiles: [], generatedFiles: []});
@@ -132,6 +132,97 @@ on green_flag:
         wait(0)`;
 
 const countErrors = diagnostics => diagnostics.filter(item => item.severity === 'error').length;
+const VisualBlocks = React.lazy(() => import(/* webpackChunkName: "textwarp-visual-blocks" */ './blocks.jsx'));
+const DocumentationPane = React.lazy(() =>
+    import(/* webpackChunkName: "textwarp-documentation" */ '../components/textwarp-editor/documentation-pane.jsx')
+);
+const Backpack = React.lazy(() => import(/* webpackChunkName: "textwarp-backpack" */ './backpack.jsx'));
+
+class DebugSnapshotView extends React.Component {
+    constructor (props) {
+        super(props);
+        this.state = {snapshot: props.controller.snapshot(true)};
+    }
+
+    componentDidMount () {
+        this.unsubscribe = this.props.controller.subscribe(
+            snapshot => this.setState({snapshot}),
+            {includeDetails: true}
+        );
+    }
+
+    componentWillUnmount () {
+        if (this.unsubscribe) this.unsubscribe();
+    }
+
+    render () {
+        return this.props.children(this.state.snapshot);
+    }
+}
+
+DebugSnapshotView.propTypes = {
+    children: PropTypes.func.isRequired,
+    controller: PropTypes.shape({
+        snapshot: PropTypes.func.isRequired,
+        subscribe: PropTypes.func.isRequired
+    }).isRequired
+};
+
+class DebugExecutionStatus extends React.PureComponent {
+    constructor (props) {
+        super(props);
+        this.state = {executionState: props.controller.snapshot(false).executionState};
+    }
+
+    componentDidMount () {
+        this.unsubscribe = this.props.controller.subscribe(snapshot => {
+            if (snapshot.executionState !== this.state.executionState) {
+                this.setState({executionState: snapshot.executionState});
+            }
+        }, {includeDetails: false});
+    }
+
+    componentWillUnmount () {
+        if (this.unsubscribe) this.unsubscribe();
+    }
+
+    render () {
+        const t = createTranslator(this.props.locale);
+        return <span>{({
+            paused: t('runtimeStatePaused'),
+            running: t('runtimeStateRunning'),
+            stopped: t('runtimeStateStopped')
+        })[this.state.executionState] || t('runtimeStateStopped')}</span>;
+    }
+}
+
+DebugExecutionStatus.propTypes = {
+    controller: PropTypes.shape({
+        snapshot: PropTypes.func.isRequired,
+        subscribe: PropTypes.func.isRequired
+    }).isRequired,
+    locale: PropTypes.string.isRequired
+};
+
+class CursorStatus extends React.PureComponent {
+    constructor (props) {
+        super(props);
+        this.state = {column: 1, line: 1};
+    }
+
+    setPosition (position) {
+        if (position.line === this.state.line && position.column === this.state.column) return;
+        this.setState(position);
+    }
+
+    render () {
+        return <span>{createTranslator(this.props.locale)('cursorPosition', this.state)}</span>;
+    }
+}
+
+CursorStatus.propTypes = {
+    locale: PropTypes.string.isRequired
+};
 
 const getConversionScope = (target, compilation) => {
     const record = readSourceRecord(target);
@@ -159,7 +250,6 @@ class TextEditor extends React.Component {
             source: '',
             diagnostics: [],
             status: t('selectTarget'),
-            announcement: t('selectTarget'),
             statusKind: 'idle',
             targetName: '',
             isStage: false,
@@ -201,9 +291,6 @@ class TextEditor extends React.Component {
             saveState: 'salvo',
             blockRefresh: 0,
             breakpoints: [],
-            debugSnapshot: {
-                enabled: false, threads: [], activeLinesByTarget: {}, runtimeErrors: [], consoleEntries: [], executionState: 'stopped'
-            },
             watches: [],
             watchInput: '',
             selectedThreadId: null,
@@ -223,23 +310,27 @@ class TextEditor extends React.Component {
             diagnosticLimit: DEFAULT_LIST_LIMIT,
             consoleLimit: DEFAULT_LIST_LIMIT,
             extensionLimit: DEFAULT_LIST_LIMIT,
-            cursorPosition: {line: 1, column: 1},
             draggedTargetId: null
         };
         this.compileTimer = null;
         this.analysisTimer = null;
-        this.debugController = null;
+        this.debugController = getDebugController(props.vm);
+        this.debugSnapshot = this.debugController.snapshot(false);
         this.unsubscribeDebugger = null;
+        this.cursorPosition = {line: 1, column: 1};
+        this.cursorStatus = null;
         this.extensionCatalog = {};
         this.conversionWorker = new ConversionWorkerClient();
         this.conversionGeneration = 0;
         this.secondaryConversionGeneration = 0;
         this.blockConversionGeneration = 0;
         this.languageContextCache = null;
+        this.outlineCache = null;
         this.lastAppliedSource = '';
         this.lastBlockFingerprint = '';
         this.blockSyncTimer = null;
         this.historyTimer = null;
+        this.searchTimer = null;
         this.secondaryCompileTimer = null;
         this.secondaryAnalysisTimer = null;
         this.suppressBlockSyncUntil = 0;
@@ -252,6 +343,8 @@ class TextEditor extends React.Component {
         this.editorAreaElement = null;
         this.resizeObserver = null;
         this.resizeSession = null;
+        this.resizeFrame = null;
+        this.pendingResizePoint = null;
         this.externalInput = null;
         this.handleProjectLoaded = () => {
             clearTextwarpHandle(`${this.props.projectTitle || 'project'}.textwarp`);
@@ -300,7 +393,9 @@ class TextEditor extends React.Component {
         this.handleWindowResize = this.handleWindowResize.bind(this);
         this.handlePointerMove = this.handlePointerMove.bind(this);
         this.handlePointerUp = this.handlePointerUp.bind(this);
+        this.applyResizeFrame = this.applyResizeFrame.bind(this);
         this.handleSearch = this.handleSearch.bind(this);
+        this.runSearch = this.runSearch.bind(this);
         this.handleReplaceAll = this.handleReplaceAll.bind(this);
         this.openTarget = this.openTarget.bind(this);
         this.openLocation = this.openLocation.bind(this);
@@ -323,6 +418,10 @@ class TextEditor extends React.Component {
         this.handleMonacoLoadError = this.handleMonacoLoadError.bind(this);
         this.handleProjectRunStop = this.handleProjectRunStop.bind(this);
         this.navigateProblem = this.navigateProblem.bind(this);
+        this.openDocumentation = this.openDocumentation.bind(this);
+        this.toggleSettings = this.toggleSettings.bind(this);
+        this.changeSidebarPanel = this.changeSidebarPanel.bind(this);
+        this.changeReplaceValue = this.changeReplaceValue.bind(this);
     }
 
     componentDidMount () {
@@ -365,8 +464,13 @@ class TextEditor extends React.Component {
             window.addEventListener('resize', this.handleWindowResize);
         }
         this.refreshExtensionCatalog();
-        this.debugController = getDebugController(this.props.vm);
-        this.unsubscribeDebugger = this.debugController.subscribe(debugSnapshot => this.setState({debugSnapshot}));
+        this.unsubscribeDebugger = this.debugController.subscribe(debugSnapshot => {
+            this.debugSnapshot = debugSnapshot;
+            const primaryLines = debugSnapshot.activeLinesByTarget[this.props.editingTargetId] || [];
+            const secondaryLines = debugSnapshot.activeLinesByTarget[this.state.secondaryTargetId] || [];
+            if (this.monacoEditor) this.monacoEditor.setRuntimeActiveLines(primaryLines);
+            if (this.secondaryMonacoEditor) this.secondaryMonacoEditor.setRuntimeActiveLines(secondaryLines);
+        }, {includeDetails: false});
         this.syncAllBreakpoints();
         if (this.props.vm.runtime && typeof this.props.vm.runtime.on === 'function') {
             this.props.vm.runtime.on('EXTENSION_ADDED', this.handleExtensionsChanged);
@@ -384,7 +488,7 @@ class TextEditor extends React.Component {
         this.loadSelectedTarget();
     }
 
-    componentDidUpdate (previousProps, previousState) {
+    componentDidUpdate (previousProps) {
         if (
             previousProps.editingTargetId !== this.props.editingTargetId ||
             previousProps.editingTargetName !== this.props.editingTargetName
@@ -398,10 +502,6 @@ class TextEditor extends React.Component {
                 activeTab.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'nearest'});
             }
         }
-        if (
-            previousState.status !== this.state.status &&
-            this.state.announcement !== this.state.status
-        ) this.setState({announcement: this.state.status});
     }
 
     componentWillUnmount () {
@@ -413,14 +513,16 @@ class TextEditor extends React.Component {
         clearTimeout(this.analysisTimer);
         clearTimeout(this.blockSyncTimer);
         clearTimeout(this.historyTimer);
+        clearTimeout(this.searchTimer);
         clearTimeout(this.secondaryCompileTimer);
         clearTimeout(this.secondaryAnalysisTimer);
+        if (this.resizeFrame !== null) cancelAnimationFrame(this.resizeFrame);
         if (this.resizeObserver) this.resizeObserver.disconnect();
         window.removeEventListener('resize', this.handleWindowResize);
         window.removeEventListener('pointermove', this.handlePointerMove);
         window.removeEventListener('pointerup', this.handlePointerUp);
         if (this.unsubscribeDebugger) this.unsubscribeDebugger();
-        this.conversionWorker.cancelPending();
+        this.conversionWorker.dispose();
         if (this.debugController) this.debugController.setEnabled(false);
         if (this.props.vm.runtime && typeof this.props.vm.runtime.removeListener === 'function') {
             this.props.vm.runtime.removeListener('EXTENSION_ADDED', this.handleExtensionsChanged);
@@ -458,6 +560,31 @@ class TextEditor extends React.Component {
         }
     }
 
+    saveDraftSource (target, source) {
+        const record = saveTextSource(this.props.vm, target, source, {emitProjectChanged: false});
+        if (this.props.onSetProjectChanged) this.props.onSetProjectChanged();
+        return record;
+    }
+
+    recordHistory (targetId, source, reason, now) {
+        const history = saveWorkspaceHistorySnapshot(
+            this.getStorage(),
+            this.getProjectStorageId(),
+            targetId,
+            source,
+            reason,
+            now
+        );
+        whenHistoryPersisted(history).catch(error => {
+            if (!this._isMounted) return;
+            this.setState({
+                status: error && error.message ? error.message : this.t('historyStorageUnavailable'),
+                statusKind: 'error'
+            });
+        });
+        return history;
+    }
+
     applyCompactUiClass (compactUi) {
         if (typeof document === 'undefined') return;
         document.documentElement.classList.toggle('textwarp-compact-ui', Boolean(compactUi));
@@ -465,6 +592,40 @@ class TextEditor extends React.Component {
 
     t (key, values) {
         return createTranslator(this.props.locale)(key, values);
+    }
+
+    getCachedOutline () {
+        if (this.outlineCache && this.outlineCache.source === this.state.source) {
+            return this.outlineCache.outline;
+        }
+        this.outlineCache = {
+            outline: getOutline(this.state.source),
+            source: this.state.source
+        };
+        return this.outlineCache.outline;
+    }
+
+    openDocumentation () {
+        this.setState({docsQuery: '', sidebarVisible: false});
+        this.persistUiState({sidebarVisible: false, viewMode: 'docs'});
+        this.setViewMode('docs');
+    }
+
+    toggleSettings () {
+        this.setState(state => ({
+            actionMenuOpen: false,
+            convertMenuOpen: false,
+            settingsOpen: !state.settingsOpen
+        }));
+    }
+
+    changeSidebarPanel (sidebarPanel) {
+        this.setState({sidebarPanel});
+        this.persistUiState({sidebarPanel});
+    }
+
+    changeReplaceValue (replaceValue) {
+        this.setState({replaceValue});
     }
 
     getDiagnosticReport () {
@@ -507,7 +668,7 @@ class TextEditor extends React.Component {
         if (stage && stage !== target) {
             appendVariables(stage, 'stage');
         }
-        const snapshot = this.state.debugSnapshot;
+        const snapshot = this.debugSnapshot;
         return createDiagnosticReport({
             blockCount: target && target.blocks && target.blocks._blocks ?
                 Object.keys(target.blocks._blocks).length : 0,
@@ -677,39 +838,62 @@ class TextEditor extends React.Component {
     startResize (kind, event) {
         if (event.button !== undefined && event.button !== 0) return;
         event.preventDefault();
-        this.resizeSession = {kind};
+        this.resizeSession = {
+            kind,
+            rootBounds: this.rootElement && this.rootElement.getBoundingClientRect(),
+            editorBounds: this.editorAreaElement && this.editorAreaElement.getBoundingClientRect(),
+            next: {}
+        };
         document.body.classList.add('textwarp-resizing');
     }
 
     handlePointerMove (event) {
         if (!this.resizeSession || !this.rootElement) return;
-        const rootBounds = this.rootElement.getBoundingClientRect();
-        if (this.resizeSession.kind === 'sidebar') {
-            this.setState({sidebarWidth: clampSidebarWidth(event.clientX - rootBounds.left)});
+        this.pendingResizePoint = {clientX: event.clientX, clientY: event.clientY};
+        if (this.resizeFrame === null) this.resizeFrame = requestAnimationFrame(this.applyResizeFrame);
+    }
+
+    applyResizeFrame () {
+        this.resizeFrame = null;
+        if (!this.resizeSession || !this.pendingResizePoint || !this.rootElement) return;
+        const point = this.pendingResizePoint;
+        const {kind, rootBounds, editorBounds} = this.resizeSession;
+        if (kind === 'sidebar' && rootBounds) {
+            const sidebarWidth = clampSidebarWidth(point.clientX - rootBounds.left);
+            this.resizeSession.next = {sidebarWidth};
+            this.rootElement.style.setProperty('--textwarp-sidebar-width', `${sidebarWidth}px`);
             return;
         }
-        if (this.resizeSession.kind === 'bottom') {
-            this.setState({
-                bottomPanelCollapsed: false,
-                bottomPanelHeight: clampBottomPanelHeight(rootBounds.bottom - event.clientY)
-            });
+        if (kind === 'bottom' && rootBounds) {
+            const bottomPanelHeight = clampBottomPanelHeight(rootBounds.bottom - point.clientY);
+            this.resizeSession.next = {bottomPanelCollapsed: false, bottomPanelHeight};
+            this.rootElement.style.setProperty('--textwarp-bottom-panel-height', `${bottomPanelHeight}px`);
             return;
         }
-        if (this.resizeSession.kind === 'split' && this.editorAreaElement) {
-            const editorBounds = this.editorAreaElement.getBoundingClientRect();
+        if (kind === 'split' && editorBounds) {
             const ratio = this.state.narrowLayout ?
-                ((event.clientY - editorBounds.top) / editorBounds.height) * 100 :
-                ((event.clientX - editorBounds.left) / editorBounds.width) * 100;
-            this.setState({splitRatio: clampSplitRatio(ratio)});
+                ((point.clientY - editorBounds.top) / editorBounds.height) * 100 :
+                ((point.clientX - editorBounds.left) / editorBounds.width) * 100;
+            const splitRatio = clampSplitRatio(ratio);
+            this.resizeSession.next = {splitRatio};
+            this.rootElement.style.setProperty('--textwarp-split-ratio', `${splitRatio}%`);
         }
     }
 
     handlePointerUp () {
         if (!this.resizeSession) return;
+        if (this.resizeFrame !== null) {
+            cancelAnimationFrame(this.resizeFrame);
+            this.applyResizeFrame();
+        }
+        const next = this.resizeSession.next;
         this.resizeSession = null;
+        this.pendingResizePoint = null;
         document.body.classList.remove('textwarp-resizing');
-        this.persistPreferences();
-        if (typeof window !== 'undefined') window.dispatchEvent(new Event('resize'));
+        this.setState(next, () => {
+            this.persistPreferences(next);
+            if (typeof window !== 'undefined') window.dispatchEvent(new Event('resize'));
+        });
     }
 
     handleResizeKeyDown (kind, event) {
@@ -913,9 +1097,7 @@ class TextEditor extends React.Component {
         if (!target) return null;
         const source = selectedSource === null ? this.state.source : selectedSource;
         const timestamp = Date.now();
-        const history = saveHistorySnapshot(
-            this.getStorage(),
-            this.getProjectStorageId(),
+        const history = this.recordHistory(
             target.id,
             source,
             this.t('historyConversionSnapshot'),
@@ -1155,7 +1337,7 @@ class TextEditor extends React.Component {
             this.setState({status: this.t('noProblems'), statusKind: 'idle'});
             return;
         }
-        const current = this.state.cursorPosition;
+        const current = this.cursorPosition;
         const ordered = diagnostics.slice().sort((left, right) =>
             (left.line - right.line) || (left.column - right.column)
         );
@@ -1428,9 +1610,7 @@ class TextEditor extends React.Component {
             if (!compilation.success) return;
             this.suppressBlockSyncUntil = Date.now() + 750;
             applyCompilation(this.props.vm, target, compilation);
-            saveHistorySnapshot(
-                this.getStorage(),
-                this.getProjectStorageId(),
+            this.recordHistory(
                 target.id,
                 synchronized.source,
                 this.t('historyResourceSync')
@@ -1764,10 +1944,27 @@ class TextEditor extends React.Component {
     }
 
     handleSearch (searchQuery) {
-        const workspace = buildWorkspace(this.props.vm);
-        const activeModule = workspace.modules.find(module => module.id === this.props.editingTargetId);
-        if (activeModule) activeModule.source = this.state.source;
-        this.setState({searchQuery, workspace, searchResults: searchWorkspace(workspace, searchQuery)});
+        clearTimeout(this.searchTimer);
+        if (!String(searchQuery || '').trim()) {
+            this.setState({searchQuery, searchResults: []});
+            return;
+        }
+        this.setState({searchQuery});
+        this.searchTimer = setTimeout(() => this.runSearch(searchQuery), SEARCH_DELAY);
+    }
+
+    runSearch (searchQuery = this.state.searchQuery) {
+        if (!this._isMounted || searchQuery !== this.state.searchQuery) return;
+        const currentWorkspace = this.state.workspace.modules.length ?
+            this.state.workspace :
+            buildWorkspace(this.props.vm);
+        const workspace = Object.assign({}, currentWorkspace, {
+            modules: currentWorkspace.modules.map(module => module.id === this.props.editingTargetId ?
+                Object.assign({}, module, {source: this.state.source}) :
+                module
+            )
+        });
+        this.setState({workspace, searchResults: searchWorkspace(workspace, searchQuery)});
     }
 
     handleReplaceAll () {
@@ -1794,11 +1991,9 @@ class TextEditor extends React.Component {
         }
         if (this.isRuntimeActive() && typeof this.props.vm.stopAll === 'function') this.props.vm.stopAll();
         compilations.forEach(item => {
-            saveTextSource(this.props.vm, item.target, item.module.source);
+            this.saveDraftSource(item.target, item.module.source);
             applyCompilation(this.props.vm, item.target, item.compilation);
-            saveHistorySnapshot(
-                this.getStorage(),
-                this.getProjectStorageId(),
+            this.recordHistory(
                 item.target.id,
                 item.module.source,
                 this.t('historyGlobalReplace')
@@ -2045,6 +2240,7 @@ class TextEditor extends React.Component {
         const recent = loadRecentTargets(storage, projectId);
         rememberRecentTarget(storage, projectId, target.id);
         const history = loadHistory(storage, projectId, target.id);
+        const historyRequest = loadHistoryAsync(storage, projectId, target.id);
         const workspace = buildWorkspace(this.props.vm);
         const openTargetIds = Array.from(new Set(
             this.state.openTargetIds.concat(recent).filter(id => workspace.modules.some(module => module.id === id)).concat(target.id)
@@ -2092,6 +2288,19 @@ class TextEditor extends React.Component {
             blockRefresh: this.state.blockRefresh + 1
         }, () => {
             if (this.pendingLocation && this.pendingLocation.targetId === target.id) this.openLocation(this.pendingLocation);
+            historyRequest.then(storedHistory => {
+                if (
+                    this._isMounted &&
+                    this.props.editingTargetId === target.id &&
+                    storedHistory !== this.state.history
+                ) this.setState({history: storedHistory});
+            }).catch(error => {
+                if (!this._isMounted || this.props.editingTargetId !== target.id) return;
+                this.setState({
+                    status: error && error.message ? error.message : this.t('historyStorageUnavailable'),
+                    statusKind: 'error'
+                });
+            });
         });
     }
 
@@ -2101,7 +2310,7 @@ class TextEditor extends React.Component {
         const generation = ++this.conversionGeneration;
         this.blockConversionGeneration++;
         this.conversionWorker.cancelPending();
-        saveTextSource(this.props.vm, target, source);
+        this.saveDraftSource(target, source);
         this.setState({
             externalSyncState: this.state.externalHandle ? 'dirty' : this.state.externalSyncState,
             source,
@@ -2111,9 +2320,7 @@ class TextEditor extends React.Component {
         });
         clearTimeout(this.historyTimer);
         this.historyTimer = setTimeout(() => {
-            const history = saveHistorySnapshot(
-                this.getStorage(),
-                this.getProjectStorageId(),
+            const history = this.recordHistory(
                 target.id,
                 source,
                 this.t('historyAutosave')
@@ -2190,13 +2397,11 @@ class TextEditor extends React.Component {
         const target = this.props.vm.runtime.getTargetById(targetId);
         if (!target || targetId === this.props.editingTargetId) return;
         const compilation = compileText(source, this.getCompileOptions(target));
-        saveTextSource(this.props.vm, target, source);
+        this.saveDraftSource(target, source);
         if (compilation.success && this.state.autoSync && !this.isRuntimeActive()) {
             applyCompilation(this.props.vm, target, compilation);
         }
-        saveHistorySnapshot(
-            this.getStorage(),
-            this.getProjectStorageId(),
+        this.recordHistory(
             targetId,
             source,
             this.t('historyRefactor')
@@ -2233,7 +2438,7 @@ class TextEditor extends React.Component {
         this.conversionGeneration++;
         this.blockConversionGeneration++;
         this.conversionWorker.cancelPending();
-        saveTextSource(this.props.vm, target, source);
+        this.saveDraftSource(target, source);
         this.setState({
             secondarySource: source,
             saveState: 'salvando'
@@ -2261,9 +2466,7 @@ class TextEditor extends React.Component {
                 this.state.secondaryTargetId !== target.id ||
                 this.state.secondarySource !== source
             ) return;
-            const history = saveHistorySnapshot(
-                this.getStorage(),
-                this.getProjectStorageId(),
+            const history = this.recordHistory(
                 target.id,
                 source,
                 this.t('historyDualEditor')
@@ -2321,9 +2524,7 @@ class TextEditor extends React.Component {
             run,
             this.captureConversionSnapshot('text-to-blocks', target, this.state.secondarySource)
         );
-        saveHistorySnapshot(
-            this.getStorage(),
-            this.getProjectStorageId(),
+        this.recordHistory(
             target.id,
             this.state.secondarySource,
             this.t('historyDualEditor')
@@ -2417,9 +2618,7 @@ class TextEditor extends React.Component {
             this.lastBlockFingerprint = blockFingerprint(target);
             const apply = record.lastApply || {};
             const changed = (apply.createdUnits || 0) + (apply.updatedUnits || 0);
-            const history = saveHistorySnapshot(
-                this.getStorage(),
-                this.getProjectStorageId(),
+            const history = this.recordHistory(
                 target.id,
                 compilation.source,
                 this.t('historyAutosave')
@@ -2474,7 +2673,7 @@ class TextEditor extends React.Component {
         ) return;
         const errors = countErrors(compilation.diagnostics);
         if (errors) {
-            saveTextSource(this.props.vm, target, source);
+            this.saveDraftSource(target, source);
             this.setState({
                 diagnostics: compilation.diagnostics,
                 status: this.t('compileErrors', {count: errors}),
@@ -2719,9 +2918,7 @@ class TextEditor extends React.Component {
                 const record = readSourceRecord(target);
                 const source = record ? record.source :
                     target === currentTarget ? this.state.source : '';
-                const history = saveHistorySnapshot(
-                    this.getStorage(),
-                    this.getProjectStorageId(),
+                const history = this.recordHistory(
                     target.id,
                     source,
                     this.t('historyConversionSnapshot'),
@@ -3048,9 +3245,9 @@ class TextEditor extends React.Component {
         this.setState(state => ({watches: state.watches.concat(expression), watchInput: ''}));
     }
 
-    getWatchValues () {
-        const selected = this.state.debugSnapshot.threads.find(thread => thread.id === this.state.selectedThreadId) ||
-            this.state.debugSnapshot.threads.find(thread => thread.paused);
+    getWatchValues (snapshot = this.debugSnapshot) {
+        const selected = snapshot.threads.find(thread => thread.id === this.state.selectedThreadId) ||
+            snapshot.threads.find(thread => thread.paused);
         const target = selected && this.props.vm.runtime.getTargetById(selected.targetId) || this.getTarget();
         const stage = this.getStage();
         return this.state.watches.map(expression => Object.assign({expression}, inspectExpression(expression, target, stage)));
@@ -3127,16 +3324,16 @@ class TextEditor extends React.Component {
         );
     }
 
-    renderConsole () {
+    renderConsole (snapshot) {
         const t = createTranslator(this.props.locale);
-        const entries = (this.state.debugSnapshot.consoleEntries || []).slice().reverse();
+        const entries = (snapshot.consoleEntries || []).slice().reverse();
         const visible = getVisibleItems(entries, this.state.consoleLimit);
         return (
             <div className={styles.console} aria-label={t('outputConsole')}>
                 <div className={styles.consoleActions}>
                     <strong>{t('consoleStructured')}</strong>
-                    <span>{this.state.debugSnapshot.executionState === 'running' ?
-                        t('runtimeStateRunning') : this.state.debugSnapshot.executionState === 'paused' ?
+                    <span>{snapshot.executionState === 'running' ?
+                        t('runtimeStateRunning') : snapshot.executionState === 'paused' ?
                             t('runtimeStatePaused') : t('runtimeStateStopped')}</span>
                     <button type="button" onClick={() => this.debugController.clearConsole()}>
                         {t('clear')}
@@ -3170,13 +3367,12 @@ class TextEditor extends React.Component {
         );
     }
 
-    renderDebugger () {
+    renderDebugger (snapshot) {
         const t = createTranslator(this.props.locale);
-        const snapshot = this.state.debugSnapshot;
         const selectedThread = snapshot.threads.find(thread => thread.id === this.state.selectedThreadId) ||
             snapshot.threads.find(thread => thread.paused) || snapshot.threads[0];
         const inspector = selectedThread && selectedThread.inspector;
-        const watches = this.getWatchValues();
+        const watches = this.getWatchValues(snapshot);
         const visibleThreads = getVisibleItems(snapshot.threads, this.state.debugLimit);
         const executionMode = snapshot.selectiveInterpreter ? t('debugSelectiveInterpreter') :
             snapshot.interpreterRequired ? t('debugGlobalInterpreter') :
@@ -3361,11 +3557,8 @@ class TextEditor extends React.Component {
     render () {
         const t = createTranslator(this.props.locale);
         const target = this.getTarget();
-        const activeLines = this.state.debugSnapshot.activeLinesByTarget[this.props.editingTargetId] || [];
         const secondaryTarget = this.state.secondaryTargetId &&
             this.props.vm.runtime.getTargetById(this.state.secondaryTargetId);
-        const secondaryActiveLines = secondaryTarget ?
-            this.state.debugSnapshot.activeLinesByTarget[secondaryTarget.id] || [] : [];
         const activeFileName = target ? targetFileName(target) : '';
         const externalStateLabel = {
             conflict: t('externalConflict'),
@@ -4039,16 +4232,8 @@ class TextEditor extends React.Component {
                         viewMode={this.state.viewMode}
                         onCloseSidebar={this.closeSidebar}
                         onOpenBottomPanel={this.openBottomPanel}
-                        onOpenDocumentation={() => {
-                            this.setState({docsQuery: '', sidebarVisible: false});
-                            this.persistUiState({sidebarVisible: false, viewMode: 'docs'});
-                            this.setViewMode('docs');
-                        }}
-                        onOpenSettings={() => this.setState(state => ({
-                            actionMenuOpen: false,
-                            convertMenuOpen: false,
-                            settingsOpen: !state.settingsOpen
-                        }))}
+                        onOpenDocumentation={this.openDocumentation}
+                        onOpenSettings={this.toggleSettings}
                         onOpenSidebar={this.openSidebar}
                     />
                     <IdeSidebar
@@ -4058,7 +4243,7 @@ class TextEditor extends React.Component {
                         extensionSummary={this.state.extensionSummary}
                         history={this.state.history}
                         locale={this.props.locale}
-                        outline={getOutline(this.state.source)}
+                        outline={this.getCachedOutline()}
                         overlay={this.state.narrowLayout}
                         searchQuery={this.state.searchQuery}
                         searchResults={this.state.searchResults}
@@ -4071,12 +4256,9 @@ class TextEditor extends React.Component {
                         onOpenExtensionLibrary={this.props.onOpenExtensionLibrary}
                         onOpenResource={this.openResource}
                         onOpenTarget={this.openTarget}
-                        onPanelChange={sidebarPanel => {
-                            this.setState({sidebarPanel});
-                            this.persistUiState({sidebarPanel});
-                        }}
+                        onPanelChange={this.changeSidebarPanel}
                         onReplaceAll={this.handleReplaceAll}
-                        onReplaceValueChange={replaceValue => this.setState({replaceValue})}
+                        onReplaceValueChange={this.changeReplaceValue}
                         onRestoreHistory={this.restoreHistory}
                         onSearch={this.handleSearch}
                     />
@@ -4109,7 +4291,7 @@ class TextEditor extends React.Component {
                         !['code', 'split', 'dual'].includes(this.state.viewMode) && styles.hiddenPane
                     )}>
                         <MonacoEditor
-                            activeLines={activeLines}
+                            activeLines={[]}
                             breakpoints={this.state.breakpoints}
                             dark={this.props.guiTheme === 'dark'}
                             diagnostics={this.state.diagnostics}
@@ -4126,12 +4308,20 @@ class TextEditor extends React.Component {
                             onBreakpointsChange={this.handleBreakpointsChange}
                             onNavigateResource={this.handleNavigateResource}
                             onCopyDiagnosticReport={this.handleCopyDiagnosticReport}
-                            onCursorPositionChange={cursorPosition => this.setState({cursorPosition})}
+                            onCursorPositionChange={cursorPosition => {
+                                this.cursorPosition = cursorPosition;
+                                if (this.cursorStatus) this.cursorStatus.setPosition(cursorPosition);
+                            }}
                             onDownloadDiagnosticReport={this.handleDownloadDiagnosticReport}
                             onFocus={() => this.handleEditorFocus('primary')}
                             onLoadError={this.handleMonacoLoadError}
                             onOpenModel={this.handleOpenModel}
-                            onReady={editor => { this.monacoEditor = editor; }}
+                            onReady={editor => {
+                                this.monacoEditor = editor;
+                                editor.setRuntimeActiveLines(
+                                    this.debugSnapshot.activeLinesByTarget[this.props.editingTargetId] || []
+                                );
+                            }}
                             onRestart={this.handleRestart}
                             onRun={this.handleRun}
                             onRunSelection={this.handleRunSelection}
@@ -4165,7 +4355,7 @@ class TextEditor extends React.Component {
                                 </label>
                                 <div className={styles.secondaryEditorBody}>
                                     <MonacoEditor
-                                        activeLines={secondaryActiveLines}
+                                        activeLines={[]}
                                         breakpoints={readSourceRecord(secondaryTarget) ?
                                             readSourceRecord(secondaryTarget).breakpoints : []}
                                         dark={this.props.guiTheme === 'dark'}
@@ -4184,12 +4374,20 @@ class TextEditor extends React.Component {
                                         onChange={source => this.handleSecondaryChange(source)}
                                         onBreakpointsChange={this.handleSecondaryBreakpointsChange}
                                         onCompile={() => this.compileSecondary(false)}
-                                        onCursorPositionChange={cursorPosition => this.setState({cursorPosition})}
+                                        onCursorPositionChange={cursorPosition => {
+                                            this.cursorPosition = cursorPosition;
+                                            if (this.cursorStatus) this.cursorStatus.setPosition(cursorPosition);
+                                        }}
                                         onFocus={() => this.handleEditorFocus('secondary')}
                                         onInvalidShortcut={this.handleInvalidShortcut}
                                         onNavigateResource={this.handleNavigateResource}
                                         onOpenModel={this.handleSecondaryOpenModel}
-                                        onReady={editor => { this.secondaryMonacoEditor = editor; }}
+                                        onReady={editor => {
+                                            this.secondaryMonacoEditor = editor;
+                                            editor.setRuntimeActiveLines(
+                                                this.debugSnapshot.activeLinesByTarget[secondaryTarget.id] || []
+                                            );
+                                        }}
                                         onRestart={() => {
                                             this.handleStop();
                                             this.compileSecondary(true);
@@ -4217,29 +4415,33 @@ class TextEditor extends React.Component {
                         styles.blocksPane,
                         !['blocks', 'split'].includes(this.state.viewMode) && styles.hiddenPane
                     )}>
-                        <VisualBlocks
-                            canUseCloud={this.props.canUseCloud}
-                            grow={this.props.grow}
-                            isVisible={this.props.isVisible && ['blocks', 'split'].includes(this.state.viewMode)}
-                            options={this.props.options}
-                            stageSize={this.props.stageSize}
-                            theme={this.props.theme}
-                            vm={this.props.vm}
-                            onOpenCustomExtensionModal={this.props.onOpenCustomExtensionModal}
-                        />
+                        <React.Suspense fallback={null}>
+                            <VisualBlocks
+                                canUseCloud={this.props.canUseCloud}
+                                grow={this.props.grow}
+                                isVisible={this.props.isVisible && ['blocks', 'split'].includes(this.state.viewMode)}
+                                options={this.props.options}
+                                stageSize={this.props.stageSize}
+                                theme={this.props.theme}
+                                vm={this.props.vm}
+                                onOpenCustomExtensionModal={this.props.onOpenCustomExtensionModal}
+                            />
+                        </React.Suspense>
                     </div>
                     <div className={classNames(
                         styles.viewPane,
                         styles.documentationPane,
                         this.state.viewMode !== 'docs' && styles.hiddenPane
                     )}>
-                        <DocumentationPane
-                            compact={this.state.compactLayout}
-                            extensionCatalog={this.extensionCatalog}
-                            extensionPalette={this.state.extensionPalette}
-                            initialQuery={this.state.docsQuery}
-                            locale={this.props.locale}
-                        />
+                        <React.Suspense fallback={null}>
+                            <DocumentationPane
+                                compact={this.state.compactLayout}
+                                extensionCatalog={this.extensionCatalog}
+                                extensionPalette={this.state.extensionPalette}
+                                initialQuery={this.state.docsQuery}
+                                locale={this.props.locale}
+                            />
+                        </React.Suspense>
                     </div>
                 </div>
                 </div>
@@ -4313,8 +4515,12 @@ class TextEditor extends React.Component {
                             id="textwarp-bottom-panel-content"
                             role="tabpanel"
                         >
-                            {this.state.activeBottomPanel === 'debugger' ? this.renderDebugger() :
-                                this.state.activeBottomPanel === 'console' ? this.renderConsole() :
+                            {['debugger', 'console'].includes(this.state.activeBottomPanel) ? (
+                                <DebugSnapshotView controller={this.debugController}>
+                                    {snapshot => this.state.activeBottomPanel === 'debugger' ?
+                                        this.renderDebugger(snapshot) : this.renderConsole(snapshot)}
+                                </DebugSnapshotView>
+                            ) :
                                     this.state.activeBottomPanel === 'output' ? (
                                         <div className={styles.outputPanel}>
                                             <strong>{t('outputSummary')}</strong>
@@ -4329,10 +4535,12 @@ class TextEditor extends React.Component {
                                         </div>
                                     ) : this.state.activeBottomPanel === 'backpack' ? (
                                         this.props.backpackVisible ? (
-                                            <Backpack
-                                                embedded
-                                                host={this.props.backpackHost}
-                                            />
+                                            <React.Suspense fallback={null}>
+                                                <Backpack
+                                                    embedded
+                                                    host={this.props.backpackHost}
+                                                />
+                                            </React.Suspense>
                                         ) : <div className={styles.emptyPanel}>{t('backpackUnavailable')}</div>
                                     ) : <div className={styles.diagnostics}>{this.renderDiagnostics()}</div>}
                         </div>
@@ -4345,7 +4553,10 @@ class TextEditor extends React.Component {
                     </span>
                     <span>{this.state.saveState === 'salvo' ? t('saved') : t('saving')}</span>
                     <span>{activeFileName}</span>
-                    <span>{t('cursorPosition', this.state.cursorPosition)}</span>
+                    <CursorStatus
+                        locale={this.props.locale}
+                        ref={component => { this.cursorStatus = component; }}
+                    />
                     <button
                         className={styles.statusBarButton}
                         title={`${t('nextProblem')} (F8)`}
@@ -4360,16 +4571,12 @@ class TextEditor extends React.Component {
                     </button>
                     <span className={styles.statusSync}>{syncLabel}</span>
                     <span>{`${this.props.framerate} FPS`}</span>
-                    <span>{({
-                        paused: t('runtimeStatePaused'),
-                        running: t('runtimeStateRunning'),
-                        stopped: t('runtimeStateStopped')
-                    })[this.state.debugSnapshot.executionState] || t('runtimeStateStopped')}</span>
+                    <DebugExecutionStatus controller={this.debugController} locale={this.props.locale} />
                     <span
                         aria-live={this.state.statusKind === 'error' ? 'assertive' : 'polite'}
                         className={styles.visuallyHidden}
                         role={this.state.statusKind === 'error' ? 'alert' : 'status'}
-                    >{this.state.announcement}</span>
+                    >{this.state.status}</span>
                 </footer>
             </section>
         );
@@ -4392,6 +4599,7 @@ TextEditor.propTypes = {
     onClearSb3FileHandle: PropTypes.func.isRequired,
     onSetTextwarpUiOperation: PropTypes.func.isRequired,
     onSetProjectUnchanged: PropTypes.func.isRequired,
+    onSetProjectChanged: PropTypes.func.isRequired,
     options: PropTypes.shape({}),
     projectTitle: PropTypes.string,
     stageSize: PropTypes.string,
@@ -4419,6 +4627,7 @@ TextEditor.defaultProps = {
     locale: 'en',
     onOpenCustomExtensionModal: null,
     onOpenExtensionLibrary: null,
+    onSetProjectChanged: () => {},
     projectTitle: 'TextWarp Project',
     textwarpUiCommand: {
         id: 0,
@@ -4446,6 +4655,7 @@ const mapDispatchToProps = dispatch => ({
     onClearSb3FileHandle: () => dispatch(setFileHandle(null)),
     onSetTextwarpUiOperation: (command, state, message) =>
         dispatch(setTextwarpUiOperation(command, state, message)),
+    onSetProjectChanged: () => dispatch(setProjectChanged()),
     onSetProjectUnchanged: () => dispatch(setProjectUnchanged())
 });
 
