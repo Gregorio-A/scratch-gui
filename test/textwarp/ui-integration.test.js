@@ -26,7 +26,10 @@ test('editor actions use file tabs plus contextual conversion and action menus',
     assert.doesNotMatch(editorSource, /t\('models'\)|textwarp-templates-panel|templatesOpen/);
     assert.doesNotMatch(editorSource, /actionDrawer|projectSwitch|t\('projects'\)/);
     assert.match(fileTabs, /draggable[\s\S]*?onContextMenu=[\s\S]*?onAuxClick=/);
-    assert.match(editorSource, /id="textwarp-convert-menu"[\s\S]*?t\('textToBlocks'\)[\s\S]*?t\('blocksToText'\)/);
+    assert.match(
+        editorSource,
+        /id="textwarp-convert-menu"[\s\S]*?t\('textToBlocks'\)[\s\S]*?t\('blocksToText'\)[\s\S]*?t\('blocksToTextProject'\)/
+    );
     assert.match(editorSource, /role="menuitemcheckbox"[\s\S]*?t\('autoSync'\)/);
     assert.match(editorSource, /id="textwarp-action-menu"[\s\S]*?t\('commandPalette'\)[\s\S]*?t\('preferences'\)/);
     assert.match(editorStyles, /\.narrow-layout \.convert-menu-trigger span,[\s\S]*?display: none/);
@@ -145,7 +148,9 @@ test('refined workspace compacts targets and protects text-block conversions', (
     assert.match(controlsSource, /id: 'tw\.controls\.run'/);
     assert.match(controlsSource, /id: 'tw\.controls\.pause'/);
     assert.match(controlsSource, /id: 'gui\.controls\.stop'/);
-    assert.match(editorSource, /captureConversionSnapshot \(\w+\)/);
+    assert.match(editorSource, /captureConversionSnapshot \(direction,/);
+    assert.match(editorSource, /captureTargetSnapshot[\s\S]*?restoreTargetSnapshot/);
+    assert.match(editorSource, /conversionScopeReplace[\s\S]*?conversionScopeAdd/);
     assert.match(editorSource, /t\('undoConversion'\)[\s\S]*?t\('viewDifferences'\)/);
     assert.match(editorSource, /t\('conflictKeepText'\)[\s\S]*?t\('conflictUseBlocks'\)[\s\S]*?t\('cancel'\)/);
     assert.match(editorSource, /diagnosticFileName[\s\S]*?item\.line[\s\S]*?item\.column/);

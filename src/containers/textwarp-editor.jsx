@@ -8,6 +8,7 @@ import {setProjectUnchanged} from '../reducers/project-changed';
 import {setFileHandle, setTextwarpUiOperation, TEXTWARP_UI_COMMANDS} from '../reducers/tw';
 
 import {compileText} from '../lib/textwarp/compiler';
+import {ConversionWorkerClient} from '../lib/textwarp/conversion-worker-client';
 import {getDebugController} from '../lib/textwarp/debug-controller';
 import {inspectExpression} from '../lib/textwarp/debug-inspector';
 import {decompileTarget} from '../lib/textwarp/decompiler';
@@ -59,8 +60,12 @@ import {
 import {
     adoptImportedRoots,
     applyCompilation,
+    blockFingerprint,
+    captureTargetSnapshot,
     markGeneratedRootsDirty,
     readSourceRecord,
+    removeRoots,
+    restoreTargetSnapshot,
     saveBreakpoints,
     saveTextSource
 } from '../lib/textwarp/vm-adapter';
@@ -80,6 +85,8 @@ import styles from '../components/textwarp-editor/text-editor.css';
 const AUTO_COMPILE_DELAY = 300;
 const ANALYSIS_DELAY = 120;
 const HISTORY_DELAY = 1200;
+const MAX_AUTO_SOURCE_LENGTH = 100000;
+const MAX_AUTO_BLOCKS = 10000;
 const emptyWorkspace = () => ({modules: [], resources: [], editableFiles: [], generatedFiles: []});
 const DEFAULT_SHORTCUTS = Object.freeze({
     compile: 'F7',
@@ -132,30 +139,22 @@ on clone_started:
 
 const countErrors = diagnostics => diagnostics.filter(item => item.severity === 'error').length;
 
-const sortedObject = value => Object.keys(value || {}).sort().reduce((result, key) => {
-    result[key] = value[key];
-    return result;
-}, {});
-
-const blockFingerprint = target => {
-    if (!target || !target.blocks || !target.blocks._blocks) return '';
-    const blocks = Object.values(target.blocks._blocks).sort((left, right) => left.id.localeCompare(right.id)).map(block => ({
-        id: block.id,
-        opcode: block.opcode,
-        next: block.next,
-        parent: block.parent,
-        topLevel: Boolean(block.topLevel),
-        shadow: Boolean(block.shadow),
-        fields: sortedObject(block.fields),
-        inputs: sortedObject(block.inputs),
-        mutation: block.mutation || null
-    }));
-    const variables = Object.values(target.variables || {}).map(variable => ({
-        id: variable.id,
-        name: variable.name,
-        type: variable.type
-    })).sort((left, right) => left.id.localeCompare(right.id));
-    return JSON.stringify({blocks, variables});
+const getConversionScope = (target, compilation) => {
+    const record = readSourceRecord(target);
+    const owned = new Set(record && record.generatedRootIds || []);
+    const unownedRoots = Object.values(target.blocks && target.blocks._blocks || {})
+        .filter(block => block.topLevel && !block.shadow && !owned.has(block.id))
+        .map(block => block.id);
+    if (!unownedRoots.length) return null;
+    const newOpcodes = new Set(compilation.graph.units.map(unit => compilation.graph.blocks[unit.rootId].opcode));
+    return {
+        compilation,
+        matchingRootIds: unownedRoots.filter(id => {
+            const block = target.blocks.getBlock(id);
+            return block && newOpcodes.has(block.opcode);
+        }),
+        unownedCount: unownedRoots.length
+    };
 };
 
 class TextEditor extends React.Component {
@@ -214,6 +213,8 @@ class TextEditor extends React.Component {
             extensionPalette: [],
             visualConflict: null,
             conflictReviewOpen: false,
+            conversionScopePrompt: null,
+            blocksDiverged: false,
             busy: false,
             externalHandle: null,
             externalName: '',
@@ -232,6 +233,10 @@ class TextEditor extends React.Component {
         this.debugController = null;
         this.unsubscribeDebugger = null;
         this.extensionCatalog = {};
+        this.conversionWorker = new ConversionWorkerClient();
+        this.conversionGeneration = 0;
+        this.secondaryConversionGeneration = 0;
+        this.blockConversionGeneration = 0;
         this.languageContextCache = null;
         this.lastAppliedSource = '';
         this.lastBlockFingerprint = '';
@@ -243,6 +248,8 @@ class TextEditor extends React.Component {
         this.monacoEditor = null;
         this.secondaryMonacoEditor = null;
         this.pendingLocation = null;
+        this.pendingCompilation = null;
+        this.pendingVisualResult = null;
         this.rootElement = null;
         this.editorAreaElement = null;
         this.resizeObserver = null;
@@ -268,6 +275,7 @@ class TextEditor extends React.Component {
         this.handleStop = this.handleStop.bind(this);
         this.handleRestart = this.handleRestart.bind(this);
         this.handleImportBlocks = this.handleImportBlocks.bind(this);
+        this.handleImportProjectBlocks = this.handleImportProjectBlocks.bind(this);
         this.handlePackageFile = this.handlePackageFile.bind(this);
         this.handleTextwarpUiCommand = this.handleTextwarpUiCommand.bind(this);
         this.openTextwarp = this.openTextwarp.bind(this);
@@ -311,6 +319,7 @@ class TextEditor extends React.Component {
         this.handleCopyDiagnosticReport = this.handleCopyDiagnosticReport.bind(this);
         this.handleDownloadDiagnosticReport = this.handleDownloadDiagnosticReport.bind(this);
         this.handleMonacoLoadError = this.handleMonacoLoadError.bind(this);
+        this.handleProjectRunStop = this.handleProjectRunStop.bind(this);
     }
 
     componentDidMount () {
@@ -358,7 +367,10 @@ class TextEditor extends React.Component {
             this.props.vm.runtime.on('BLOCKSINFO_UPDATE', this.handleExtensionsChanged);
             this.props.vm.runtime.on('PROJECT_LOADED', this.handleProjectLoaded);
         }
-        if (typeof this.props.vm.on === 'function') this.props.vm.on('PROJECT_CHANGED', this.handleProjectChanged);
+        if (typeof this.props.vm.on === 'function') {
+            this.props.vm.on('PROJECT_CHANGED', this.handleProjectChanged);
+            this.props.vm.on('PROJECT_RUN_STOP', this.handleProjectRunStop);
+        }
         document.addEventListener('keydown', this.handleKeyDown, true);
         document.addEventListener('pointerdown', this.handleDocumentPointerDown, true);
         window.addEventListener('pointermove', this.handlePointerMove);
@@ -388,6 +400,9 @@ class TextEditor extends React.Component {
 
     componentWillUnmount () {
         this._isMounted = false;
+        this.conversionGeneration++;
+        this.secondaryConversionGeneration++;
+        this.blockConversionGeneration++;
         clearTimeout(this.compileTimer);
         clearTimeout(this.analysisTimer);
         clearTimeout(this.blockSyncTimer);
@@ -399,13 +414,17 @@ class TextEditor extends React.Component {
         window.removeEventListener('pointermove', this.handlePointerMove);
         window.removeEventListener('pointerup', this.handlePointerUp);
         if (this.unsubscribeDebugger) this.unsubscribeDebugger();
+        this.conversionWorker.cancelPending();
         if (this.debugController) this.debugController.setEnabled(false);
         if (this.props.vm.runtime && typeof this.props.vm.runtime.removeListener === 'function') {
             this.props.vm.runtime.removeListener('EXTENSION_ADDED', this.handleExtensionsChanged);
             this.props.vm.runtime.removeListener('BLOCKSINFO_UPDATE', this.handleExtensionsChanged);
             this.props.vm.runtime.removeListener('PROJECT_LOADED', this.handleProjectLoaded);
         }
-        if (typeof this.props.vm.removeListener === 'function') this.props.vm.removeListener('PROJECT_CHANGED', this.handleProjectChanged);
+        if (typeof this.props.vm.removeListener === 'function') {
+            this.props.vm.removeListener('PROJECT_CHANGED', this.handleProjectChanged);
+            this.props.vm.removeListener('PROJECT_RUN_STOP', this.handleProjectRunStop);
+        }
         document.removeEventListener('keydown', this.handleKeyDown, true);
         document.removeEventListener('pointerdown', this.handleDocumentPointerDown, true);
     }
@@ -814,34 +833,95 @@ class TextEditor extends React.Component {
         this.persistPreferences({autoSync});
     }
 
-    compareTextAndBlocks () {
+    async compareTextAndBlocks () {
         this.setState({convertMenuOpen: false});
-        if (this.state.visualConflict) {
-            this.setState({conflictReviewOpen: true});
+        const target = this.getTarget();
+        if (!target) return;
+        const generation = ++this.conversionGeneration;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
+        const source = this.state.source;
+        const fingerprint = blockFingerprint(target);
+        this.setState({status: this.t('analyzing'), statusKind: 'working'});
+        let result;
+        let textCompilation;
+        let visualCompilation;
+        try {
+            result = await this.conversionWorker.decompile(target, {
+                extensionCatalog: this.extensionCatalog,
+                stageTarget: this.getStage()
+            });
+            const compileOptions = this.getCompileOptions(target);
+            [textCompilation, visualCompilation] = await Promise.all([
+                this.conversionWorker.compile(source, compileOptions),
+                this.conversionWorker.compile(result.source, compileOptions)
+            ]);
+        } catch (error) {
+            if (generation === this.conversionGeneration) {
+                this.setState({status: error.message, statusKind: 'error'});
+            }
             return;
         }
+        if (
+            generation !== this.conversionGeneration ||
+            !this._isMounted ||
+            target !== this.getTarget() ||
+            source !== this.state.source ||
+            fingerprint !== blockFingerprint(target)
+        ) return;
+        const textUnits = new Map((textCompilation.graph && textCompilation.graph.units || [])
+            .map(unit => [unit.unitId, unit.hash]));
+        const visualUnits = new Map((visualCompilation.graph && visualCompilation.graph.units || [])
+            .map(unit => [unit.unitId, unit.hash]));
+        const added = Array.from(visualUnits.keys()).filter(id => !textUnits.has(id));
+        const removed = Array.from(textUnits.keys()).filter(id => !visualUnits.has(id));
+        const changed = Array.from(textUnits.keys()).filter(id =>
+            visualUnits.has(id) && visualUnits.get(id) !== textUnits.get(id)
+        );
+        result.canonicalSource = result.source;
+        result.visualCompilation = visualCompilation;
+        result.semanticDiff = {added, removed, changed};
         this.setViewMode('split');
-        this.setState({status: this.t('versionsSynchronized'), statusKind: 'success'});
+        if (
+            textCompilation.success &&
+            visualCompilation.success &&
+            added.length === 0 &&
+            removed.length === 0 &&
+            changed.length === 0 &&
+            result.unsupportedOpcodes.length === 0
+        ) {
+            this.setState({status: this.t('versionsSynchronized'), statusKind: 'success', blocksDiverged: false});
+        } else {
+            this.setState({
+                visualConflict: result,
+                conflictReviewOpen: true,
+                blocksDiverged: true,
+                status: this.t('semanticConflict', {count: added.length + removed.length + changed.length}),
+                statusKind: 'working'
+            });
+        }
     }
 
-    captureConversionSnapshot (direction) {
-        const target = this.getTarget();
+    captureConversionSnapshot (direction, selectedTarget = null, selectedSource = null) {
+        const target = selectedTarget || this.getTarget();
         if (!target) return null;
+        const source = selectedSource === null ? this.state.source : selectedSource;
         const timestamp = Date.now();
         const history = saveHistorySnapshot(
             this.getStorage(),
             this.getProjectStorageId(),
             target.id,
-            this.state.source,
+            source,
             this.t('historyConversionSnapshot'),
             timestamp
         );
         const snapshot = {
             direction,
             fileName: targetFileName(target),
-            source: this.state.source,
+            source,
             targetId: target.id,
-            timestamp
+            timestamp,
+            projectSnapshot: captureTargetSnapshot(this.props.vm, target)
         };
         this.setState({history});
         return snapshot;
@@ -849,26 +929,58 @@ class TextEditor extends React.Component {
 
     undoLastConversion () {
         const snapshot = this.state.lastConversion;
-        const target = snapshot && this.props.vm.runtime.getTargetById(snapshot.targetId);
-        if (!snapshot || !target) return;
-        const compilation = compileText(snapshot.source, this.getCompileOptions(target));
-        saveTextSource(this.props.vm, target, snapshot.source);
-        if (snapshot.direction === 'text-to-blocks' && compilation.success) {
-            this.applyCompilation(compilation, target, false);
-        } else {
-            markGeneratedRootsDirty(target);
+        if (snapshot && Array.isArray(snapshot.projectSnapshots)) {
+            const currentTarget = this.getTarget();
+            try {
+                this.suppressBlockSyncUntil = Date.now() + 1500;
+                snapshot.projectSnapshots.slice().reverse().forEach(entry => {
+                    const target = this.props.vm.runtime.getTargetById(entry.targetId);
+                    if (target) restoreTargetSnapshot(this.props.vm, target, entry.projectSnapshot);
+                });
+            } catch (error) {
+                this.setState({status: error.message, statusKind: 'error'});
+                return;
+            }
+            const record = currentTarget && readSourceRecord(currentTarget);
+            const currentEntry = currentTarget && snapshot.projectSnapshots.find(entry =>
+                entry.targetId === currentTarget.id
+            );
+            const source = record ? record.source : currentEntry ? currentEntry.source : this.state.source;
+            const compilation = currentTarget && source.length <= MAX_AUTO_SOURCE_LENGTH ?
+                compileText(source, this.getCompileOptions(currentTarget)) : {diagnostics: []};
+            this.lastAppliedSource = record ? source : '';
+            this.lastBlockFingerprint = blockFingerprint(currentTarget);
             this.setState({
-                source: snapshot.source,
+                source,
                 diagnostics: compilation.diagnostics,
                 status: this.t('conversionUndone'),
-                statusKind: compilation.success ? 'success' : 'working',
+                statusKind: 'success',
                 lastConversion: null,
-                visualConflict: null
-            });
+                visualConflict: null,
+                blocksDiverged: false,
+                blockRefresh: this.state.blockRefresh + 1
+            }, () => this.refreshWorkspace());
+            return;
         }
-        if (snapshot.direction === 'text-to-blocks') {
-            this.setState({lastConversion: null, status: this.t('conversionUndone'), statusKind: 'success'});
-        }
+        const target = snapshot && this.props.vm.runtime.getTargetById(snapshot.targetId);
+        if (!snapshot || !target) return;
+        restoreTargetSnapshot(this.props.vm, target, snapshot.projectSnapshot);
+        const record = readSourceRecord(target);
+        const source = record ? record.source : snapshot.source;
+        const compilation = source.length > MAX_AUTO_SOURCE_LENGTH ?
+            {success: false, diagnostics: []} : compileText(source, this.getCompileOptions(target));
+        this.lastAppliedSource = record ? source : '';
+        this.lastBlockFingerprint = blockFingerprint(target);
+        this.setState({
+            source,
+            diagnostics: compilation.diagnostics,
+            status: this.t('conversionUndone'),
+            statusKind: 'success',
+            lastConversion: null,
+            visualConflict: null,
+            blocksDiverged: false,
+            blockRefresh: this.state.blockRefresh + 1
+        });
     }
 
     openActionPanel (panel) {
@@ -952,8 +1064,8 @@ class TextEditor extends React.Component {
         }
     }
 
-    refreshWorkspace (callback) {
-        const workspace = buildWorkspace(this.props.vm);
+    refreshWorkspace (callback, preparedWorkspace = null) {
+        const workspace = preparedWorkspace || buildWorkspace(this.props.vm);
         const activeModule = workspace.modules.find(module => module.id === this.props.editingTargetId);
         if (activeModule) activeModule.source = this.state.source;
         const searchResults = searchWorkspace(workspace, this.state.searchQuery);
@@ -1003,7 +1115,8 @@ class TextEditor extends React.Component {
                 name: variable.name,
                 variableType: variable.type,
                 owner: ownerName,
-                generated: generated.has(variable.id)
+                generated: generated.has(variable.id),
+                isCloud: Boolean(variable.isCloud)
             });
         });
         append(target, 'target');
@@ -1012,7 +1125,7 @@ class TextEditor extends React.Component {
         return result;
     }
 
-    getCompileOptions (target) {
+    getCompileOptions (target, preparedWorkspace = null) {
         const stored = readSourceRecord(target);
         const stage = this.getStage();
         const stageRecord = stage && readSourceRecord(stage);
@@ -1031,7 +1144,10 @@ class TextEditor extends React.Component {
                 name: variable.name,
                 generated: generatedStageVariables.has(variable.id)
             })),
-            resources: buildWorkspace(this.props.vm).resources,
+            previousUnits: stored && stored.units || [],
+            resources: preparedWorkspace && preparedWorkspace.resources ||
+                this.state.workspace && this.state.workspace.resources ||
+                buildWorkspace(this.props.vm).resources,
             extensionCatalog: this.extensionCatalog,
             availableOpcodes: Object.keys(this.props.vm.runtime._primitives || {})
         };
@@ -1082,22 +1198,70 @@ class TextEditor extends React.Component {
     handleProjectChanged () {
         if (Date.now() < this.suppressBlockSyncUntil) return;
         clearTimeout(this.blockSyncTimer);
-        this.blockSyncTimer = setTimeout(() => {
+        const generation = ++this.blockConversionGeneration;
+        this.blockSyncTimer = setTimeout(async () => {
             const target = this.getTarget();
-            const referencesUpdated = this.synchronizeProjectReferences();
-            this.refreshWorkspace();
-            if (referencesUpdated) return;
-            if (!target || !this.state.autoSync || !['blocks', 'split'].includes(this.state.viewMode)) return;
+            const workspace = buildWorkspace(this.props.vm);
+            this.refreshWorkspace(null, workspace);
+            if (!target) return;
+            if (Object.keys(target.blocks && target.blocks._blocks || {}).length > MAX_AUTO_BLOCKS) {
+                this.setState({
+                    blocksDiverged: true,
+                    status: this.t('largeProjectManualConversion'),
+                    statusKind: 'working'
+                });
+                return;
+            }
             const fingerprint = blockFingerprint(target);
             if (fingerprint === this.lastBlockFingerprint) return;
-            const result = decompileTarget(target, {extensionCatalog: this.extensionCatalog});
-            const compileOptions = this.getCompileOptions(target);
-            const visualCompilation = compileText(result.source, compileOptions);
+            if (!this.state.autoSync || !['blocks', 'split'].includes(this.state.viewMode)) {
+                this.setState({
+                    blocksDiverged: true,
+                    status: this.t('syncBlocksChanged'),
+                    statusKind: 'working'
+                });
+                return;
+            }
+            const referencesUpdated = this.synchronizeProjectReferences(workspace);
+            if (referencesUpdated) return;
+            let result;
+            try {
+                result = await this.conversionWorker.decompile(target, {
+                    extensionCatalog: this.extensionCatalog,
+                    stageTarget: this.getStage()
+                });
+            } catch (error) {
+                if (generation !== this.blockConversionGeneration) return;
+                this.setState({status: error.message, statusKind: 'error'});
+                return;
+            }
+            if (
+                generation !== this.blockConversionGeneration ||
+                !this._isMounted ||
+                target !== this.getTarget() ||
+                fingerprint !== blockFingerprint(target)
+            ) return;
+            const compileOptions = this.getCompileOptions(target, workspace);
+            const sources = [
+                result.source,
+                this.state.source,
+                this.lastAppliedSource
+            ];
+            let compilations;
+            try {
+                compilations = await Promise.all(sources.map(source =>
+                    source ? this.conversionWorker.compile(source, compileOptions) : Promise.resolve(null)
+                ));
+            } catch (error) {
+                if (generation !== this.blockConversionGeneration) return;
+                this.setState({status: error.message, statusKind: 'error'});
+                return;
+            }
+            if (generation !== this.blockConversionGeneration || !this._isMounted) return;
+            const [visualCompilation, textCompilation, baseCompilation] = compilations;
             result.canonicalSource = result.source;
             result.visualCompilation = visualCompilation;
             const hasPendingText = this.state.source !== this.lastAppliedSource || countErrors(this.state.diagnostics) > 0;
-            const baseCompilation = this.lastAppliedSource ? compileText(this.lastAppliedSource, compileOptions) : null;
-            const textCompilation = compileText(this.state.source, compileOptions);
             const merged = baseCompilation && visualCompilation.success ? mergeVisualSource({
                 baseSource: this.lastAppliedSource,
                 textSource: this.state.source,
@@ -1114,6 +1278,7 @@ class TextEditor extends React.Component {
                 this.lastBlockFingerprint = fingerprint;
                 this.setState({
                     visualConflict: result,
+                    blocksDiverged: true,
                     status: merged && merged.conflicts.length ?
                         this.t('semanticConflict', {count: merged.conflicts.length}) :
                         this.t('invalidTextConflict'),
@@ -1125,8 +1290,9 @@ class TextEditor extends React.Component {
         }, 220);
     }
 
-    synchronizeProjectReferences () {
-        const workspace = buildWorkspace(this.props.vm);
+    synchronizeProjectReferences (preparedWorkspace = null) {
+        if (this.isRuntimeActive()) return false;
+        const workspace = preparedWorkspace || buildWorkspace(this.props.vm);
         let currentUpdate = null;
         (this.props.vm.runtime.targets || []).forEach(target => {
             const record = readSourceRecord(target);
@@ -1138,7 +1304,7 @@ class TextEditor extends React.Component {
                 workspace.resources
             );
             if (!synchronized.count) return;
-            const compilation = compileText(synchronized.source, this.getCompileOptions(target));
+            const compilation = compileText(synchronized.source, this.getCompileOptions(target, workspace));
             if (!compilation.success) return;
             this.suppressBlockSyncUntil = Date.now() + 750;
             applyCompilation(this.props.vm, target, compilation);
@@ -1166,6 +1332,12 @@ class TextEditor extends React.Component {
     acceptVisualChanges (result = this.state.visualConflict) {
         const target = this.getTarget();
         if (!target || !result) return;
+        if (this.isRuntimeActive()) {
+            this.pendingCompilation = null;
+            this.pendingVisualResult = result;
+            this.setState({status: this.t('conversionQueued'), statusKind: 'working'});
+            return;
+        }
         const conversionSnapshot = result.manualConversion ?
             this.captureConversionSnapshot('blocks-to-text') : null;
         clearTimeout(this.compileTimer);
@@ -1181,18 +1353,26 @@ class TextEditor extends React.Component {
             });
             return;
         }
-        this.suppressBlockSyncUntil = Date.now() + 750;
-        adoptImportedRoots(
-            this.props.vm,
-            target,
-            canonicalSource,
-            result.importedRootIds,
-            result.sourceMap,
-            visualCompilation
-        );
-        // A segunda etapa atualiza somente unidades textuais que também mudaram.
-        // Unidades adotadas do Blockly têm o mesmo hash e preservam seus IDs.
-        const record = applyCompilation(this.props.vm, target, compilation);
+        const transactionSnapshot = captureTargetSnapshot(this.props.vm, target);
+        let record;
+        try {
+            this.suppressBlockSyncUntil = Date.now() + 750;
+            adoptImportedRoots(
+                this.props.vm,
+                target,
+                canonicalSource,
+                result.importedRootIds,
+                result.sourceMap,
+                visualCompilation
+            );
+            // A segunda etapa atualiza somente unidades textuais que também mudaram.
+            // Unidades adotadas do Blockly têm o mesmo hash e preservam seus IDs.
+            record = applyCompilation(this.props.vm, target, compilation);
+        } catch (error) {
+            restoreTargetSnapshot(this.props.vm, target, transactionSnapshot);
+            this.setState({status: error.message, statusKind: 'error'});
+            return;
+        }
         this.lastAppliedSource = result.source;
         this.lastBlockFingerprint = blockFingerprint(target);
         this.setState(state => ({
@@ -1200,6 +1380,7 @@ class TextEditor extends React.Component {
             diagnostics: compilation.diagnostics,
             visualConflict: null,
             conflictReviewOpen: false,
+            blocksDiverged: false,
             lastConversion: conversionSnapshot || state.lastConversion,
             blockRefresh: state.blockRefresh + 1,
             status: this.t('blocksSynchronized', {
@@ -1464,6 +1645,7 @@ class TextEditor extends React.Component {
             });
             return;
         }
+        if (this.isRuntimeActive() && typeof this.props.vm.stopAll === 'function') this.props.vm.stopAll();
         compilations.forEach(item => {
             saveTextSource(this.props.vm, item.target, item.module.source);
             applyCompilation(this.props.vm, item.target, item.compilation);
@@ -1515,10 +1697,28 @@ class TextEditor extends React.Component {
         }, () => this.compileCurrent(true));
     }
 
-    handleRunSelection (selection) {
+    async handleRunSelection (selection) {
         const target = this.getTarget();
         if (!target || !selection) return;
-        const compilation = compileText(this.state.source, this.getCompileOptions(target));
+        const generation = ++this.conversionGeneration;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
+        const source = this.state.source;
+        let compilation;
+        try {
+            compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
+        } catch (error) {
+            if (generation === this.conversionGeneration) {
+                this.setState({status: error.message, statusKind: 'error'});
+            }
+            return;
+        }
+        if (
+            generation !== this.conversionGeneration ||
+            !this._isMounted ||
+            target !== this.getTarget() ||
+            source !== this.state.source
+        ) return;
         if (!compilation.success) {
             this.setState({
                 diagnostics: compilation.diagnostics,
@@ -1605,16 +1805,6 @@ class TextEditor extends React.Component {
             statusKind: 'working'
         });
         try {
-            const target = this.getTarget();
-            if (target) {
-                const compilation = compileText(this.state.source, this.getCompileOptions(target));
-                if (compilation.success && this.state.source !== this.lastAppliedSource) {
-                    this.suppressBlockSyncUntil = Date.now() + 750;
-                    applyCompilation(this.props.vm, target, compilation);
-                    this.lastAppliedSource = compilation.source;
-                    this.lastBlockFingerprint = blockFingerprint(target);
-                }
-            }
             const bytes = await exportTextwarpProject(this.props.vm, {
                 name: this.props.projectTitle || 'TextWarp Project'
             });
@@ -1676,6 +1866,10 @@ class TextEditor extends React.Component {
     }
 
     loadSelectedTarget () {
+        this.conversionGeneration++;
+        this.secondaryConversionGeneration++;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
         clearTimeout(this.compileTimer);
         clearTimeout(this.historyTimer);
         const target = this.getTarget();
@@ -1716,7 +1910,7 @@ class TextEditor extends React.Component {
         const secondaryTarget = secondaryTargetId && this.props.vm.runtime.getTargetById(secondaryTargetId);
         const secondaryStored = secondaryTarget && readSourceRecord(secondaryTarget);
         const secondarySource = secondaryTarget ? (secondaryStored ? secondaryStored.source : getTemplate(secondaryTarget)) : '';
-        const secondaryCompilation = secondaryTarget ?
+        const secondaryCompilation = secondaryTarget && secondarySource.length <= MAX_AUTO_SOURCE_LENGTH ?
             compileText(secondarySource, this.getCompileOptions(secondaryTarget)) : {diagnostics: []};
         if (this.debugController) this.debugController.setBreakpoints(target, breakpoints);
         if (synchronized.count && compilation.success) applyCompilation(this.props.vm, target, compilation);
@@ -1741,6 +1935,7 @@ class TextEditor extends React.Component {
             searchResults: searchWorkspace(workspace, this.state.searchQuery),
             saveState: 'salvo',
             visualConflict: null,
+            blocksDiverged: false,
             lastConversion: null,
             blockRefresh: this.state.blockRefresh + 1
         }, () => {
@@ -1751,6 +1946,9 @@ class TextEditor extends React.Component {
     handleChange (source) {
         const target = this.getTarget();
         if (!target) return;
+        const generation = ++this.conversionGeneration;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
         saveTextSource(this.props.vm, target, source);
         this.setState({
             externalSyncState: this.state.externalHandle ? 'dirty' : this.state.externalSyncState,
@@ -1775,13 +1973,34 @@ class TextEditor extends React.Component {
         clearTimeout(this.analysisTimer);
         clearTimeout(this.compileTimer);
         const targetId = target.id;
-        this.analysisTimer = setTimeout(() => {
+        this.analysisTimer = setTimeout(async () => {
             if (
                 !this._isMounted ||
                 this.props.editingTargetId !== targetId ||
                 this.state.source !== source
             ) return;
-            const compilation = compileText(source, this.getCompileOptions(target));
+            if (source.length > MAX_AUTO_SOURCE_LENGTH) {
+                this.setState({
+                    diagnostics: [],
+                    status: this.t('largeProjectManualConversion'),
+                    statusKind: 'working'
+                });
+                return;
+            }
+            let compilation;
+            try {
+                compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
+            } catch (error) {
+                if (generation !== this.conversionGeneration) return;
+                this.setState({status: error.message, statusKind: 'error'});
+                return;
+            }
+            if (
+                generation !== this.conversionGeneration ||
+                !this._isMounted ||
+                this.props.editingTargetId !== targetId ||
+                this.state.source !== source
+            ) return;
             const errors = countErrors(compilation.diagnostics);
             this.setState({
                 diagnostics: compilation.diagnostics,
@@ -1789,12 +2008,27 @@ class TextEditor extends React.Component {
                     this.t('sourceErrors', {count: errors}) : this.t('analyzing'),
                 statusKind: errors ? 'error' : 'working'
             });
-            if (compilation.success) {
+            if (compilation.success && this.state.autoSync) {
+                const conversionScopePrompt = getConversionScope(target, compilation);
+                if (conversionScopePrompt) {
+                    this.setState({
+                        conversionScopePrompt,
+                        blocksDiverged: true,
+                        status: this.t('conversionScopeTitle'),
+                        statusKind: 'working'
+                    });
+                    return;
+                }
                 this.compileTimer = setTimeout(() => {
                     if (
                         this.props.editingTargetId === targetId &&
                         this.state.source === source
-                    ) this.applyCompilation(compilation, target, false);
+                    ) this.applyCompilation(
+                        compilation,
+                        target,
+                        false,
+                        this.captureConversionSnapshot('text-to-blocks')
+                    );
                 }, AUTO_COMPILE_DELAY);
             }
         }, ANALYSIS_DELAY);
@@ -1805,7 +2039,9 @@ class TextEditor extends React.Component {
         if (!target || targetId === this.props.editingTargetId) return;
         const compilation = compileText(source, this.getCompileOptions(target));
         saveTextSource(this.props.vm, target, source);
-        if (compilation.success) applyCompilation(this.props.vm, target, compilation);
+        if (compilation.success && this.state.autoSync && !this.isRuntimeActive()) {
+            applyCompilation(this.props.vm, target, compilation);
+        }
         saveHistorySnapshot(
             this.getStorage(),
             this.getProjectStorageId(),
@@ -1841,6 +2077,10 @@ class TextEditor extends React.Component {
         const target = this.state.secondaryTargetId &&
             this.props.vm.runtime.getTargetById(this.state.secondaryTargetId);
         if (!target) return;
+        const generation = ++this.secondaryConversionGeneration;
+        this.conversionGeneration++;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
         saveTextSource(this.props.vm, target, source);
         this.setState({
             secondarySource: source,
@@ -1848,13 +2088,27 @@ class TextEditor extends React.Component {
         });
         clearTimeout(this.secondaryAnalysisTimer);
         clearTimeout(this.secondaryCompileTimer);
-        this.secondaryAnalysisTimer = setTimeout(() => {
+        this.secondaryAnalysisTimer = setTimeout(async () => {
             if (
                 !this._isMounted ||
                 this.state.secondaryTargetId !== target.id ||
                 this.state.secondarySource !== source
             ) return;
-            const compilation = compileText(source, this.getCompileOptions(target));
+            let compilation;
+            try {
+                compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
+            } catch (error) {
+                if (generation === this.secondaryConversionGeneration) {
+                    this.setState({status: error.message, statusKind: 'error'});
+                }
+                return;
+            }
+            if (
+                generation !== this.secondaryConversionGeneration ||
+                !this._isMounted ||
+                this.state.secondaryTargetId !== target.id ||
+                this.state.secondarySource !== source
+            ) return;
             const history = saveHistorySnapshot(
                 this.getStorage(),
                 this.getProjectStorageId(),
@@ -1863,33 +2117,58 @@ class TextEditor extends React.Component {
                 this.t('historyDualEditor')
             );
             this.setState({secondaryDiagnostics: compilation.diagnostics, saveState: 'salvo'});
-            if (!compilation.success) return;
+            if (!compilation.success || !this.state.autoSync) return;
             this.secondaryCompileTimer = setTimeout(() => {
                 if (
                     this.state.secondaryTargetId !== target.id ||
                     this.state.secondarySource !== source
                 ) return;
                 this.suppressBlockSyncUntil = Date.now() + 750;
-                applyCompilation(this.props.vm, target, compilation);
+                const conversionSnapshot = this.captureConversionSnapshot('text-to-blocks', target, source);
+                this.applySecondaryCompilation(compilation, target, false, conversionSnapshot);
                 if (this._isMounted && this.state.secondaryTargetId === target.id) {
-                    this.setState({saveState: 'salvo'}, () => this.refreshWorkspace());
+                    this.setState({saveState: 'salvo', lastConversion: conversionSnapshot}, () => this.refreshWorkspace());
                     if (target.id === this.props.editingTargetId) this.setState({history});
                 }
             }, AUTO_COMPILE_DELAY);
         }, ANALYSIS_DELAY);
     }
 
-    compileSecondary (run) {
+    async compileSecondary (run) {
         clearTimeout(this.secondaryCompileTimer);
         clearTimeout(this.secondaryAnalysisTimer);
         const target = this.state.secondaryTargetId &&
             this.props.vm.runtime.getTargetById(this.state.secondaryTargetId);
         if (!target) return;
-        const compilation = compileText(this.state.secondarySource, this.getCompileOptions(target));
+        const generation = ++this.secondaryConversionGeneration;
+        this.conversionGeneration++;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
+        const source = this.state.secondarySource;
+        let compilation;
+        try {
+            compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
+        } catch (error) {
+            if (generation === this.secondaryConversionGeneration) {
+                this.setState({status: error.message, statusKind: 'error'});
+            }
+            return;
+        }
+        if (
+            generation !== this.secondaryConversionGeneration ||
+            !this._isMounted ||
+            this.state.secondaryTargetId !== target.id ||
+            this.state.secondarySource !== source
+        ) return;
         this.setState({secondaryDiagnostics: compilation.diagnostics});
         if (!compilation.success) return;
         this.suppressBlockSyncUntil = Date.now() + 750;
-        applyCompilation(this.props.vm, target, compilation);
+        this.applySecondaryCompilation(
+            compilation,
+            target,
+            run,
+            this.captureConversionSnapshot('text-to-blocks', target, this.state.secondarySource)
+        );
         saveHistorySnapshot(
             this.getStorage(),
             this.getProjectStorageId(),
@@ -1898,12 +2177,89 @@ class TextEditor extends React.Component {
             this.t('historyDualEditor')
         );
         this.setState({saveState: 'salvo'}, () => this.refreshWorkspace());
-        if (run) this.props.vm.greenFlag();
     }
 
-    applyCompilation (compilation, target, run, conversionSnapshot = null) {
+    isRuntimeActive () {
+        const threads = this.props.vm && this.props.vm.runtime && this.props.vm.runtime.threads;
+        return Array.isArray(threads) && threads.some(thread =>
+            thread && (thread.stack && thread.stack.length || thread.topBlock) && thread.status !== 4
+        );
+    }
+
+    applySecondaryCompilation (compilation, target, run, conversionSnapshot) {
+        if (this.isRuntimeActive()) {
+            this.pendingVisualResult = null;
+            this.pendingCompilation = {
+                compilation,
+                target,
+                run,
+                conversionSnapshot,
+                replaceRootIds: [],
+                secondary: true
+            };
+            this.setState({status: this.t('conversionQueued'), statusKind: 'working'});
+            return;
+        }
+        try {
+            applyCompilation(this.props.vm, target, compilation);
+            this.setState({
+                secondaryDiagnostics: compilation.diagnostics,
+                saveState: 'salvo',
+                lastConversion: conversionSnapshot
+            }, () => this.refreshWorkspace());
+            if (run) this.props.vm.greenFlag();
+        } catch (error) {
+            this.setState({status: error.message, statusKind: 'error'});
+        }
+    }
+
+    handleProjectRunStop () {
+        if (this.pendingVisualResult) {
+            const result = this.pendingVisualResult;
+            this.pendingVisualResult = null;
+            setTimeout(() => {
+                if (this._isMounted) this.acceptVisualChanges(result);
+            }, 0);
+            return;
+        }
+        if (!this.pendingCompilation) return;
+        const pending = this.pendingCompilation;
+        this.pendingCompilation = null;
+        setTimeout(() => {
+            if (!this._isMounted) return;
+            if (pending.conversionSnapshot) {
+                pending.conversionSnapshot.projectSnapshot = captureTargetSnapshot(this.props.vm, pending.target);
+            }
+            if (pending.secondary) {
+                this.applySecondaryCompilation(
+                    pending.compilation,
+                    pending.target,
+                    pending.run,
+                    pending.conversionSnapshot
+                );
+                return;
+            }
+            this.applyCompilation(
+                pending.compilation,
+                pending.target,
+                pending.run,
+                pending.conversionSnapshot,
+                pending.replaceRootIds
+            );
+        }, 0);
+    }
+
+    applyCompilation (compilation, target, run, conversionSnapshot = null, replaceRootIds = []) {
+        if (this.isRuntimeActive()) {
+            this.pendingVisualResult = null;
+            this.pendingCompilation = {compilation, target, run, conversionSnapshot, replaceRootIds};
+            this.setState({status: this.t('conversionQueued'), statusKind: 'working'});
+            return;
+        }
+        const replacementSnapshot = replaceRootIds.length ? captureTargetSnapshot(this.props.vm, target) : null;
         try {
             this.suppressBlockSyncUntil = Date.now() + 750;
+            if (replaceRootIds.length) removeRoots(this.props.vm, target, replaceRootIds);
             const record = applyCompilation(this.props.vm, target, compilation);
             this.lastAppliedSource = compilation.source;
             this.lastBlockFingerprint = blockFingerprint(target);
@@ -1925,27 +2281,48 @@ class TextEditor extends React.Component {
                 }),
                 statusKind: 'success',
                 saveState: 'salvo',
+                blocksDiverged: false,
                 history,
                 lastConversion: conversionSnapshot,
                 blockRefresh: state.blockRefresh + 1
             }));
             if (run) this.props.vm.greenFlag();
         } catch (error) {
+            if (replacementSnapshot) restoreTargetSnapshot(this.props.vm, target, replacementSnapshot);
             console.error(error);
             this.setState({status: error.message, statusKind: 'error'});
         }
     }
 
-    compileCurrent (run, conversionSnapshot = null) {
+    async compileCurrent (run, conversionSnapshot = null) {
         clearTimeout(this.compileTimer);
         clearTimeout(this.analysisTimer);
         const target = this.getTarget();
         if (!target) return;
         this.refreshExtensionCatalog();
-        const compilation = compileText(this.state.source, this.getCompileOptions(target));
+        const generation = ++this.conversionGeneration;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
+        const source = this.state.source;
+        this.setState({status: this.t('analyzing'), statusKind: 'working'});
+        let compilation;
+        try {
+            compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
+        } catch (error) {
+            if (generation === this.conversionGeneration) {
+                this.setState({status: error.message, statusKind: 'error'});
+            }
+            return;
+        }
+        if (
+            generation !== this.conversionGeneration ||
+            !this._isMounted ||
+            target !== this.getTarget() ||
+            source !== this.state.source
+        ) return;
         const errors = countErrors(compilation.diagnostics);
         if (errors) {
-            saveTextSource(this.props.vm, target, this.state.source);
+            saveTextSource(this.props.vm, target, source);
             this.setState({
                 diagnostics: compilation.diagnostics,
                 status: this.t('compileErrors', {count: errors}),
@@ -1956,18 +2333,102 @@ class TextEditor extends React.Component {
         this.applyCompilation(compilation, target, run, conversionSnapshot);
     }
 
-    handleCompile () {
-        this.compileCurrent(false, this.captureConversionSnapshot('text-to-blocks'));
+    async handleCompile () {
+        const target = this.getTarget();
+        if (!target) return;
+        const generation = ++this.conversionGeneration;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
+        const source = this.state.source;
+        this.setState({status: this.t('analyzing'), statusKind: 'working'});
+        let compilation;
+        try {
+            compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
+        } catch (error) {
+            if (generation === this.conversionGeneration) {
+                this.setState({status: error.message, statusKind: 'error'});
+            }
+            return;
+        }
+        if (
+            generation !== this.conversionGeneration ||
+            !this._isMounted ||
+            target !== this.getTarget() ||
+            source !== this.state.source
+        ) return;
+        if (!compilation.success) {
+            this.setState({diagnostics: compilation.diagnostics, statusKind: 'error'});
+            return;
+        }
+        const conversionScopePrompt = getConversionScope(target, compilation);
+        if (conversionScopePrompt) {
+            this.setState({
+                conversionScopePrompt,
+                convertMenuOpen: false
+            });
+            return;
+        }
+        this.applyCompilation(
+            compilation,
+            target,
+            false,
+            this.captureConversionSnapshot('text-to-blocks')
+        );
+    }
+
+    resolveConversionScope (mode) {
+        const prompt = this.state.conversionScopePrompt;
+        const target = this.getTarget();
+        this.setState({conversionScopePrompt: null});
+        if (!prompt || !target || mode === 'cancel') {
+            if (mode === 'cancel') this.setState({status: this.t('conversionCancelled'), statusKind: 'idle'});
+            return;
+        }
+        const snapshot = this.captureConversionSnapshot('text-to-blocks');
+        this.applyCompilation(
+            prompt.compilation,
+            target,
+            false,
+            snapshot,
+            mode === 'replace' ? prompt.matchingRootIds : []
+        );
     }
 
     handleRun () {
         this.compileCurrent(true);
     }
 
-    handleImportBlocks () {
+    async handleImportBlocks () {
         const target = this.getTarget();
         if (!target) return;
-        const result = decompileTarget(target, {extensionCatalog: this.extensionCatalog});
+        const generation = ++this.conversionGeneration;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
+        const fingerprint = blockFingerprint(target);
+        this.setState({status: this.t('analyzing'), statusKind: 'working'});
+        let result;
+        let compilation;
+        try {
+            result = await this.conversionWorker.decompile(target, {
+                extensionCatalog: this.extensionCatalog,
+                stageTarget: this.getStage()
+            });
+            compilation = await this.conversionWorker.compile(
+                result.source,
+                this.getCompileOptions(target)
+            );
+        } catch (error) {
+            if (generation === this.conversionGeneration) {
+                this.setState({status: error.message, statusKind: 'error'});
+            }
+            return;
+        }
+        if (
+            generation !== this.conversionGeneration ||
+            !this._isMounted ||
+            target !== this.getTarget() ||
+            fingerprint !== blockFingerprint(target)
+        ) return;
         if (result.importedRootIds.length === 0 && result.unsupportedRootIds.length === 0) {
             this.setState({
                 status: this.t('noStacks'),
@@ -1975,11 +2436,14 @@ class TextEditor extends React.Component {
             });
             return;
         }
-        const compilation = compileText(result.source, this.getCompileOptions(target));
         result.canonicalSource = result.source;
         result.visualCompilation = compilation;
         result.manualConversion = true;
-        if (this.state.source.trim() && result.source.trim() !== this.state.source.trim()) {
+        if (
+            readSourceRecord(target) &&
+            this.state.source.trim() &&
+            result.source.trim() !== this.state.source.trim()
+        ) {
             this.setState({
                 visualConflict: result,
                 conflictReviewOpen: false,
@@ -1989,15 +2453,21 @@ class TextEditor extends React.Component {
             return;
         }
         const conversionSnapshot = this.captureConversionSnapshot('blocks-to-text');
-        this.suppressBlockSyncUntil = Date.now() + 750;
-        adoptImportedRoots(
-            this.props.vm,
-            target,
-            result.source,
-            result.importedRootIds,
-            result.sourceMap,
-            compilation
-        );
+        try {
+            this.suppressBlockSyncUntil = Date.now() + 750;
+            adoptImportedRoots(
+                this.props.vm,
+                target,
+                result.source,
+                result.importedRootIds,
+                result.sourceMap,
+                compilation
+            );
+        } catch (error) {
+            restoreTargetSnapshot(this.props.vm, target, conversionSnapshot.projectSnapshot);
+            this.setState({status: error.message, statusKind: 'error'});
+            return;
+        }
         this.lastAppliedSource = result.source;
         this.lastBlockFingerprint = blockFingerprint(target);
         this.setState(state => ({
@@ -2010,8 +2480,166 @@ class TextEditor extends React.Component {
             statusKind: result.unsupportedRootIds.length ? 'working' : 'success',
             lastConversion: conversionSnapshot,
             visualConflict: null,
+            blocksDiverged: false,
             blockRefresh: state.blockRefresh + 1
         }));
+    }
+
+    async handleImportProjectBlocks () {
+        const runtime = this.props.vm && this.props.vm.runtime;
+        const currentTarget = this.getTarget();
+        if (!runtime || !currentTarget) return;
+        const targets = (runtime.targets || []).filter(target =>
+            target && (target.isStage || target.isOriginal !== false)
+        );
+        if (!targets.length) return;
+
+        const generation = ++this.conversionGeneration;
+        this.blockConversionGeneration++;
+        this.conversionWorker.cancelPending();
+        const fingerprints = new Map(targets.map(target => [target.id, blockFingerprint(target)]));
+        const stageTarget = this.getStage();
+        const workspace = buildWorkspace(this.props.vm);
+        const plans = [];
+        this.setState({
+            busy: true,
+            convertMenuOpen: false,
+            status: this.t('projectConversionProgress', {current: 0, total: targets.length}),
+            statusKind: 'working'
+        });
+
+        try {
+            if (this.isRuntimeActive() && typeof this.props.vm.stopAll === 'function') this.props.vm.stopAll();
+            for (let index = 0; index < targets.length; index++) {
+                const target = targets[index];
+                this.setState({
+                    status: this.t('projectConversionProgress', {
+                        current: index + 1,
+                        total: targets.length
+                    }),
+                    statusKind: 'working'
+                });
+                const result = await this.conversionWorker.decompile(target, {
+                    extensionCatalog: this.extensionCatalog,
+                    stageTarget
+                });
+                const compilation = await this.conversionWorker.compile(
+                    result.source,
+                    this.getCompileOptions(target, workspace)
+                );
+                if (generation !== this.conversionGeneration || !this._isMounted) return;
+                if (!result.success || !compilation.success) {
+                    const diagnostic = (result.diagnostics || []).concat(compilation.diagnostics || [])
+                        .find(item => item.severity === 'error');
+                    throw new Error(this.t('projectConversionFailed', {
+                        name: targetFileName(target),
+                        reason: diagnostic ? diagnostic.message : this.t('compileErrors', {count: 1})
+                    }));
+                }
+                plans.push({target, result, compilation});
+            }
+
+            const changedTarget = targets.find(target =>
+                fingerprints.get(target.id) !== blockFingerprint(target)
+            );
+            if (changedTarget) throw new Error(this.t('projectConversionChanged', {
+                name: targetFileName(changedTarget)
+            }));
+
+            const conflicts = plans.filter(({target, result}) => {
+                const record = readSourceRecord(target);
+                return record && record.source.trim() && record.source.trim() !== result.source.trim();
+            });
+            if (conflicts.length) {
+                this.setState({
+                    status: this.t('projectConversionConflict', {
+                        count: conflicts.length,
+                        names: conflicts.map(item => targetFileName(item.target)).join(', ')
+                    }),
+                    statusKind: 'working'
+                });
+                return;
+            }
+
+            const timestamp = Date.now();
+            let currentHistory = this.state.history;
+            const projectSnapshots = plans.map(({target}) => {
+                const record = readSourceRecord(target);
+                const source = record ? record.source :
+                    target === currentTarget ? this.state.source : '';
+                const history = saveHistorySnapshot(
+                    this.getStorage(),
+                    this.getProjectStorageId(),
+                    target.id,
+                    source,
+                    this.t('historyConversionSnapshot'),
+                    timestamp
+                );
+                if (target === currentTarget) currentHistory = history;
+                return {
+                    targetId: target.id,
+                    fileName: targetFileName(target),
+                    source,
+                    projectSnapshot: captureTargetSnapshot(this.props.vm, target)
+                };
+            });
+            const conversionSnapshot = {
+                direction: 'blocks-to-text-project',
+                fileName: this.t('entireProject'),
+                source: this.state.source,
+                targetId: currentTarget.id,
+                timestamp,
+                projectSnapshots
+            };
+
+            try {
+                this.suppressBlockSyncUntil = Date.now() + 1500;
+                plans.forEach(({target, result, compilation}) => {
+                    adoptImportedRoots(
+                        this.props.vm,
+                        target,
+                        result.source,
+                        result.importedRootIds,
+                        result.sourceMap,
+                        compilation
+                    );
+                });
+            } catch (error) {
+                projectSnapshots.slice().reverse().forEach(entry => {
+                    const target = runtime.getTargetById(entry.targetId);
+                    if (target) restoreTargetSnapshot(this.props.vm, target, entry.projectSnapshot);
+                });
+                throw error;
+            }
+
+            const currentPlan = plans.find(item => item.target === currentTarget);
+            const stackCount = plans.reduce((total, item) => total + item.result.importedRootIds.length, 0);
+            const opaqueCount = plans.reduce((total, item) => total + item.result.opaqueRootIds.length, 0);
+            this.lastAppliedSource = currentPlan.result.source;
+            this.lastBlockFingerprint = blockFingerprint(currentTarget);
+            this.setState(state => ({
+                source: currentPlan.result.source,
+                diagnostics: currentPlan.compilation.diagnostics,
+                status: this.t('projectBlocksImported', {
+                    targets: plans.length,
+                    stacks: stackCount,
+                    opaque: opaqueCount
+                }),
+                statusKind: 'success',
+                history: currentHistory,
+                lastConversion: conversionSnapshot,
+                visualConflict: null,
+                blocksDiverged: false,
+                saveState: 'salvo',
+                blockRefresh: state.blockRefresh + 1
+            }), () => this.refreshWorkspace());
+        } catch (error) {
+            if (generation === this.conversionGeneration) {
+                this.setState({status: error.message, statusKind: 'error'});
+            }
+        } finally {
+            if (this._isMounted) this.setState({busy: false});
+        }
     }
 
     async connectExternalSource () {
@@ -2596,13 +3224,34 @@ class TextEditor extends React.Component {
         const dirty = this.state.source !== this.lastAppliedSource || this.state.saveState === 'salvando';
         const syncKind = this.state.visualConflict ? 'conflict' :
             countErrors(this.state.diagnostics) ? 'error' :
-                dirty ? 'dirty' : 'synchronized';
+                this.state.blocksDiverged ? 'blocks-dirty' :
+                    dirty ? 'dirty' : 'synchronized';
         const syncLabel = {
             conflict: t('syncConflict'),
+            'blocks-dirty': t('syncBlocksChanged'),
             dirty: t('syncTextChanged'),
             error: t('syncUnavailable'),
             synchronized: t('syncSynchronized')
         }[syncKind];
+        const conflictDiff = this.state.visualConflict && this.state.visualConflict.semanticDiff;
+        const conflictMerge = this.state.visualConflict && this.state.visualConflict.semanticMerge;
+        const conflictUnitGroups = this.state.visualConflict ? [
+            {
+                label: t('conflictUnitsAdded', {count: conflictDiff ? conflictDiff.added.length : 0}),
+                ids: conflictDiff ? conflictDiff.added : []
+            },
+            {
+                label: t('conflictUnitsRemoved', {count: conflictDiff ? conflictDiff.removed.length : 0}),
+                ids: conflictDiff ? conflictDiff.removed : []
+            },
+            {
+                label: t('conflictUnitsChanged', {
+                    count: conflictDiff ? conflictDiff.changed.length :
+                        conflictMerge && conflictMerge.conflicts.length || 0
+                }),
+                ids: conflictDiff ? conflictDiff.changed : conflictMerge && conflictMerge.conflicts || []
+            }
+        ] : [];
         const rootStyle = {
             '--textwarp-bottom-panel-height': `${this.state.bottomPanelHeight}px`,
             '--textwarp-sidebar-width': `${this.state.sidebarWidth}px`,
@@ -2853,6 +3502,10 @@ class TextEditor extends React.Component {
                                     this.closeConvertMenu();
                                     this.handleImportBlocks();
                                 }}>{t('blocksToText')}</button>
+                                <button role="menuitem" type="button" onClick={() => {
+                                    this.closeConvertMenu();
+                                    this.handleImportProjectBlocks();
+                                }}>{t('blocksToTextProject')}</button>
                                 <button
                                     aria-checked={this.state.autoSync}
                                     className={styles.menuStatusItem}
@@ -3042,6 +3695,26 @@ class TextEditor extends React.Component {
                         </button>
                     </QuickPanel>
                 )}
+                {this.state.conversionScopePrompt && (
+                    <div aria-live="assertive" className={styles.conflictBanner} role="alert">
+                        <div>
+                            <strong>{t('conversionScopeTitle')}</strong>
+                            <span>{t('conversionScopeDescription', {
+                                unowned: this.state.conversionScopePrompt.unownedCount,
+                                matching: this.state.conversionScopePrompt.matchingRootIds.length
+                            })}</span>
+                        </div>
+                        <button type="button" onClick={() => this.resolveConversionScope('replace')}>
+                            {t('conversionScopeReplace')}
+                        </button>
+                        <button type="button" onClick={() => this.resolveConversionScope('add')}>
+                            {t('conversionScopeAdd')}
+                        </button>
+                        <button type="button" onClick={() => this.resolveConversionScope('cancel')}>
+                            {t('cancel')}
+                        </button>
+                    </div>
+                )}
                 {this.state.visualConflict && (
                     <div aria-live="assertive" className={styles.conflictBanner} role="alert">
                         <div>
@@ -3080,12 +3753,39 @@ class TextEditor extends React.Component {
                         onClose={() => this.setState({conflictReviewOpen: false})}
                     >
                         <section className={styles.conflictPreview}>
-                            <strong>{t('conflictTextPreview')}</strong>
-                            <pre>{this.state.source}</pre>
+                            <strong>{t('conflictPlan')}</strong>
+                            <ul>
+                                {conflictUnitGroups.map(group => (
+                                    <li key={group.label}>
+                                        <span>{group.label}</span>
+                                        {group.ids.length > 0 && <code>{group.ids.join(', ')}</code>}
+                                    </li>
+                                ))}
+                                <li>{t('conflictUnsupported', {
+                                    count: this.state.visualConflict.unsupportedOpcodes.length
+                                })}</li>
+                                <li>{t('conflictRootsAffected', {
+                                    count: this.state.visualConflict.importedRootIds.length
+                                })}
+                                {this.state.visualConflict.importedRootIds.length > 0 && (
+                                    <code>{this.state.visualConflict.importedRootIds.join(', ')}</code>
+                                )}</li>
+                            </ul>
+                            {this.state.visualConflict.unsupportedOpcodes.length > 0 && (
+                                <code>{this.state.visualConflict.unsupportedOpcodes.join(', ')}</code>
+                            )}
                         </section>
                         <section className={styles.conflictPreview}>
-                            <strong>{t('conflictBlocksPreview')}</strong>
-                            <pre>{this.state.visualConflict.source}</pre>
+                            <details>
+                                <summary>{t('conflictTextPreview')}</summary>
+                                <pre>{this.state.source}</pre>
+                            </details>
+                        </section>
+                        <section className={styles.conflictPreview}>
+                            <details>
+                                <summary>{t('conflictBlocksPreview')}</summary>
+                                <pre>{this.state.visualConflict.source}</pre>
+                            </details>
                         </section>
                     </QuickPanel>
                 )}

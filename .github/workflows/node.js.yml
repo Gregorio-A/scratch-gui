@@ -18,5 +18,7 @@ jobs:
         node-version: 22
         cache: npm
     - run: npm ci
+    - run: npm run docs:textwarp:check
+    - run: npm run test:textwarp
     - run: npm run build
     - run: npm run test:unit

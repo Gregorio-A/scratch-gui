@@ -47,6 +47,8 @@ different actors own resources with the same name.
 
 Every target is an editable `.tw` module. The explorer distinguishes editable source from generated artifacts.
 Open-file tabs, project-wide search and replacement, recent targets and local history support larger projects.
+The Convert menu can turn the stage and all original actors into text modules in one transactional action, with
+one Undo snapshot for the complete project.
 
 ## Main software integration
 
@@ -59,8 +61,8 @@ different variable or lose the actor/stage binding. Normalized-name collisions r
 
 Empty control arms are represented by `pass`, including both sides of an empty `if/else`, and compile back to empty
 visual branches. Command stacks not attached to an event use `stack:`, while disconnected reporter blocks use
-`reporter expression`. Only genuinely unknown opcodes stay exclusively in Blocks and are listed by conversion and
-the technical report.
+`reporter expression`. Genuinely unknown opcodes use non-executing `opaque.*` forms and are listed in the semantic
+conversion plan and technical report.
 
 ## Execution and console
 
@@ -74,8 +76,8 @@ watch expressions. Breakpoints can pause concurrent scripts independently.
 
 ## Productivity and recovery
 
-Autosave snapshots remain local to the device. Each manual text/blocks conversion creates an additional snapshot
-and exposes **Undo** and **View differences**. Formatting, project-wide replacement and `.textwarp` packages help
+Autosave snapshots remain local to the device. Every manual or automatic block mutation creates an exact target
+snapshot and exposes **Undo** and **View differences**. Formatting, project-wide replacement and `.textwarp` packages help
 recover and transfer editable work.
 
 Preferences includes a persistent **Compact interface** option for denser toolbars, tabs, sidebars, and panels on

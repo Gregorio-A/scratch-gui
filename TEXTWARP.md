@@ -61,12 +61,28 @@ Os recursos completos da IDE e seus atalhos estão em [TEXTWARP_IDE.md](TEXTWARP
 8. Clique na margem de uma linha para criar um breakpoint e abra **Depurar** para acompanhar threads, pilhas,
    variáveis e expressões Watch.
 
-Alterações válidas no texto são compiladas para o workspace. Alterações no Blockly são decompiladas e mescladas por evento ou procedimento. Unidades que não mudaram conservam comentários, espaçamento e ordem textual; apenas a unidade alterada visualmente recebe a forma canônica do decompilador. Se texto e blocos alterarem unidades diferentes, a mesclagem é automática. A faixa **Manter texto** ou **Usar blocos** aparece somente quando os dois lados alteram semanticamente a mesma unidade ou quando o texto pendente está inválido.
+Alterações válidas no texto são compiladas para o workspace quando **Sincronização automática** está ativa.
+Desativar essa opção interrompe os dois sentidos: digitar apenas analisa e salva a fonte, e editar blocos marca a
+divergência até uma conversão explícita. Alterações no Blockly são decompiladas e mescladas por unidade. Comentários
+dentro de uma unidade alterada produzem conflito em vez de serem descartados. A comparação mostra unidades
+adicionadas, removidas e alteradas, raízes afetadas e opcodes opacos. Cada aplicação automática ou manual guarda
+um snapshot completo para **Desfazer**.
 
 A ação **Blocos para texto** também faz uma conversão explícita do alvo. Todos os opcodes carregados no runtime têm
 sintaxe nativa, especial ou gerada de `getInfo()`. Se um `.sb3` contiver um opcode cuja extensão não está carregada,
-o stack visual permanece preservado e marcado como não importado; o decompilador não inventa uma chamada nem escreve
-`raw.*`. O parser ainda lê `raw.*` de arquivos TextWarp antigos somente para compatibilidade de migração.
+o decompilador escreve uma forma segura `opaque.*` que preserva opcode, campos, entradas, shadows, mutation, braços
+e sequência sem executar uma primitiva desconhecida. A raiz inteira é adotada uma única vez, portanto comandos
+suportados ao redor do bloco opaco não são duplicados. O parser ainda lê `raw.*` de arquivos TextWarp antigos somente
+para compatibilidade de migração.
+
+Para projetos `.sb3` com muitos atores, use **Converter → Blocos para texto — projeto inteiro**. A IDE decompila
+palco e atores originais em uma única operação, valida todos os módulos antes de alterar o projeto e cria um snapshot
+único para **Desfazer**. Se qualquer módulo falhar, mudar durante o processamento ou já contiver uma fonte TextWarp
+diferente, nenhum alvo é alterado. Cada alvo continua sendo um arquivo `.tw` separado no explorador.
+
+Antes de **Texto para blocos** em um alvo com raízes visuais sem proprietário, a interface exige escolher entre
+substituir raízes correspondentes, adicionar novas raízes ou cancelar. Conversões são transacionais e ficam
+enfileiradas enquanto o projeto executa; uma falha restaura o alvo completo.
 
 `Ctrl+S` salva no arquivo `.textwarp` aberto e `Ctrl+Shift+S` escolhe outro arquivo. **Salvar como…** faz a mesma exportação editável; **Abrir .textwarp** abre o pacote. O fluxo padrão do TurboWarp continua disponível para gerar `.sb3` como artefato compilado.
 
@@ -301,6 +317,9 @@ project.textwarp
 ├── sources/
 │   ├── stage-<moduleId>.tw
 │   └── player-<moduleId>.tw
+├── state/
+│   ├── stage-<moduleId>.json
+│   └── player-<moduleId>.json
 ├── project/
 │   └── project.json
 ├── assets/
@@ -310,7 +329,10 @@ project.textwarp
     └── project.sb3
 ```
 
-As fontes em `sources/` são canônicas. Ao abrir o pacote, cada módulo é compilado novamente; se uma fonte tiver erro, o SB3 compilado permanece carregado e os diagnósticos são informados. `compiled/project.sb3` permite execução e compatibilidade com as ferramentas existentes, enquanto `project/` e `assets/` deixam os recursos explícitos no pacote.
+As fontes em `sources/` são canônicas e `state/` conserva o mapa de propriedade das raízes. Isso permite exportar
+um Scratch comum, sem marcadores TextWarp, e reabri-lo sem duplicar stacks. A exportação é recusada quando texto e
+blocos divergem ou a fonte contém erros, em vez de empacotar duas versões conflitantes. Ao importar, o `targetId`
+salvo é tentado antes de qualquer migração por nome ou ordem.
 
 Antes de desserializar o SB3, o importador restaura as dependências registradas em `extensions/lock.json`. Extensões
 internas são carregadas pelo identificador e extensões por URL passam pelo mesmo pedido de permissão e pelo mesmo
@@ -331,7 +353,8 @@ presentes no catálogo da versão atual. Ele:
 - representa condicionais de extensão com qualquer `branchCount`;
 - nunca escreve `raw.*` para representar um bloco;
 - adota todos os stacks que puder reconstruir sem perda estrutural;
-- mantém no workspace e fora da fonte qualquer stack cujo opcode não esteja carregado, evitando sobrescrita ou falsa compatibilidade.
+- escreve blocos indisponíveis como `opaque.command`, `opaque.reporter`, `opaque.hat` ou `opaque.stack`, preservando
+  toda a carga estrutural sem executar código desconhecido.
 
 Nomes Scratch que não são identificadores válidos são normalizados. Identificadores de extensão incompatíveis com a
 gramática são codificados de forma estável como `encoded_<pontos-de-código>`. `raw.*` é aceito apenas ao abrir fontes
@@ -341,7 +364,10 @@ antigas e não aparece no autocomplete, na documentação de escrita nem na saí
 
 As abas **Blocos** e **Dividido** montam o workspace oficial de `scratch-gui`, ligado ao mesmo `vm.blockListener` usado pelo TurboWarp. Não existe uma segunda cópia do grafo: texto e Blockly alteram os blocos reais do alvo.
 
-O sincronizador compara a estrutura do alvo, ignora mudanças causadas pela própria compilação e decompila alterações visuais após debounce. Uma mesclagem semântica de três vias compara a última fonte aplicada, a edição pendente e o grafo visual por hash de evento/procedimento. Ao aceitar a versão visual, os hashes e IDs das unidades são adotados e o source map é recalculado sobre a fonte mesclada, de modo que a próxima alteração textual ainda preserve eventos e procedimentos não afetados.
+O sincronizador compara versões independentes do texto e do grafo. A opção automática vale nos dois sentidos; com
+ela desligada, o indicador continua mostrando blocos divergentes. **Comparar versões** decompila o alvo novamente e
+calcula diferenças por unidade. Uma mesclagem semântica de três vias preserva edições independentes e transforma a
+perda potencial de comentários internos em conflito explícito.
 
 Arrastar stacks no workspace não reordena unidades que o sincronizador consegue associar pela identidade. Uma mudança dentro de um stack substitui somente a unidade correspondente; comentários e formatação de outras unidades ficam intactos. Hats duplicados do mesmo tipo continuam sendo associados pela ocorrência, e uma troca de posição entre eles pode exigir a ordem canônica. Alterações estruturais nas declarações de variáveis, que não possuem IDs de linha no Scratch, também usam a forma canônica do módulo.
 
@@ -412,7 +438,9 @@ seleciona **Blocos** ou **Dividido**. Nenhum pacote dentro de `node_modules` é 
 
 ## Persistência no `.sb3`
 
-Fonte, breakpoints, source map, hashes e unidades ficam em comentários internos minimizados. Marcadores ligados às raízes sobrevivem à compactação de IDs feita pelo serializador. Se o texto ficar inválido, ele é salvo, mas a última versão compilada continua executável.
+Fonte, breakpoints, hashes e metadados compactos por unidade ficam em comentários internos minimizados. O fingerprint
+é um hash curto, source map e propriedade compartilham a mesma tabela compacta, e rascunhos não reescrevem o registro
+inteiro a cada tecla. Marcadores ligados às raízes sobrevivem à compactação de IDs feita pelo serializador.
 
 Os tipos `number`, `string`, `any` e `boolean` dos parâmetros, além do tipo de retorno, também são gravados diretamente na mutation do procedimento (`textwarp_argument_types` e `textwarp_return_type`). O tipo de cada parâmetro é codificado redundantemente em seu ID opaco. Por isso, o decompilador reconstrói os tipos exatos mesmo quando o comentário com a fonte TextWarp não existe no `.sb3`, e ainda recupera parâmetros se um editor conservar os IDs mas remover atributos de mutation desconhecidos.
 
@@ -422,10 +450,14 @@ Variáveis e listas declaradas recebem IDs determinísticos. Blocos manuais não
 
 A classificação canônica e o histórico dos riscos altos corrigidos estão em [TEXTWARP_PRIORIDADES.md](TEXTWARP_PRIORIDADES.md).
 
-- a unidade alterada visualmente é emitida na forma canônica, pois comentários e espaços dentro dela não existem no grafo Scratch; o restante do arquivo não é normalizado;
+- comentários e espaços que não podem ser reconstruídos de uma unidade visual alterada exigem uma decisão explícita;
 - duas alterações semanticamente diferentes no mesmo evento, procedimento ou conjunto de declarações ainda exigem escolher **Manter texto** ou **Usar blocos**; unidades independentes são mescladas automaticamente;
-- um `.sb3` avulso que perdeu a URL da extensão ou um pacote cuja permissão foi negada não pode fornecer código de
-  terceiros por conta própria; nesse caso o stack permanece visual, não é convertido em texto e não é sobrescrito;
+- um `.sb3` avulso que perdeu a URL da extensão ainda preserva seus blocos em `opaque.*`, mas não pode executar o
+  código de terceiros sem que a extensão seja carregada e autorizada;
+- compilação, descompilação e comparação interativas usam um Worker cancelável; somente a aplicação transacional
+  final toca a VM na thread principal;
+- a conversão automática é limitada a 100.000 caracteres ou 10.000 blocos; módulos maiores continuam convertíveis
+  por comando explícito, evitando bloquear a digitação e eventos visuais;
 - atores com breakpoint usam o interpretador e ficam mais lentos; atores sem breakpoint continuam no JIT. Uma thread JIT pausada preserva o gerador e avança por frame, enquanto o passo por bloco exige o interpretador;
 - procedimentos com retorno são um recurso do TurboWarp e geram aviso de compatibilidade. Para publicar no site oficial do Scratch, use procedimentos de comando sem `-> tipo` e sem `return`, pois o Scratch oficial não implementa `procedures_return` nem chamadas de procedimento como repórter;
 - se uma ferramenta externa remover os atributos TextWarp e também regenerar os IDs dos parâmetros, os encaixes `%s` voltam ao tipo seguro `any`; retornos redondos também voltam a `any` se `textwarp_return_type` for removido, pois o formato Scratch distingue apenas retorno redondo e booleano.

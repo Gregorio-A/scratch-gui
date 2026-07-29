@@ -1,6 +1,9 @@
 'use strict';
 
+const {decodeConversionMetadata} = require('./conversion-metadata');
+
 const INDENT_SIZE = 4;
+const MAX_NESTING_DEPTH = 256;
 
 const diagnostic = (message, line, column, length = 1, severity = 'error', code = 'syntax') => ({
     message,
@@ -59,6 +62,7 @@ const tokenizeLines = (source, diagnostics) => {
             indent: normalizedLeading.length,
             line: lineNumber,
             column: normalizedLeading.length + 1,
+            metadata: decodeConversionMetadata(rawLine),
             raw: rawLine
         });
     });
@@ -273,6 +277,29 @@ const parseExpression = (source, lineToken, diagnostics, columnOffset = 0) => {
 const parseText = source => {
     const diagnostics = [];
     const tokens = tokenizeLines(source, diagnostics);
+    const excessiveNesting = tokens.find(token => Math.floor(token.indent / INDENT_SIZE) > MAX_NESTING_DEPTH);
+    if (excessiveNesting) {
+        diagnostics.push(diagnostic(
+            `O limite de ${MAX_NESTING_DEPTH} níveis de aninhamento foi excedido.`,
+            excessiveNesting.line,
+            1,
+            Math.max(1, excessiveNesting.indent),
+            'error',
+            'conversion-depth-limit'
+        ));
+        return {
+            ast: {
+                type: 'ActorModule',
+                declaration: null,
+                declarations: [],
+                procedures: [],
+                scripts: [],
+                stacks: [],
+                reporters: []
+            },
+            diagnostics
+        };
+    }
     let cursor = 0;
     let declaration = null;
     const declarations = [];
@@ -501,6 +528,7 @@ const parseText = source => {
                     diagnostics,
                     token.content.indexOf(variableMatch[4])
                 ),
+                metadata: token.metadata,
                 location: token
             });
             cursor++;
@@ -548,6 +576,7 @@ const parseText = source => {
                 returnType,
                 warp,
                 body: nested.statements,
+                metadata: token.metadata,
                 location: token
             });
             cursor = nested.cursor;
@@ -567,7 +596,13 @@ const parseText = source => {
             ));
             const nested = parseBlock(cursor + 1, 0);
             requireBody('O evento', token, nested);
-            scripts.push({type: 'Script', event: expression, body: nested.statements, location: token});
+            scripts.push({
+                type: 'Script',
+                event: expression,
+                body: nested.statements,
+                metadata: token.metadata,
+                location: token
+            });
             cursor = nested.cursor;
             continue;
         }
@@ -575,7 +610,12 @@ const parseText = source => {
         if (/^stack\s*:\s*$/.test(token.content)) {
             const nested = parseBlock(cursor + 1, 0);
             requireBody('stack', token, nested);
-            stacks.push({type: 'LooseStack', body: nested.statements, location: token});
+            stacks.push({
+                type: 'LooseStack',
+                body: nested.statements,
+                metadata: token.metadata,
+                location: token
+            });
             cursor = nested.cursor;
             continue;
         }
@@ -590,6 +630,7 @@ const parseText = source => {
                     diagnostics,
                     token.content.indexOf(reporterMatch[1])
                 ),
+                metadata: token.metadata,
                 location: token
             });
             cursor++;
@@ -615,6 +656,7 @@ const parseText = source => {
 
 module.exports = {
     INDENT_SIZE,
+    MAX_NESTING_DEPTH,
     diagnostic,
     parseExpression,
     parseText

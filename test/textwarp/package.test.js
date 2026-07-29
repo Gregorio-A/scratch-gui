@@ -3,14 +3,37 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const JSZip = require('@turbowarp/jszip');
+const VM = require('scratch-vm');
 
+const {compileText} = require('../../src/lib/textwarp/compiler');
 const {
     FORMAT_NAME,
     PACKAGE_LIMITS,
+    exportTextwarpProject,
+    importTextwarpProject,
     packTextwarp,
     restoreExtensionDependencies,
     unpackTextwarp
 } = require('../../src/lib/textwarp/textwarp-package');
+const {applyCompilation} = require('../../src/lib/textwarp/vm-adapter');
+
+const emptyProject = () => ({
+    targets: [
+        {
+            isStage: true, name: 'Stage', variables: {}, lists: {}, broadcasts: {}, blocks: {}, comments: {},
+            currentCostume: 0, costumes: [], sounds: [], volume: 100, layerOrder: 0, tempo: 60,
+            videoTransparency: 50, videoState: 'on'
+        },
+        {
+            isStage: false, name: 'Player', variables: {}, lists: {}, broadcasts: {}, blocks: {}, comments: {},
+            currentCostume: 0, costumes: [], sounds: [], volume: 100, layerOrder: 1, visible: true,
+            x: 0, y: 0, size: 100, direction: 90, draggable: false, rotationStyle: 'all around'
+        }
+    ],
+    monitors: [],
+    extensions: [],
+    meta: {semver: '3.0.0', vm: '11.3.0', agent: 'TextWarp package tests'}
+});
 
 test('packs editable sources, resources, manifest and compiled SB3 separately', async () => {
     const sb3 = new JSZip();
@@ -20,7 +43,13 @@ test('packs editable sources, resources, manifest and compiled SB3 separately', 
     const packageBytes = await packTextwarp({
         projectData,
         modules: [
-            {moduleId: 'stage-module', name: 'Stage', isStage: true, sourceText: 'stage\non green_flag:\n    wait(0)'},
+            {
+                moduleId: 'stage-module',
+                name: 'Stage',
+                isStage: true,
+                sourceText: 'stage\non green_flag:\n    wait(0)',
+                conversionState: {formatVersion: 3, source: 'stage\non green_flag:\n    wait(0)', units: []}
+            },
             {moduleId: 'player-module', name: 'Player', isStage: false, sourceText: 'actor Player\non green_flag:\n    move(10)'}
         ],
         extensions: [{id: 'physics', url: 'https://example.com/physics.js'}],
@@ -32,12 +61,14 @@ test('packs editable sources, resources, manifest and compiled SB3 separately', 
     assert.ok(archive.file('project/project.json'));
     assert.ok(archive.file('assets/asset.svg'));
     assert.ok(archive.file('extensions/lock.json'));
+    assert.ok(Object.keys(archive.files).some(name => name.startsWith('state/') && name.endsWith('.json')));
 
     const unpacked = await unpackTextwarp(packageBytes);
     assert.equal(unpacked.manifest.format, FORMAT_NAME);
     assert.equal(unpacked.manifest.name, 'Game');
     assert.equal(unpacked.modules.length, 2);
     assert.equal(unpacked.modules.find(module => module.isStage).sourceText.startsWith('stage'), true);
+    assert.equal(unpacked.modules.find(module => module.isStage).conversionState.formatVersion, 3);
     assert.deepEqual(unpacked.extensions, [{id: 'physics', url: 'https://example.com/physics.js'}]);
     const restoredSb3 = await JSZip.loadAsync(unpacked.projectData);
     assert.ok(restoredSb3.file('project.json'));
@@ -140,4 +171,55 @@ test('rejects a locked extension when project loading permission is denied', asy
         /Permissão negada/
     );
     assert.equal(loaded, false);
+});
+
+test('marker-free Scratch roots remain single after a .textwarp export/import round trip', async () => {
+    const vm = new VM();
+    await vm.loadProject(emptyProject());
+    const target = vm.runtime.targets.find(item => !item.isStage);
+    const stage = vm.runtime.getTargetForStage();
+    applyCompilation(vm, target, compileText(`actor Player
+on green_flag:
+    say("once")`, {
+        targetId: target.id,
+        stageId: stage.id,
+        targetName: target.getName(),
+        isStage: false
+    }));
+    Object.keys(target.comments).forEach(id => {
+        if (target.comments[id].text.startsWith('@textwarp/')) delete target.comments[id];
+    });
+    const beforeRoots = Object.values(target.blocks._blocks)
+        .filter(block => block.topLevel && !block.shadow).length;
+    assert.equal(beforeRoots, 1);
+
+    const packageData = await exportTextwarpProject(vm, {name: 'Marker-free'});
+    const restoredVm = new VM();
+    await importTextwarpProject(restoredVm, packageData);
+    const restored = restoredVm.runtime.targets.find(item => !item.isStage);
+    const roots = Object.values(restored.blocks._blocks).filter(block => block.topLevel && !block.shadow);
+    assert.equal(roots.length, 1);
+    assert.equal(roots[0].opcode, 'event_whenflagclicked');
+    assert.equal(restored.blocks.getBlock(roots[0].next).opcode, 'looks_say');
+});
+
+test('export refuses stale embedded source instead of overwriting newer visual blocks on import', async () => {
+    const vm = new VM();
+    await vm.loadProject(emptyProject());
+    const target = vm.runtime.targets.find(item => !item.isStage);
+    const stage = vm.runtime.getTargetForStage();
+    applyCompilation(vm, target, compileText(`actor Player
+on green_flag:
+    say("before")`, {
+        targetId: target.id,
+        stageId: stage.id,
+        targetName: target.getName(),
+        isStage: false
+    }));
+    const textBlock = Object.values(target.blocks._blocks).find(block => block.opcode === 'text');
+    textBlock.fields.TEXT.value = 'visual edit';
+    await assert.rejects(
+        () => exportTextwarpProject(vm, {name: 'Diverged'}),
+        /alterações não sincronizadas/
+    );
 });

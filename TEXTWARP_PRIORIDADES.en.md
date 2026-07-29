@@ -2,6 +2,11 @@
 
 This file records release priorities for the shared web and Desktop editor.
 
+Conversion safety was re-audited on July 29, 2026. Unknown blocks now round-trip through non-executing opaque
+syntax; apply/undo is transactional; variable, procedure and unit identities are durable; marker-free package
+round trips retain root ownership; synchronization is bidirectional and truthful; and conversion tests are required
+by CI and publishing.
+
 ## Priority criteria
 
 High priority issues can lose source, generate incompatible blocks, prevent editing, hide the stage or block
@@ -14,6 +19,7 @@ polish or optional integration.
 - Keep the dual editor attached to two independent target modules.
 - Keep the editor, stage and every primary action reachable at small resolutions.
 - Preserve package import limits and extension permission checks.
+- Preserve transactional conversion, exact undo, root ownership, comments/layout, coercible inputs and opaque blocks.
 - Keep shared behavior in `scratch-gui`; Electron-only code stays in the Desktop fork.
 
 ## Medium priority

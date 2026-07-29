@@ -104,6 +104,25 @@ const analyzeAndBuildIR = (ast, options = {}) => {
         addSymbol(symbol, variable.sourceName);
     });
 
+    const constantScalar = expression => {
+        if (!expression) return null;
+        if (expression.type === 'Literal') return expression;
+        if (
+            expression.type === 'UnaryExpression' &&
+            (expression.operator === '+' || expression.operator === '-') &&
+            expression.argument &&
+            expression.argument.type === 'Literal' &&
+            expression.argument.valueType === 'number'
+        ) {
+            return literal(
+                expression.operator === '-' ? -expression.argument.value : +expression.argument.value,
+                'number',
+                expression.location
+            );
+        }
+        return null;
+    };
+
     const constantValue = (expression, expectedList, location) => {
         if (expectedList) {
             if (!expression || expression.type !== 'ListLiteral') {
@@ -114,31 +133,34 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             }
             const values = [];
             expression.elements.forEach(element => {
-                if (element.type !== 'Literal' || element.valueType === 'boolean') {
+                const constant = constantScalar(element);
+                if (!constant) {
                     diagnostics.push(semanticDiagnostic(
-                        'A inicialização de lista aceita apenas números e strings constantes.',
+                        'A inicialização de lista aceita apenas valores constantes.',
                         location,
                         'non-constant-list-item'
                     ));
                 } else {
-                    values.push(element.value);
+                    values.push(constant.value);
                 }
             });
             return values;
         }
-        if (!expression || expression.type !== 'Literal' || expression.valueType === 'boolean') {
+        const constant = constantScalar(expression);
+        if (!constant) {
             diagnostics.push(semanticDiagnostic(
-                'A variável deve ter um valor inicial constante (número ou string).',
+                'A variável deve ter um valor inicial constante.',
                 location,
                 'non-constant-variable-initializer'
             ));
             return 0;
         }
-        return expression.value;
+        return constant.value;
     };
 
     ast.declarations.forEach(node => {
         const variableType = node.type === 'ListDeclaration' ? 'list' : '';
+        const binding = node.metadata && node.metadata.variable || {};
         if (node.global && !isStage) diagnostics.push(semanticDiagnostic(
             'Declare variáveis globais em stage.tw para manter uma única fonte canônica.',
             node.location,
@@ -149,18 +171,25 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             return;
         }
         const owner = isStage || node.global ? 'stage' : 'target';
-        const existing = externalVariables.find(variable =>
-            (variable.name === node.name || variable.sourceName === node.name) &&
-            variable.variableType === variableType &&
-            (owner !== 'target' || variable.owner !== 'stage')
-        );
+        const existing = externalVariables.find(variable => binding.id && variable.id === binding.id) ||
+            externalVariables.find(variable =>
+                (variable.name === node.name || variable.sourceName === node.name) &&
+                variable.variableType === variableType &&
+                (owner !== 'target' || variable.owner !== 'stage')
+            );
+        const bindingWasRenamed = typeof binding.sourceName === 'string' && binding.sourceName !== node.name;
+        const runtimeName = bindingWasRenamed ? node.name :
+            typeof binding.name === 'string' ? binding.name : existing ? existing.name : node.name;
         const symbol = {
-            id: existing ? existing.id : stableId(owner === 'stage' ? stageId : targetId, `variable:${variableType}:${node.name}`),
-            name: existing ? existing.name : node.name,
+            id: existing ? existing.id : binding.id ||
+                stableId(owner === 'stage' ? stageId : targetId, `variable:${variableType}:${node.name}`),
+            name: runtimeName,
             sourceName: node.name,
             variableType,
-            owner,
-            generated: existing ? Boolean(existing.generated) : true,
+            owner: binding.owner === 'stage' ? 'stage' : owner,
+            generated: existing ? Boolean(existing.generated) :
+                typeof binding.generated === 'boolean' ? binding.generated : true,
+            isCloud: existing ? Boolean(existing.isCloud) : Boolean(binding.isCloud),
             initialValue: constantValue(node.initialValue, variableType === 'list', node.location),
             location: node.location
         };
@@ -185,21 +214,39 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             'turbowarp-only-return-procedure',
             'warning'
         ));
-        const parameters = node.parameters.map(parameter => ({
-            id: encodeParameterId(
+        const procedureMetadata = node.metadata && node.metadata.procedure || {};
+        const originalMutation = procedureMetadata.mutation && typeof procedureMetadata.mutation === 'object' ?
+            procedureMetadata.mutation : {};
+        let originalIds = [];
+        let originalDefaults = [];
+        try {
+            originalIds = JSON.parse(originalMutation.argumentids || '[]');
+            originalDefaults = JSON.parse(originalMutation.argumentdefaults || '[]');
+        } catch (error) {
+            originalIds = [];
+            originalDefaults = [];
+        }
+        const parameters = node.parameters.map((parameter, index) => ({
+            id: originalIds[index] || encodeParameterId(
                 stableId(targetId, `procedure:${node.name}/parameter:${parameter.name}`),
                 parameter.valueType || 'any'
             ),
             name: parameter.name,
-            valueType: parameter.valueType || 'any'
+            valueType: parameter.valueType || 'any',
+            defaultValue: Object.prototype.hasOwnProperty.call(originalDefaults, index) ?
+                originalDefaults[index] : parameter.valueType === 'boolean' ? false : ''
         }));
-        const proccode = [node.name].concat(parameters.map(parameter => parameter.valueType === 'boolean' ? '%b' : '%s')).join(' ');
+        const proccode = typeof originalMutation.proccode === 'string' && originalMutation.proccode ?
+            originalMutation.proccode :
+            [node.name].concat(parameters.map(parameter => parameter.valueType === 'boolean' ? '%b' : '%s')).join(' ');
         proceduresByName.set(node.name, {
             name: node.name,
             parameters,
             proccode,
             returnType: node.returnType || null,
             warp: Boolean(node.warp),
+            mutation: originalMutation,
+            unitId: node.metadata && node.metadata.unitId,
             location: node.location,
             ast: node
         });
@@ -370,7 +417,8 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                             argumentMetadata.valueType === 'boolean' ? 'uma condição' : 'uma string'
                     }.`,
                     location,
-                    'invalid-argument-type'
+                    'scratch-coercion',
+                    'warning'
                 ));
             }
             if (argumentMetadata.role === 'field' || argumentMetadata.role === 'broadcast-field') {
@@ -504,7 +552,7 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             };
         }
         if (node.type === 'CallExpression') {
-            if (node.callee === 'raw.reporter') return {
+            if (node.callee === 'raw.reporter' || node.callee === 'opaque.reporter') return {
                 type: 'RawReporter',
                 payload: decodeRawPayload(node, node.location, 'reporter'),
                 valueType: 'any',
@@ -527,7 +575,8 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                         proccode: procedure.proccode,
                         parameters: procedure.parameters,
                         returnType: procedure.returnType,
-                        warp: procedure.warp
+                        warp: procedure.warp,
+                        mutation: procedure.mutation
                     },
                     arguments: convertProcedureArguments(procedure, node.arguments, parameters, node.location),
                     valueType: procedure.returnType,
@@ -578,7 +627,7 @@ const analyzeAndBuildIR = (ast, options = {}) => {
         }
         if (statement.type === 'CallStatement') {
             const call = statement.expression;
-            if (call.callee === 'raw.command') return {
+            if (call.callee === 'raw.command' || call.callee === 'opaque.command') return {
                 type: 'RawCommand',
                 payload: decodeRawPayload(call, statement.location, 'command'),
                 location: statement.location
@@ -625,7 +674,8 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                     proccode: procedure.proccode,
                     parameters: procedure.parameters,
                     returnType: procedure.returnType,
-                    warp: procedure.warp
+                    warp: procedure.warp,
+                    mutation: procedure.mutation
                 },
                 arguments: convertProcedureArguments(procedure, call.arguments, parameters, statement.location),
                 location: statement.location
@@ -732,6 +782,8 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             parameters: procedure.parameters,
             returnType: procedure.returnType,
             warp: procedure.warp,
+            mutation: procedure.mutation,
+            unitId: procedure.unitId,
             statements: convertStatements(procedure.ast.body, parameterMap, procedure).filter(Boolean),
             location: procedure.location
         });
@@ -740,19 +792,20 @@ const analyzeAndBuildIR = (ast, options = {}) => {
     const scripts = ast.scripts.map(script => {
         const eventName = script.event.type === 'Identifier' ? script.event.name : script.event.callee;
         const argumentNodes = script.event.type === 'CallExpression' ? script.event.arguments : [];
-        if (eventName === 'raw.hat' || eventName === 'raw.stack') {
+        if (['raw.hat', 'raw.stack', 'opaque.hat', 'opaque.stack'].includes(eventName)) {
             const payload = decodeRawPayload(script.event, script.location, eventName.slice(4));
             return {
                 event: {
                     name: eventName,
                     opcode: payload.opcode,
-                    metadata: {kind: eventName === 'raw.hat' ? 'hat' : 'stack', arguments: []},
+                    metadata: {kind: /\.hat$/.test(eventName) ? 'hat' : 'stack', arguments: []},
                     arguments: [],
                     rawPayload: payload,
                     rawKind: eventName.slice(4),
                     location: script.location
                 },
                 statements: convertStatements(script.body).filter(Boolean),
+                unitId: script.metadata && script.metadata.unitId,
                 location: script.location
             };
         }
@@ -771,15 +824,18 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                 location: script.location
             },
             statements: convertStatements(script.body).filter(Boolean),
+            unitId: script.metadata && script.metadata.unitId,
             location: script.location
         };
     });
     const stacks = (ast.stacks || []).map(stack => ({
         statements: convertStatements(stack.body).filter(Boolean),
+        unitId: stack.metadata && stack.metadata.unitId,
         location: stack.location
     }));
     const reporters = (ast.reporters || []).map(reporter => ({
         expression: convertExpression(reporter.expression),
+        unitId: reporter.metadata && reporter.metadata.unitId,
         location: reporter.location
     }));
 
@@ -790,6 +846,7 @@ const analyzeAndBuildIR = (ast, options = {}) => {
         declarations,
         broadcasts: Array.from(broadcasts.values()),
         resourceBindings,
+        previousUnits: Array.isArray(options.previousUnits) ? options.previousUnits : [],
         procedures,
         scripts,
         stacks,
@@ -816,6 +873,50 @@ const generateGraph = ir => {
     const units = [];
     const targetId = ir.target.id;
     let currentUnit = null;
+    const previousUnits = Array.isArray(ir.previousUnits) ? ir.previousUnits : [];
+    const usedUnitIds = new Set();
+    const remainingHashes = new Map();
+    const reserveHash = value => {
+        const hash = unitHash(value);
+        remainingHashes.set(hash, (remainingHashes.get(hash) || 0) + 1);
+    };
+    ir.scripts.filter(script => script.event.opcode).forEach(reserveHash);
+    (ir.stacks || []).forEach(reserveHash);
+    (ir.reporters || []).forEach(reserveHash);
+    ir.procedures.forEach(reserveHash);
+
+    const resolveUnitId = (requested, fallback, kind, name, hash) => {
+        remainingHashes.set(hash, Math.max(0, (remainingHashes.get(hash) || 1) - 1));
+        if (requested && !usedUnitIds.has(requested)) {
+            usedUnitIds.add(requested);
+            return requested;
+        }
+        const exact = previousUnits.find(unit =>
+            !usedUnitIds.has(unit.unitId) &&
+            unit.kind === kind &&
+            unit.hash === hash
+        );
+        if (exact) {
+            usedUnitIds.add(exact.unitId);
+            return exact.unitId;
+        }
+        const fallbackUnit = previousUnits.find(unit => unit.unitId === fallback);
+        if (
+            fallbackUnit &&
+            !usedUnitIds.has(fallback) &&
+            (remainingHashes.get(fallbackUnit.hash) || 0) === 0
+        ) {
+            usedUnitIds.add(fallback);
+            return fallback;
+        }
+        let candidate = fallbackUnit ? `${kind}:${stableHash(`${name}:${hash}`).slice(0, 12)}` : fallback;
+        let suffix = 2;
+        while (usedUnitIds.has(candidate) || previousUnits.some(unit => unit.unitId === candidate)) {
+            candidate = `${fallback}:${suffix++}`;
+        }
+        usedUnitIds.add(candidate);
+        return candidate;
+    };
 
     const sourceLocation = location => ({
         actorId: targetId,
@@ -885,11 +986,50 @@ const generateGraph = ir => {
             block.inputs[inputName] = {name: inputName, block: expressionId, shadow: shadowId};
             return;
         }
-        const expressionId = compileExpression(expression, block.id, `${path}/input:${inputName}`, metadata);
+        const hasDefaultShadow = Boolean(metadata.shadowOpcode && metadata.shadowField);
+        const literalMatchesShadow = expression && expression.type === 'Literal' && (
+            metadata.valueType === 'any' ||
+            !metadata.valueType ||
+            expression.valueType === metadata.valueType
+        );
+        if (expression && expression.type === 'Literal' && (!hasDefaultShadow || literalMatchesShadow)) {
+            const expressionId = compileExpression(
+                expression,
+                block.id,
+                `${path}/input:${inputName}`,
+                metadata
+            );
+            block.inputs[inputName] = {
+                name: inputName,
+                block: expressionId,
+                shadow: blocks[expressionId] && blocks[expressionId].shadow ? expressionId : null
+            };
+            return;
+        }
+        let shadowId = null;
+        if (hasDefaultShadow) {
+            const defaultValue = Object.prototype.hasOwnProperty.call(metadata, 'defaultValue') ?
+                metadata.defaultValue : metadata.valueType === 'number' ? 0 : '';
+            shadowId = createShadow(
+                block.id,
+                `${path}/shadow:${inputName}`,
+                metadata.shadowOpcode,
+                metadata.shadowField,
+                defaultValue,
+                location
+            );
+        }
+        const expressionId = compileExpression(
+            expression,
+            block.id,
+            `${path}/input:${inputName}`,
+            literalMatchesShadow ? metadata : null,
+            Boolean(expression && expression.type === 'Literal')
+        );
         block.inputs[inputName] = {
             name: inputName,
             block: expressionId,
-            shadow: blocks[expressionId] && blocks[expressionId].shadow ? expressionId : null
+            shadow: shadowId || (blocks[expressionId] && blocks[expressionId].shadow ? expressionId : null)
         };
     };
 
@@ -920,14 +1060,15 @@ const generateGraph = ir => {
     };
 
     const procedureMutation = (procedure, includeReturn) => {
-        const mutation = {
+        const mutation = Object.assign({}, procedure.mutation || {}, {
             tagName: 'mutation',
             children: [],
             proccode: procedure.proccode,
             argumentids: JSON.stringify(procedure.parameters.map(item => item.id)),
             warp: String(Boolean(procedure.warp))
-        };
+        });
         if (includeReturn && procedure.returnType) mutation.return = procedure.returnType === 'boolean' ? '2' : '1';
+        else if (!includeReturn) delete mutation.return;
         return encodeProcedureTypes(mutation, procedure, includeReturn);
     };
 
@@ -991,10 +1132,13 @@ const generateGraph = ir => {
             }
             block.inputs[name] = {name, block: blockId, shadow: shadowId};
         });
+        if (safePayload.next && typeof safePayload.next === 'object') {
+            block.next = materializeRawBlock(safePayload.next, id, `${path}/raw-next`, location);
+        }
         return id;
     };
 
-    compileExpression = (expression, parentId, path, expectedMetadata = null) => {
+    compileExpression = (expression, parentId, path, expectedMetadata = null, forceNonShadow = false) => {
         const location = expression.location;
         if (expression.type === 'Literal') {
             if (expression.valueType === 'boolean') {
@@ -1013,7 +1157,9 @@ const generateGraph = ir => {
                 (preferNumber ? 'math_number' : 'text');
             const field = useExpectedShadow ? expectedMetadata.shadowField :
                 (preferNumber ? 'NUM' : 'TEXT');
-            return createShadow(parentId, path, opcode, field, expression.value, location);
+            const id = createShadow(parentId, path, opcode, field, expression.value, location);
+            if (forceNonShadow) blocks[id].shadow = false;
+            return id;
         }
         if (expression.type === 'VariableReporter' || expression.type === 'ListReporter') {
             const id = stableId(targetId, path);
@@ -1188,9 +1334,16 @@ const generateGraph = ir => {
         const key = script.event.name;
         const occurrence = eventOccurrences[key] || 0;
         eventOccurrences[key] = occurrence + 1;
-        const unitId = `script:${key}#${occurrence}`;
+        const hash = unitHash(script);
+        const unitId = resolveUnitId(
+            script.unitId,
+            `script:${key}#${occurrence}`,
+            'script',
+            key,
+            hash
+        );
         const path = `unit/${unitId}`;
-        beginUnit(unitId, 'script', key, unitHash(script), script.location);
+        beginUnit(unitId, 'script', key, hash, script.location);
         const id = stableId(targetId, `${path}/root`);
         let eventBlock;
         if (script.event.rawPayload) {
@@ -1204,14 +1357,15 @@ const generateGraph = ir => {
             applyArguments(eventBlock, script.event.metadata, script.event.arguments, path, script.event.location);
         }
         const body = compileSequence(script.statements, id, `${path}/body`);
-        eventBlock.next = body.firstId;
+        if (body.firstId || !eventBlock.next) eventBlock.next = body.firstId;
         endUnit(id);
     });
 
     (ir.stacks || []).forEach((stack, stackIndex) => {
-        const unitId = `stack:#${stackIndex}`;
+        const hash = unitHash(stack);
+        const unitId = resolveUnitId(stack.unitId, `stack:#${stackIndex}`, 'stack', `stack ${stackIndex + 1}`, hash);
         const path = `unit/${unitId}`;
-        beginUnit(unitId, 'stack', `stack ${stackIndex + 1}`, unitHash(stack), stack.location);
+        beginUnit(unitId, 'stack', `stack ${stackIndex + 1}`, hash, stack.location);
         const body = compileSequence(stack.statements, null, `${path}/body`, true);
         if (!body.firstId) {
             currentUnit = null;
@@ -1224,13 +1378,20 @@ const generateGraph = ir => {
     });
 
     (ir.reporters || []).forEach((reporter, reporterIndex) => {
-        const unitId = `reporter:#${reporterIndex}`;
+        const hash = unitHash(reporter);
+        const unitId = resolveUnitId(
+            reporter.unitId,
+            `reporter:#${reporterIndex}`,
+            'reporter',
+            `reporter ${reporterIndex + 1}`,
+            hash
+        );
         const path = `unit/${unitId}`;
         beginUnit(
             unitId,
             'reporter',
             `reporter ${reporterIndex + 1}`,
-            unitHash(reporter),
+            hash,
             reporter.location
         );
         const reporterId = compileExpression(reporter.expression, null, `${path}/root`);
@@ -1244,9 +1405,16 @@ const generateGraph = ir => {
     });
 
     ir.procedures.forEach((procedure, procedureIndex) => {
-        const unitId = `procedure:${procedure.name}`;
+        const hash = unitHash(procedure);
+        const unitId = resolveUnitId(
+            procedure.unitId,
+            `procedure:${procedure.name}`,
+            'procedure',
+            procedure.name,
+            hash
+        );
         const path = `unit/${unitId}`;
-        beginUnit(unitId, 'procedure', procedure.name, unitHash(procedure), procedure.location);
+        beginUnit(unitId, 'procedure', procedure.name, hash, procedure.location);
         const definitionId = stableId(targetId, `${path}/definition`);
         const prototypeId = stableId(targetId, `${path}/prototype`);
         const definition = makeBlock(definitionId, 'procedures_definition', null, true);
@@ -1255,15 +1423,15 @@ const generateGraph = ir => {
         addBlock(definition, procedure.location);
         const prototype = makeBlock(prototypeId, 'procedures_prototype', definitionId);
         prototype.shadow = true;
-        prototype.mutation = encodeProcedureTypes({
+        prototype.mutation = encodeProcedureTypes(Object.assign({}, procedure.mutation || {}, {
             tagName: 'mutation',
             children: [],
             proccode: procedure.proccode,
             argumentids: JSON.stringify(procedure.parameters.map(item => item.id)),
             argumentnames: JSON.stringify(procedure.parameters.map(item => item.name)),
-            argumentdefaults: JSON.stringify(procedure.parameters.map(item => item.valueType === 'boolean' ? false : '')),
+            argumentdefaults: JSON.stringify(procedure.parameters.map(item => item.defaultValue)),
             warp: String(Boolean(procedure.warp))
-        }, procedure);
+        }), procedure);
         addBlock(prototype, procedure.location);
         definition.inputs.custom_block = {name: 'custom_block', block: prototypeId, shadow: prototypeId};
         procedure.parameters.forEach(parameter => {
@@ -1297,18 +1465,39 @@ const generateGraph = ir => {
 };
 
 const compileText = (source, options = {}) => {
-    const parsed = parseText(source);
-    const semantic = analyzeAndBuildIR(parsed.ast, options);
-    const diagnostics = parsed.diagnostics.concat(semantic.diagnostics);
-    const success = !hasErrors(diagnostics);
-    return {
-        source,
-        ast: parsed.ast,
-        ir: semantic.ir,
-        graph: success ? generateGraph(semantic.ir) : null,
-        diagnostics,
-        success
-    };
+    try {
+        const parsed = parseText(source);
+        const semantic = analyzeAndBuildIR(parsed.ast, options);
+        const diagnostics = parsed.diagnostics.concat(semantic.diagnostics);
+        const success = !hasErrors(diagnostics);
+        return {
+            source,
+            ast: parsed.ast,
+            ir: semantic.ir,
+            graph: success ? generateGraph(semantic.ir) : null,
+            diagnostics,
+            success
+        };
+    } catch (error) {
+        return {
+            source,
+            ast: null,
+            ir: null,
+            graph: null,
+            diagnostics: [{
+                message: error instanceof RangeError ?
+                    'A conversão excedeu o limite seguro de complexidade ou aninhamento.' :
+                    `A conversão falhou de forma controlada: ${error.message}.`,
+                line: 1,
+                column: 1,
+                endLine: 1,
+                endColumn: 2,
+                severity: 'error',
+                code: error instanceof RangeError ? 'conversion-depth-limit' : 'conversion-internal-error'
+            }],
+            success: false
+        };
+    }
 };
 
 module.exports = {

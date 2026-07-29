@@ -81,9 +81,9 @@ nomes normalizados recebem sufixos determinísticos.
 
 Ramos vazios são escritos como `pass`, inclusive em `if/else`, e voltam a ser braços vazios no editor visual. Pilhas
 de comandos desconectadas de um evento usam `stack:`, enquanto repórteres soltos usam `reporter expressão`. Esses
-formatos preservam blocos válidos que existem no workspace sem alterar quando eles executam. Somente opcodes realmente
-desconhecidos permanecem exclusivamente como blocos e são identificados no resultado da conversão e no relatório
-técnico.
+formatos preservam blocos válidos que existem no workspace sem alterar quando eles executam. Opcodes desconhecidos
+usam `opaque.*`: permanecem estruturais e editáveis, são identificados no plano da conversão e nunca executam uma
+primitiva ausente.
 
 ## Execução e console
 
@@ -108,8 +108,9 @@ O painel de depuração mostra:
 
 A paleta **Comandos** reúne as ações do Monaco e do TextWarp. **Atalhos** permite alterar e persistir as teclas de compilar, executar, executar seleção, parar, reiniciar e formatar.
 
-A fonte é salva imediatamente no projeto e recebe snapshots locais após a edição. Antes de cada conversão manual,
-outro snapshot é criado e a faixa **Conversão realizada** oferece **Desfazer** e **Ver diferenças**. O painel
+A fonte é salva imediatamente no projeto e recebe snapshots locais após a edição. Antes de cada aplicação manual ou
+automática, um snapshot completo do alvo é criado e a faixa **Conversão realizada** oferece **Desfazer** e
+**Ver diferenças**. O painel
 **Histórico** restaura até 30 versões por módulo mesmo sem Git e continua disponível após fechar inesperadamente
 a aplicação. As abas recentes também são restauradas localmente.
 
@@ -137,11 +138,13 @@ antes de compartilhá-lo, pois ele inclui o código completo do módulo.
 **Programação** reúne os modos **Texto**, **Blocos**, **Dividido** e **Documentação** diretamente acima do editor.
 O explorador organiza o projeto em Atores e Palco, enquanto o Outline agrupa Variáveis, Procedimentos e Eventos.
 Cada arquivo aberto aparece como uma aba comum, com indicador de alteração, fechamento, reordenação e menu de contexto.
-**Converter** reúne Texto → Blocos, Blocos → Texto, sincronização automática e comparação. **Mais ações** concentra
-Paleta de comandos, Formatar, Dividir editor, Documentação, Editor externo e Preferências; o antigo botão Modelos não
-ocupa mais a interface. Em telas estreitas, a barra lateral vira uma sobreposição fechável por Escape e o palco começa
-recolhido. Em telas maiores, o palco pode ser arrastado, recolhido e restaurado; sua largura e a densidade compacta são
-persistidas no navegador. O campo permanente **Localizar** fica oculto; `Ctrl+F` abre a busca do Monaco sobre o editor.
+**Converter** reúne Texto → Blocos, Blocos → Texto, Blocos → Texto para o projeto inteiro, sincronização automática
+e comparação. A conversão do projeto inteiro processa palco e atores originais como módulos separados, só aplica
+depois de validar todos e pode ser desfeita em uma ação. **Mais ações** concentra Paleta de comandos, Formatar,
+Dividir editor, Documentação, Editor externo e Preferências; o antigo botão Modelos não ocupa mais a interface.
+Em telas estreitas, a barra lateral vira uma sobreposição fechável por Escape e o palco começa recolhido. Em telas
+maiores, o palco pode ser arrastado, recolhido e restaurado; sua largura e a densidade compacta são persistidas no
+navegador. O campo permanente **Localizar** fica oculto; `Ctrl+F` abre a busca do Monaco sobre o editor.
 
 Quando texto e blocos divergem, a própria IDE oferece **Comparar alterações**, **Usar texto**, **Usar blocos** e
 **Cancelar**; não há confirmação isolada do navegador nem substituição silenciosa. Os itens de **Problemas** exibem

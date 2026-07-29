@@ -74,7 +74,7 @@ on green_flag:
     assert.equal(result.success, false);
     assert.equal(result.graph, null);
     assert.ok(result.diagnostics.some(item => item.code === 'command-not-allowed-on-stage'));
-    assert.ok(result.diagnostics.some(item => item.code === 'invalid-argument-type'));
+    assert.ok(result.diagnostics.some(item => item.code === 'scratch-coercion' && item.severity === 'warning'));
 });
 
 test('keeps IDs stable when an unrelated command is inserted', () => {

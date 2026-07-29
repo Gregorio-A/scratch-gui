@@ -148,6 +148,22 @@ if (!process.env.CI) {
     base.plugins.push(new webpack.ProgressPlugin());
 }
 
+const conversionWorkerConfig = defaultsDeep({}, base, {
+    name: 'textwarp-conversion-worker',
+    target: 'webworker',
+    entry: {
+        'textwarp-conversion-worker': './src/lib/textwarp/conversion-worker.js'
+    }
+});
+conversionWorkerConfig.output = Object.assign({}, conversionWorkerConfig.output, {
+    path: path.resolve(__dirname, 'build'),
+    filename: 'js/[name].js',
+    chunkFilename: 'js/[name].[id].js'
+});
+delete conversionWorkerConfig.output.library;
+conversionWorkerConfig.optimization = {splitChunks: false};
+conversionWorkerConfig.plugins = [];
+
 module.exports = [
     // to run editor examples
     defaultsDeep({}, base, {
@@ -254,7 +270,8 @@ module.exports = [
                 ]
             })
         ])
-    })
+    }),
+    conversionWorkerConfig
 ].concat(
     process.env.NODE_ENV === 'production' || process.env.BUILD_MODE === 'dist' ? (
         // export as library

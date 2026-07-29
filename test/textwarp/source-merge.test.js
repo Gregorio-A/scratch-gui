@@ -9,7 +9,7 @@ const {mergeVisualSource} = require('../../src/lib/textwarp/source-merge');
 const options = {targetId: 'sprite', stageId: 'stage', targetName: 'Player', isStage: false};
 const compile = source => compileText(source, options);
 
-test('preserves comments, spacing and textual order outside a visually changed unit', () => {
+test('reports a conflict instead of discarding comments inside a visually changed unit', () => {
     const base = `actor Player
 
 # comentário do evento
@@ -36,12 +36,8 @@ procedure greet(name: string):
         textCompilation: compile(base),
         visualCompilation: compile(visual)
     });
-    assert.deepEqual(result.conflicts, []);
-    assert.match(result.source, /# comentário do evento/);
-    assert.match(result.source, /move\(20\)/);
-    assert.match(result.source, /# comentário do procedimento/);
-    assert.match(result.source, /say\( name \)/);
-    assert.ok(result.source.indexOf('on green_flag:') < result.source.indexOf('procedure greet'));
+    assert.deepEqual(result.conflicts, ['comment:script:green_flag#0']);
+    assert.equal(result.source, null);
 });
 
 test('automatically merges independent text and block units', () => {

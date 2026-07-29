@@ -6,7 +6,15 @@ const {compileText} = require('./compiler');
 const {decompileTarget} = require('./decompiler');
 const {sanitizeIdentifier} = require('./identifier');
 const {buildExtensionCatalog} = require('./extension-catalog');
-const {applyCompilation, readSourceRecord, writeSourceRecord} = require('./vm-adapter');
+const {
+    adoptImportedRoots,
+    applyCompilation,
+    blockFingerprint,
+    captureTargetSnapshot,
+    createImportedSourceRecord,
+    readSourceRecord,
+    restoreTargetSnapshot
+} = require('./vm-adapter');
 
 const FORMAT_NAME = 'textwarp-project';
 const FORMAT_VERSION = 1;
@@ -17,6 +25,7 @@ const PACKAGE_LIMITS = Object.freeze({
     jsonBytes: 1024 * 1024,
     modules: 1024,
     sourceBytes: 4 * 1024 * 1024,
+    stateBytes: 16 * 1024 * 1024,
     totalUncompressedBytes: 512 * 1024 * 1024
 });
 
@@ -90,11 +99,23 @@ const isSourcePath = value => (
     value.split('/').every(segment => segment && segment !== '.' && segment !== '..')
 );
 
+const isStatePath = value => (
+    typeof value === 'string' &&
+    value.startsWith('state/') &&
+    value.endsWith('.json') &&
+    !value.includes('\\') &&
+    value.split('/').every(segment => segment && segment !== '.' && segment !== '..')
+);
+
 const safeModuleFilename = (module, index) => {
     const kind = module.isStage ? 'stage' : sanitizeIdentifier(module.name, `actor_${index + 1}`).toLowerCase();
     const identity = sanitizeIdentifier(module.moduleId, String(index + 1)).slice(0, 48);
     return `sources/${kind}-${identity}.tw`;
 };
+
+const safeStateFilename = (module, index) => safeModuleFilename(module, index)
+    .replace(/^sources\//, 'state/')
+    .replace(/\.tw$/, '.json');
 
 const packTextwarp = async ({projectData, modules, extensions = [], metadata = {}}) => {
     if (byteLength(projectData) > PACKAGE_LIMITS.compiledProjectBytes) {
@@ -107,12 +128,19 @@ const packTextwarp = async ({projectData, modules, extensions = [], metadata = {
         if (encodedByteLength(module.sourceText || '') > PACKAGE_LIMITS.sourceBytes) {
             throw new Error(`A fonte do módulo "${module.name || 'sem nome'}" excede o limite de tamanho.`);
         }
+        if (
+            module.conversionState &&
+            encodedByteLength(JSON.stringify(module.conversionState)) > PACKAGE_LIMITS.stateBytes
+        ) {
+            throw new Error(`O estado do módulo "${module.name || 'sem nome'}" excede o limite de tamanho.`);
+        }
     });
     const zip = new JSZip();
     const compiledBytes = asArrayBuffer(projectData);
     const compiledZip = await JSZip.loadAsync(compiledBytes);
     const manifestModules = modules.map((module, index) => Object.assign({}, module, {
-        source: safeModuleFilename(module, index)
+        source: safeModuleFilename(module, index),
+        state: module.conversionState ? safeStateFilename(module, index) : null
     }));
     const manifest = {
         format: FORMAT_NAME,
@@ -127,7 +155,8 @@ const packTextwarp = async ({projectData, modules, extensions = [], metadata = {
             targetId: module.targetId || null,
             name: module.name,
             isStage: Boolean(module.isStage),
-            source: module.source
+            source: module.source,
+            state: module.state
         })),
         extensions: 'extensions/lock.json'
     };
@@ -135,7 +164,10 @@ const packTextwarp = async ({projectData, modules, extensions = [], metadata = {
     zip.file('manifest.json', JSON.stringify(manifest, null, 2));
     zip.file('compiled/project.sb3', compiledBytes);
     zip.file('extensions/lock.json', JSON.stringify({formatVersion: 1, extensions}, null, 2));
-    manifestModules.forEach(module => zip.file(module.source, module.sourceText || ''));
+    manifestModules.forEach(module => {
+        zip.file(module.source, module.sourceText || '');
+        if (module.state) zip.file(module.state, JSON.stringify(module.conversionState));
+    });
 
     const projectJsonFile = compiledZip.file('project.json');
     if (projectJsonFile) zip.file('project/project.json', await projectJsonFile.async('uint8array'));
@@ -174,20 +206,33 @@ const unpackTextwarp = async data => {
     }
     const modules = [];
     const sourcePaths = new Set();
+    const statePaths = new Set();
     for (const module of manifest.modules) {
         if (!module || !isSourcePath(module.source) || sourcePaths.has(module.source)) {
             throw new Error(`Caminho de fonte inválido ou duplicado: ${module && module.source}.`);
         }
         sourcePaths.add(module.source);
+        if (module.state && (!isStatePath(module.state) || statePaths.has(module.state))) {
+            throw new Error(`Caminho de estado inválido ou duplicado: ${module.state}.`);
+        }
+        if (module.state) statePaths.add(module.state);
         const sourceFile = zip.file(module.source);
         if (!sourceFile) throw new Error(`Fonte ausente no pacote: ${module.source}.`);
+        const stateFile = module.state ? zip.file(module.state) : null;
+        if (module.state && !stateFile) throw new Error(`Estado de conversão ausente no pacote: ${module.state}.`);
         modules.push(Object.assign({}, module, {
             sourceText: await readLimited(
                 sourceFile,
                 'string',
                 PACKAGE_LIMITS.sourceBytes,
                 module.source
-            )
+            ),
+            conversionState: stateFile ? JSON.parse(await readLimited(
+                stateFile,
+                'string',
+                PACKAGE_LIMITS.stateBytes,
+                module.state
+            )) : null
         }));
     }
     let projectData = null;
@@ -225,15 +270,64 @@ const originalTargets = vm => (vm.runtime.targets || []).filter(target => target
 const exportTextwarpProject = async (vm, metadata = {}) => {
     if (!vm || typeof vm.saveProjectSb3 !== 'function') throw new Error('A VM não pode salvar um projeto SB3.');
     const extensionCatalog = buildExtensionCatalog(vm);
+    const stage = vm.runtime.getTargetForStage && vm.runtime.getTargetForStage();
+    const stageRecord = stage && readSourceRecord(stage);
+    const generatedAcrossProject = new Set(originalTargets(vm).flatMap(runtimeTarget => {
+        const runtimeRecord = readSourceRecord(runtimeTarget);
+        return runtimeRecord ? runtimeRecord.generatedVariables : [];
+    }).map(item => item.id));
     const modules = originalTargets(vm).map(target => {
         const record = readSourceRecord(target);
+        if (record && (
+            record.hasDraft ||
+            !record.blockFingerprint ||
+            record.blockFingerprint !== blockFingerprint(target)
+        )) {
+            throw new Error(
+                `Não é possível exportar "${target.getName ? target.getName() : target.id}": ` +
+                'o texto e os blocos possuem alterações não sincronizadas.'
+            );
+        }
         const decompiled = record ? null : decompileTarget(target, {extensionCatalog});
+        const sourceText = record ? record.source : decompiled.source;
+        const moduleId = record && record.moduleId ? record.moduleId : target.id;
+        const compilation = compileText(sourceText, {
+            targetId: moduleId,
+            stageId: stageRecord && stageRecord.moduleId ? stageRecord.moduleId : stage && stage.id,
+            targetName: target.getName ? target.getName() : target.id,
+            isStage: target.isStage,
+            variables: variableOptions(vm, target, record && record.generatedVariables),
+            broadcasts: Object.values(stage && stage.variables || {})
+                .filter(variable => variable.type === 'broadcast_msg')
+                .map(variable => ({
+                    id: variable.id,
+                    name: variable.name,
+                    generated: generatedAcrossProject.has(variable.id)
+                })),
+            previousUnits: record && record.units || [],
+            extensionCatalog
+        });
+        if (!compilation.success) {
+            throw new Error(
+                `Não é possível exportar "${target.getName ? target.getName() : target.id}": ` +
+                'a fonte contém erros de conversão.'
+            );
+        }
+        const conversionState = record || createImportedSourceRecord(
+            target,
+            sourceText,
+            decompiled.importedRootIds,
+            decompiled.sourceMap,
+            compilation
+        );
+        conversionState.blockFingerprint = blockFingerprint(target);
         return {
-            moduleId: record && record.moduleId ? record.moduleId : target.id,
+            moduleId,
             targetId: target.id,
             name: target.getName ? target.getName() : target.sprite && target.sprite.name || (target.isStage ? 'Stage' : 'Actor'),
             isStage: target.isStage,
-            sourceText: record ? record.source : decompiled.source
+            sourceText,
+            conversionState
         };
     });
     const extensionURLs = vm.extensionManager && typeof vm.extensionManager.getExtensionURLs === 'function' ?
@@ -260,7 +354,8 @@ const variableOptions = (vm, target, generatedVariables) => {
             name: variable.name,
             variableType: variable.type,
             owner: ownerName,
-            generated: generated.has(variable.id)
+            generated: generated.has(variable.id),
+            isCloud: Boolean(variable.isCloud)
         });
     });
     append(target, 'target');
@@ -270,6 +365,12 @@ const variableOptions = (vm, target, generatedVariables) => {
 };
 
 const targetForModule = (vm, module, usedTargets) => {
+    const exact = module.targetId && vm.runtime.getTargetById && vm.runtime.getTargetById(module.targetId);
+    if (
+        exact &&
+        !usedTargets.has(exact.id) &&
+        Boolean(exact.isStage) === Boolean(module.isStage)
+    ) return exact;
     if (module.isStage) return vm.runtime.getTargetForStage && vm.runtime.getTargetForStage();
     const targets = originalTargets(vm).filter(target => !target.isStage && !usedTargets.has(target.id));
     return targets.find(target => (target.getName ? target.getName() : target.sprite && target.sprite.name) === module.name) || targets[0];
@@ -332,22 +433,18 @@ const importTextwarpProject = async (vm, data) => {
         }
         usedTargets.add(target.id);
         const existing = readSourceRecord(target);
-        const seedRecord = Object.assign({}, existing || {}, {
-            source: module.sourceText,
-            moduleId: module.moduleId || target.id,
-            languageVersion: unpacked.manifest.languageVersion || '0.3'
-        });
-        const record = writeSourceRecord(vm, target, seedRecord);
+        const conversionState = module.conversionState || existing || {};
+        const moduleId = module.moduleId || target.id;
         const generatedAcrossProject = new Set(originalTargets(vm).flatMap(runtimeTarget => {
             const runtimeRecord = readSourceRecord(runtimeTarget);
             return runtimeRecord ? runtimeRecord.generatedVariables : [];
         }).map(item => item.id));
         const compilation = compileText(module.sourceText, {
-            targetId: record.moduleId,
+            targetId: moduleId,
             stageId,
             targetName: target.getName ? target.getName() : module.name,
             isStage: target.isStage,
-            variables: variableOptions(vm, target, record.generatedVariables),
+            variables: variableOptions(vm, target, conversionState.generatedVariables),
             broadcasts: Object.values(vm.runtime.getTargetForStage().variables || {})
                 .filter(variable => variable.type === 'broadcast_msg')
                 .map(variable => ({
@@ -355,9 +452,37 @@ const importTextwarpProject = async (vm, data) => {
                     name: variable.name,
                     generated: generatedAcrossProject.has(variable.id)
                 })),
+            previousUnits: conversionState.units || [],
             extensionCatalog
         });
-        if (compilation.success) applyCompilation(vm, target, compilation);
+        if (compilation.success) {
+            const transactionSnapshot = captureTargetSnapshot(vm, target);
+            try {
+                let roots = conversionState.generatedRootIds;
+                let sourceMap = conversionState.sourceMap || {};
+                if (
+                    !Array.isArray(roots) ||
+                    roots.length === 0 ||
+                    roots.some(rootId => !target.blocks.getBlock(rootId))
+                ) {
+                    const loadedVisual = decompileTarget(target, {extensionCatalog});
+                    roots = loadedVisual.importedRootIds;
+                    sourceMap = loadedVisual.sourceMap;
+                }
+                adoptImportedRoots(vm, target, module.sourceText, roots, sourceMap, compilation);
+                const adopted = readSourceRecord(target);
+                if (adopted) {
+                    adopted.moduleId = moduleId;
+                    adopted.generatedVariables = conversionState.generatedVariables || adopted.generatedVariables;
+                    adopted.resourceBindings = conversionState.resourceBindings || adopted.resourceBindings;
+                    adopted.breakpoints = conversionState.breakpoints || adopted.breakpoints;
+                }
+                applyCompilation(vm, target, compilation);
+            } catch (error) {
+                restoreTargetSnapshot(vm, target, transactionSnapshot);
+                throw error;
+            }
+        }
         diagnostics.push({module: module.name, success: compilation.success, diagnostics: compilation.diagnostics});
     });
     if (typeof vm.emitTargetsUpdate === 'function') vm.emitTargetsUpdate();

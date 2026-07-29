@@ -40,6 +40,11 @@ const appendUnit = (source, unitText) => {
     return `${base}${base ? '\n\n' : ''}${unitText.replace(/^\s+|\s+$/g, '')}`;
 };
 
+const userCommentLines = text => String(text).split('\n').filter(line => {
+    const marker = line.indexOf('#');
+    return marker >= 0 && !line.includes('@textwarp:');
+}).map(line => line.trim());
+
 const patchUnits = (destinationSource, destinationCompilation, sourceSource, sourceCompilation, unitIds) => {
     const destinationParts = unitRanges(destinationSource, destinationCompilation);
     const sourceParts = unitRanges(sourceSource, sourceCompilation);
@@ -110,6 +115,15 @@ const mergeVisualSource = options => {
         if (textChanged && visualChanged && textHash !== visualHash) conflicts.push(unitId);
         else if (visualChanged && !textChanged) visualOnly.push(unitId);
         else if (textChanged && !visualChanged) textOnly.push(unitId);
+    });
+    const textRanges = unitRanges(textSource, textCompilation).ranges;
+    const visualRanges = unitRanges(visualSource, visualCompilation).ranges;
+    visualOnly.forEach(unitId => {
+        const textRange = textRanges.get(unitId);
+        if (!textRange) return;
+        const comments = userCommentLines(textRange.text);
+        const visualComments = userCommentLines((visualRanges.get(unitId) || {}).text || '');
+        if (comments.some(comment => !visualComments.includes(comment))) conflicts.push(`comment:${unitId}`);
     });
     if (conflicts.length) return {source: null, conflicts, mergedUnits: [], canonicalFallback: false};
 

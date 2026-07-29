@@ -34,6 +34,9 @@ jobs:
       - name: Validate TextWarp documentation
         run: npm run docs:textwarp:check
 
+      - name: Run TextWarp conversion tests
+        run: npm run test:textwarp
+
       - name: Build web application
         run: npm run build:textwarp:web
 

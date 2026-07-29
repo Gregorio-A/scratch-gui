@@ -32,8 +32,10 @@ Select the stage or an actor in the regular Scratch target pane. Each target bec
 The Code, Blocks and Split views edit the same target. Dual editor opens two different target modules and keeps
 each Monaco model independent.
 
-TextWarp automatically validates text after an edit and compiles the last valid version. Use **Text to Blocks**
-for an explicit conversion, Run for the green flag, Stop to stop all threads and Restart to compile then run again.
+TextWarp automatically validates text after an edit and compiles the last valid version while **Automatic
+synchronization** is enabled. Turning it off disables both directions: typing only analyzes and saves source, and
+visual edits remain explicitly marked as divergent. Use **Text to Blocks** for an explicit conversion, Run for the
+green flag, Stop to stop all threads and Restart to compile then run again.
 
 The project sidebar exposes editable modules, resources, search, symbols and local history. The lower panel keeps
 Problems, Console, Debugger and extension information in separate tabs. All panels can be resized.
@@ -159,6 +161,7 @@ A `.textwarp` file is a ZIP package containing:
 
 - `manifest.json`;
 - editable target sources;
+- per-target root ownership and conversion state;
 - a compiled Scratch project;
 - assets and project resources;
 - an extension lock when third-party dependencies are used.
@@ -169,13 +172,21 @@ This prevents common ZIP bomb and path traversal attacks.
 ## Block import
 
 Blocks to Text decompiles existing Scratch stacks into named TextWarp syntax. Unavailable historical or
-third-party opcodes remain visible as blocks and are reported instead of being silently replaced with unsafe raw
-code.
+third-party opcodes use non-executing `opaque.*` syntax that retains fields, inputs, shadows, mutations, branches
+and stack order. The containing root is adopted once, so supported commands around an unavailable block cannot be
+duplicated.
+
+For `.sb3` projects with many actors, use **Convert → Blocks to Text — Entire Project**. The IDE decompiles the
+stage and every original actor in one action, validates every module before changing the project, and creates one
+Undo snapshot. If any module fails, changes during processing, or already contains different TextWarp source, no
+target is changed. Each target remains a separate `.tw` module in the explorer.
 
 ## Synchronized visual editing
 
-Blocks and text are compared at compilation-unit level. Independent edits merge automatically. When both sides
-modify the same semantic unit, TextWarp shows a conflict and lets the user keep text or accept the visual blocks.
+Blocks and text are compared at compilation-unit level. Independent edits merge automatically. Comments inside a
+visually changed unit create an explicit conflict instead of disappearing. **Compare versions** performs a fresh
+decompile and reports added, removed, changed and opaque units. Every manual or automatic apply stores a complete
+undo snapshot. Targets with unowned visual roots require a replace, add or cancel scope choice.
 
 ## Concurrent debugger
 
@@ -186,7 +197,8 @@ JIT.
 ## Incremental compilation
 
 Stable unit and block identifiers allow TextWarp to replace only changed scripts or procedures. Unchanged block
-objects, comments and visual coordinates are preserved.
+objects, comments and visual coordinates are preserved. Apply is transactional and waits until a running project
+stops.
 
 ## Architecture
 
@@ -201,11 +213,17 @@ The shared editor lives in `scratch-gui`:
 
 TextWarp records source metadata in project comments so a compatible `.sb3` can restore textual modules. The
 `.textwarp` package remains the recommended editable format because it stores sources and dependencies
-explicitly.
+explicitly. Export refuses invalid or divergent source/block versions. Marker-free Scratch roots receive a package
+ownership map, and import matches the saved target ID before name/order migration.
 
 ## Current limits
 
-- Some historical or private extension opcodes cannot be reconstructed without the original extension.
+- Opaque historical or private extension blocks remain structurally editable, but cannot execute without the
+  original authorized extension.
+- Interactive compilation, decompilation, and comparison use a cancellable Worker; only the final transactional
+  VM apply remains on the main thread.
+- Automatic conversion is bounded at 100,000 source characters or 10,000 blocks; larger modules use explicit
+  conversion to keep typing and visual events responsive.
 - Scratch cloud variables and network features still follow the host platform policy.
 - Browser filesystem handles depend on File System Access API support; download/upload remains the fallback.
 - External editor synchronization is explicit: write the `.tw` file, edit it externally, then reload it.
