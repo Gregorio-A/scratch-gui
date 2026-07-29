@@ -87,9 +87,10 @@ Conversion is a file-level menu with explicit synchronization state; **More acti
 formatting, split editor, documentation, external editor, and preferences. On mobile, the sidebar becomes a dismissible
 overlay and the stage starts collapsed to preserve code space.
 
-The right dock follows Stage, Actor Inspector, then one Actors/Backdrops tabbed area. The explorer groups modules
-under Actors and Stage, while Outline groups Variables, Procedures, and Events. When text and blocks differ, the
-in-app conflict surface offers Compare, Use text, Use blocks, and Cancel instead of silently replacing work.
+The right dock follows Stage, Actor Inspector, then one Actors/Backdrops tabbed area. Both target tabs expand with
+the dock, retain at least 12 rem of working height, and scroll long actor lists inside that area. The explorer groups
+modules under Actors and Stage, while Outline groups Variables, Procedures, and Events. When text and blocks differ,
+the in-app conflict surface offers Compare, Use text, Use blocks, and Cancel instead of silently replacing work.
 
 Configurable shortcuts support letters, digits, function keys, arrows, navigation keys, Space, Tab, Escape,
 Backspace and Delete. Invalid or duplicate shortcuts produce visible feedback and retain the default binding.

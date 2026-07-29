@@ -138,12 +138,15 @@ test('refined workspace compacts targets and protects text-block conversions', (
     const guiSource = readSource('src/components/gui/gui.jsx');
     const menuSource = readSource('src/components/menu-bar/menu-bar.jsx');
     const selectorSource = readSource('src/components/sprite-selector/sprite-selector.jsx');
+    const selectorStyles = readSource('src/components/sprite-selector/sprite-selector.css');
     const sidebarSource = readSource('src/components/textwarp-editor/ide-sidebar.jsx');
 
     assert.match(guiSource, /id="tw\.gui\.programmingTab"/);
     assert.doesNotMatch(guiSource, /styles\.actorNavigation/);
     assert.match(selectorSource, /\['actors', messages\.actors\][\s\S]*?\['backdrops', messages\.backdrops\]/);
     assert.match(selectorSource, /className=\{styles\.targetTabs\}/);
+    assert.match(selectorStyles, /\.target-panel \{[\s\S]*?min-height: 12rem;[\s\S]*?flex: 1 0 clamp/);
+    assert.match(selectorStyles, /\.scroll-wrapper \{[\s\S]*?min-height: 9rem;[\s\S]*?overflow-y: auto/);
     assert.doesNotMatch(menuSource, /<SettingsMenu/);
     assert.match(controlsSource, /id: 'tw\.controls\.run'/);
     assert.match(controlsSource, /id: 'tw\.controls\.pause'/);

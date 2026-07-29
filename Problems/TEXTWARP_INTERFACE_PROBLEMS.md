@@ -1,6 +1,6 @@
 # TextWarp Interface Remediation Report
 
-Status: **resolved on 2026-07-26**.
+Status: **resolved on 2026-07-26; follow-up reviewed on 2026-07-29**.
 
 This document is the completed acceptance checklist for the TextWarp interface audit. It covers layout, interaction,
 navigation, menus, responsive behavior, accessibility, visual feedback, performance safeguards, state restoration, and
@@ -65,6 +65,8 @@ sidebar, editor, resizable stage/inspector, bottom panel, and status bar.
 - [x] **P1 — Stage and inspector consumed a rigid column.** The stage dock is collapsible and horizontally resizable,
   persists its width in browser storage, and uses a single Compact/Normal/Expanded view selector. The actor inspector
   uses consistent labels, units, and a visibility switch.
+- [x] **P1 — Actors and Backdrops were hard-capped to short panels.** Both target tabs now grow with the stage dock,
+  retain a 12 rem minimum working height, and keep long actor lists scrollable instead of showing only a narrow strip.
 
 ## Completed accessibility and interaction work
 
@@ -115,7 +117,8 @@ sidebar, editor, resizable stage/inspector, bottom panel, and status bar.
   direct-action count, mobile 44px targets, desktop density, and no root horizontal overflow.
 - [x] **P2 — No visual regression baseline.** `test/fixtures/textwarp-interface-layout-baseline.json` is the committed
   deterministic layout baseline; the browser test compares live production DOM measurements against it and checks panel
-  boundaries/focus behavior. Theme colors remain token-driven, avoiding a theme-specific duplicated baseline.
+  boundaries/focus behavior, including the minimum Actors and Backdrops panel heights. Theme colors remain token-driven,
+  avoiding a theme-specific duplicated baseline.
 
 ## Validation
 

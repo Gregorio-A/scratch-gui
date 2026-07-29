@@ -104,6 +104,40 @@ describe('TextWarp Monaco editor', () => {
         await driver.wait(until.elementTextContains(suggestions, 'wait'), 10000);
     });
 
+    test('keeps the Actors and Backdrops target panels readable', async () => {
+        await driver.manage()
+            .window()
+            .setSize(1440, 1000);
+        await driver.get(uri);
+        const targetTabs = await driver.wait(
+            until.elementLocated(By.xpath(
+                '//*[@role="tablist" and .//button[normalize-space()="Actors"] ' +
+                'and .//button[normalize-space()="Backdrops"]]'
+            )),
+            20000
+        );
+        const actorsPanel = await targetTabs.findElement(By.xpath(
+            './following-sibling::*[@role="tabpanel"]'
+        ));
+        const actorsHeight = await driver.executeScript(
+            'return arguments[0].getBoundingClientRect().height;',
+            actorsPanel
+        );
+        expect(Math.round(actorsHeight)).toBeGreaterThanOrEqual(192);
+
+        await targetTabs.findElement(By.xpath(
+            './/button[normalize-space()="Backdrops"]'
+        )).click();
+        const backdropsPanel = await targetTabs.findElement(By.xpath(
+            './following-sibling::*[@role="tabpanel"]'
+        ));
+        const backdropsHeight = await driver.executeScript(
+            'return arguments[0].getBoundingClientRect().height;',
+            backdropsPanel
+        );
+        expect(Math.round(backdropsHeight)).toBeGreaterThanOrEqual(192);
+    });
+
     test('matches the responsive interface layout and accessibility baseline', async () => {
         await driver.get(uri);
         await driver.manage()

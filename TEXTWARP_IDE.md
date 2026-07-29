@@ -127,8 +127,9 @@ rastreáveis: inserir ou remover linhas move também a posição persistida do b
 **Problemas**, **Console**, **Depurador**, **Saída** e **Mochila** dividem a área inferior por abas e só a ferramenta
 ativa ocupa espaço. A barra de atividades abre **Arquivos**, **Pesquisa**, **Atores**, **Extensões**,
 **Documentação** e **Configurações**. A coluna direita segue a ordem **Palco**, **Inspetor** e uma área única com
-abas **Atores/Cenários**. Divisores arrastáveis redimensionam a barra lateral, o painel inferior, o palco e a
-proporção de **Dividido**; os valores ficam salvos localmente.
+abas **Atores/Cenários**. As duas abas de alvos acompanham o espaço disponível, conservam pelo menos 12 rem de altura
+útil e rolam listas longas de atores dentro dessa área. Divisores arrastáveis redimensionam a barra lateral, o painel
+inferior, o palco e a proporção de **Dividido**; os valores ficam salvos localmente.
 
 O painel **Problemas** oferece **Copiar relatório técnico** e **Baixar relatório técnico** mesmo quando não há
 diagnósticos. O relatório reúne estado do editor, falha de carregamento do Monaco, resultado Blocos → Texto, opcodes
