@@ -403,6 +403,27 @@ const parseText = source => {
                 continue;
             }
 
+            // Scratch projects commonly use a variable named "return". An
+            // explicit assignment is unambiguous and must be recognized before
+            // the TextWarp return statement below.
+            const assignmentMatch = token.content.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(\+=|-=|=(?!=))\s*(.+)$/);
+            if (assignmentMatch) {
+                statements.push({
+                    type: 'AssignmentStatement',
+                    name: assignmentMatch[1],
+                    operator: assignmentMatch[2],
+                    value: parseExpression(
+                        assignmentMatch[3],
+                        token,
+                        diagnostics,
+                        token.content.indexOf(assignmentMatch[3])
+                    ),
+                    location: token
+                });
+                index++;
+                continue;
+            }
+
             const returnMatch = token.content.match(/^return(?:\s+(.+))?$/);
             if (returnMatch) {
                 statements.push({
@@ -463,24 +484,6 @@ const parseText = source => {
                     statements.push({type: 'ExtensionFlowStatement', expression: header, branches, location: token});
                     continue;
                 }
-            }
-
-            const assignmentMatch = token.content.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(\+=|-=|=(?!=))\s*(.+)$/);
-            if (assignmentMatch) {
-                statements.push({
-                    type: 'AssignmentStatement',
-                    name: assignmentMatch[1],
-                    operator: assignmentMatch[2],
-                    value: parseExpression(
-                        assignmentMatch[3],
-                        token,
-                        diagnostics,
-                        token.content.indexOf(assignmentMatch[3])
-                    ),
-                    location: token
-                });
-                index++;
-                continue;
             }
 
             const expression = parseExpression(token.content, token, diagnostics);

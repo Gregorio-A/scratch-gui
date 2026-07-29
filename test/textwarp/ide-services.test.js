@@ -377,7 +377,10 @@ test('project resources are validated and stable bindings follow resource rename
     assert.equal(valid.success, true);
     assert.equal(valid.graph.resourceBindings[0].resourceId, 'sound-id');
     const invalid = compileText('actor Cat\n\non green_flag:\n    play_sound("missing")', options);
-    assert.ok(invalid.diagnostics.some(item => item.code === 'missing-project-resource'));
+    assert.equal(invalid.success, true);
+    assert.ok(invalid.diagnostics.some(item =>
+        item.code === 'missing-project-resource' && item.severity === 'warning'
+    ));
 
     const rebound = synchronizeStableReferences(
         valid.source,

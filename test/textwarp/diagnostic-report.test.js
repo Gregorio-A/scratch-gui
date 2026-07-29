@@ -41,7 +41,7 @@ test('technical report includes conversion, Monaco, diagnostics and current sour
     assert.match(report, /Monaco error: AMD loader unavailable/);
     assert.match(report, /Gear Speed °\/s/);
     assert.match(report, /- pen/);
-    assert.match(report, /Unsupported opcodes: legacy_block/);
+    assert.match(report, /Opaque-preserved opcodes: legacy_block/);
     assert.match(report, /ERROR L13:5 \[unknown-variable\]/);
     assert.match(report, /runtime failure/);
     assert.match(report, /console message/);

@@ -3,7 +3,7 @@
 const {blockRegistry, eventRegistry} = require('./block-registry');
 const {encodeConversionMetadata} = require('./conversion-metadata');
 const {dynamicMetadata} = require('./extension-catalog');
-const {assignSourceNames, sanitizeIdentifier} = require('./identifier');
+const {RESERVED_IDENTIFIERS, assignSourceNames, sanitizeIdentifier} = require('./identifier');
 const {decodeArgumentTypes, decodeParameterIdType, decodeReturnType} = require('./procedure-metadata');
 
 const quote = value => JSON.stringify(String(value));
@@ -86,6 +86,7 @@ const decompileTarget = (target, options = {}) => {
     const variableNames = new Map();
     const procedureByCode = new Map();
     const usedProcedureNames = new Set([
+        ...RESERVED_IDENTIFIERS,
         ...Object.keys(blockRegistry),
         ...Object.keys(eventRegistry),
         ...Object.keys(options.extensionCatalog || {}),
@@ -273,7 +274,7 @@ const decompileTarget = (target, options = {}) => {
         );
         const parameterTypes = decodeArgumentTypes(prototype.mutation, fallbackParameterTypes);
         const name = uniqueName(rawName, `procedure_${index + 1}`, usedProcedureNames);
-        const usedParameters = new Set();
+        const usedParameters = new Set(RESERVED_IDENTIFIERS);
         const parameters = parameterNames.map((raw, parameterIndex) => ({
             id: parameterIds[parameterIndex],
             rawName: raw,

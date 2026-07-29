@@ -93,6 +93,23 @@ on green_flag:
     assert.deepEqual(compilation.graph.declarations.find(variable => variable.name === 'points').initialValue, [-3, 0, 4]);
 });
 
+test('assignments to a Scratch variable named return remain command assignments', () => {
+    const compilation = compileText(`actor Player
+variable return = "6F"
+procedure get_byte() warp:
+    return = "FF"
+on green_flag:
+    get_byte()
+    say(return)`, options);
+    assert.equal(compilation.success, true, JSON.stringify(compilation.diagnostics));
+    assert.equal(compilation.diagnostics.some(item =>
+        ['invalid-expression-character', 'return-in-command-procedure'].includes(item.code)
+    ), false);
+    assert.ok(Object.values(compilation.graph.blocks).some(block =>
+        block.opcode === 'data_setvariableto' && block.fields.VARIABLE.value === 'return'
+    ));
+});
+
 test('orphaned procedure reporters and built-in procedure name collisions use lossless syntax', () => {
     const blocks = {
         orphan: {

@@ -453,7 +453,8 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                 ) diagnostics.push(semanticDiagnostic(
                     `O recurso "${converted.value}" usado em "${name}" não existe no projeto atual.`,
                     location,
-                    'missing-project-resource'
+                    'missing-project-resource',
+                    'warning'
                 ));
                 if (matchedResource) resourceBindings.push({
                     resourceId: matchedResource.id,

@@ -1,6 +1,7 @@
 'use strict';
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const RESERVED_IDENTIFIERS = new Set(['and', 'false', 'not', 'or', 'true']);
 
 const isIdentifier = value => IDENTIFIER.test(String(value || ''));
 
@@ -15,7 +16,7 @@ const sanitizeIdentifier = (value, fallback = 'symbol') => {
 };
 
 const assignSourceNames = values => {
-    const used = new Set();
+    const used = new Set(RESERVED_IDENTIFIERS);
     return (Array.isArray(values) ? values : []).map((value, index) => {
         const base = sanitizeIdentifier(value && value.name, `value_${index + 1}`);
         let sourceName = base;
@@ -27,6 +28,7 @@ const assignSourceNames = values => {
 };
 
 module.exports = {
+    RESERVED_IDENTIFIERS,
     assignSourceNames,
     isIdentifier,
     sanitizeIdentifier

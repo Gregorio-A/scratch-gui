@@ -76,7 +76,7 @@ const createDiagnosticReport = (data = {}) => {
         line('Successful', data.conversion ? data.conversion.success : ''),
         line('Imported roots', data.conversion && data.conversion.importedRootCount),
         line('Unsupported roots', data.conversion && data.conversion.unsupportedRootCount),
-        line('Unsupported opcodes', unsupportedOpcodes.length ? unsupportedOpcodes.join(', ') : 'none'),
+        line('Opaque-preserved opcodes', unsupportedOpcodes.length ? unsupportedOpcodes.join(', ') : 'none'),
         '',
         `## Diagnostics (${diagnostics.length})`,
         diagnostics.length ? diagnostics.map(formatDiagnostic).join('\n') : '- none',
