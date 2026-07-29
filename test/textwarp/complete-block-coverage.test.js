@@ -169,8 +169,14 @@ test('all executable extension block kinds and argument types have named round-t
         id: 'weird-extension',
         name: 'Complete extension',
         menuInfo: {
-            fixed: {acceptReporters: false},
-            flexible: {acceptReporters: true}
+            fixed: {
+                acceptReporters: false,
+                items: ['one', {text: 'Second choice', value: 'two'}]
+            },
+            flexible: {
+                acceptReporters: true,
+                items: ['two', 'three']
+            }
         },
         customFieldTypes: {
             dial: {
@@ -236,8 +242,32 @@ test('all executable extension block kinds and argument types have named round-t
     const argumentsMetadata = Object.values(catalog).find(metadata => metadata.extensionOpcode === 'allArguments').arguments;
     assert.equal(argumentsMetadata.length, 12, 'imagem inline não é argumento executável');
     assert.equal(argumentsMetadata.find(argument => argument.originalName === 'FIXED').role, 'field');
+    assert.deepEqual(argumentsMetadata.find(argument => argument.originalName === 'FIXED').options, [
+        {label: 'one', value: 'one'},
+        {label: 'Second choice', value: 'two'}
+    ]);
     assert.equal(argumentsMetadata.find(argument => argument.originalName === 'FLEXIBLE').menuField, 'flexible');
+    assert.deepEqual(argumentsMetadata.find(argument => argument.originalName === 'FLEXIBLE').options, [
+        {label: 'two', value: 'two'},
+        {label: 'three', value: 'three'}
+    ]);
     assert.equal(argumentsMetadata.find(argument => argument.originalName === 'CUSTOM').shadowOpcode, 'weird-extension_dial');
+
+    const extensionName = Object.entries(catalog)
+        .find(([, metadata]) => metadata.extensionOpcode === 'allArguments')[0];
+    const fixedArgumentIndex = argumentsMetadata.findIndex(argument => argument.originalName === 'FIXED');
+    const argumentPrefix = argumentsMetadata.slice(0, fixedArgumentIndex).map(argumentSource).join(', ');
+    const menuCompletions = getCompletions(
+        `actor Player\n\non green_flag:\n    ${extensionName}(${argumentPrefix}, "Se")`,
+        4,
+        `    ${extensionName}(${argumentPrefix}, "Se`.length + 1,
+        {extensionCatalog: catalog, isStage: false}
+    );
+    assert.ok(menuCompletions.some(item =>
+        item.label === 'Second choice' &&
+        item.insertText === '"two"' &&
+        item.kind === 'option'
+    ));
 });
 
 test('special data and procedure syntax covers every non-call primitive without raw', () => {

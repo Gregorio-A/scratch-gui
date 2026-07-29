@@ -67,16 +67,34 @@ test('Extensions lives in the activity sidebar and the bottom panel contains IDE
     assert.doesNotMatch(panelTabs, /t\('extensions'\)/);
 });
 
-test('the legacy find bar uses progressive reveal and leaves TextWarp Ctrl+F to Monaco', () => {
+test('the legacy find bar leaves text editing shortcuts to Monaco and native fields', () => {
     const findBarSource = readSource('src/addons/addons/find-bar/userscript.js');
     const findBarStyles = readSource('src/addons/addons/find-bar/userstyle.css');
 
     assert.match(findBarSource, /querySelector\('\[data-tabs="textwarp"\]'\)/);
     assert.match(findBarSource, /textWarpEditor\.contains\(document\.activeElement\)/);
+    assert.match(findBarSource, /activeElement\.tagName === "TEXTAREA"/);
+    assert.match(findBarSource, /activeElement\.isContentEditable/);
+    assert.match(findBarSource, /e\.key === "ArrowLeft"[\s\S]*?if \(isEditingText\)/);
+    assert.match(findBarSource, /e\.key === "ArrowRight"[\s\S]*?if \(isEditingText\)/);
     assert.match(findBarSource, /classList\.add\("revealed"\)/);
     assert.match(findBarSource, /classList\.remove\("revealed"\)/);
     assert.match(findBarStyles, /\.sa-find-wrapper \{[\s\S]*?width: 0;[\s\S]*?opacity: 0/);
     assert.match(findBarStyles, /\.sa-find-bar\.revealed \.sa-find-wrapper \{/);
+});
+
+test('new projects use canonical arrow keys and apply the minimal starter to blocks immediately', () => {
+    const editorSource = readSource('src/containers/textwarp-editor.jsx');
+
+    assert.match(editorSource, /key_pressed\("right arrow"\)/);
+    assert.match(editorSource, /key_pressed\("left arrow"\)/);
+    assert.doesNotMatch(editorSource, /variable health|procedure take_damage|on clone_started/);
+    assert.match(
+        editorSource,
+        /starterApplied = !stored && !target\.isStage && existingBlocks === 0 && compilation\.success/
+    );
+    assert.match(editorSource, /synchronized\.count \|\| starterApplied[\s\S]*?applyCompilation/);
+    assert.match(editorSource, /this\.lastAppliedSource = stored \|\| starterApplied \? source : ''/);
 });
 
 test('Problems and the basic editor expose copyable and downloadable technical reports', () => {

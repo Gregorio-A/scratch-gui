@@ -50,6 +50,20 @@ const formatText = value => {
     return '';
 };
 
+const normalizeMenuOptions = items => {
+    if (!Array.isArray(items)) return [];
+    return items.map(item => {
+        if (item && typeof item === 'object') {
+            const value = Object.prototype.hasOwnProperty.call(item, 'value') ? item.value : formatText(item.text);
+            return {
+                label: formatText(item.text) || String(value),
+                value
+            };
+        }
+        return {label: String(item), value: item};
+    }).filter(item => item.value !== undefined && item.value !== null);
+};
+
 const extensionArgument = (extensionId, name, info, category = {}) => {
     if (info.type === 'image') return null;
     const defaults = typeDefaults[info.type] || typeDefaults.string;
@@ -57,13 +71,15 @@ const extensionArgument = (extensionId, name, info, category = {}) => {
         info.defaultValue : defaults.defaultValue;
     if (info.menu) {
         const menuInfo = category.menuInfo && category.menuInfo[info.menu] || {};
+        const options = menuInfo.options || normalizeMenuOptions(menuInfo.items);
         if (!menuInfo.acceptReporters) return {
             name: name.toLowerCase(),
             originalName: name,
             role: 'field',
             valueType: defaults.valueType,
             field: name,
-            defaultValue
+            defaultValue,
+            options
         };
         return {
             name: name.toLowerCase(),
@@ -73,7 +89,8 @@ const extensionArgument = (extensionId, name, info, category = {}) => {
             input: name,
             menuOpcode: `${extensionId}_menu_${info.menu}`,
             menuField: info.menu,
-            defaultValue
+            defaultValue,
+            options
         };
     }
     const customField = category.customFieldTypes && category.customFieldTypes[info.type];
@@ -92,7 +109,8 @@ const extensionArgument = (extensionId, name, info, category = {}) => {
 
 const argumentContext = category => ({
     menuInfo: Object.fromEntries(Object.entries(category.menuInfo || {}).map(([name, info]) => [name, {
-        acceptReporters: Boolean(info && info.acceptReporters)
+        acceptReporters: Boolean(info && info.acceptReporters),
+        options: normalizeMenuOptions(info && info.items)
     }])),
     customFieldTypes: Object.fromEntries(Object.entries(category.customFieldTypes || {}).map(([name, info]) => [name, {
         argumentTypeInfo: {
@@ -240,6 +258,7 @@ module.exports = {
     dynamicMetadata,
     encodeSyntaxPayload,
     extensionArgument,
+    normalizeMenuOptions,
     resolveDynamicMetadata,
     syntaxSegment,
     summarizeExtensionCatalog

@@ -34,6 +34,8 @@ O Monaco oferece:
 
 - sugestões de comandos, eventos, procedimentos, variáveis, listas e extensões;
 - sugestões contextuais de atores, fantasias, cenários, sons e mensagens existentes;
+- opções válidas de menus de blocos, incluindo teclas, modos, efeitos, operações matemáticas e menus de extensões;
+- amostras hexadecimais selecionáveis, com o tipo visual de cor do Monaco, nos argumentos de cor;
 - assinatura e parâmetros durante uma chamada;
 - documentação e tipo ao passar o mouse;
 - símbolos do arquivo, ir para definição e encontrar referências;
@@ -73,6 +75,10 @@ palco por nome amigável ou nome de arquivo sem sair do editor.
 ## Integração com o software principal
 
 Alterações válidas são compiladas após 300 ms e atualizam somente as unidades modificadas. Alterações feitas nos blocos voltam para o texto, com mesclagem por unidade e resolução explícita de conflitos. O modo **Dividido** mantém o editor textual e o editor visual juntos para pré-visualização imediata.
+
+Um ator vazio recebe somente um pequeno script inicial de movimento. Os valores canônicos do Scratch
+(`"right arrow"` e `"left arrow"`) são compilados em blocos assim que o alvo é carregado, antes da primeira edição.
+O palco começa como um módulo `stage` vazio.
 
 A seleção de alvos é compartilhada com o TurboWarp, eventos são filtrados por tipo de alvo, valores vivos aparecem no depurador e referências persistem por IDs. Esse ciclo funciona como hot reload: uma unidade válida muda na VM sem reconstruir ou reiniciar todo o projeto.
 
@@ -204,6 +210,8 @@ Salvar, compilar, executar, pausar e parar sempre atualizam o status visível. P
 | Busca no projeto | `Ctrl+Shift+F` |
 | Abertura rápida | `Ctrl+P` |
 | Paleta de comandos | `Ctrl+Shift+P` |
+| Mover o cursor por palavras | `Ctrl+←` / `Ctrl+→` |
+| Selecionar por palavras | `Ctrl+Shift+←` / `Ctrl+Shift+→` |
 | Próximo problema | `F8` |
 | Problema anterior | `Shift+F8` |
 | Alternar breakpoint no cursor | `F9` |

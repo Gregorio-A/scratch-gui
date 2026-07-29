@@ -1,6 +1,12 @@
 'use strict';
 
-const {blockRegistry, controlRegistry, eventRegistry, operatorRegistry} = require('./block-registry');
+const {
+    blockRegistry,
+    COLOR_OPTIONS,
+    controlRegistry,
+    eventRegistry,
+    operatorRegistry
+} = require('./block-registry');
 const {parseText} = require('./parser');
 
 const KEYWORDS = new Set([
@@ -656,6 +662,57 @@ const getCatalog = context => Object.assign(
     context && context.extensionCatalog || {}
 );
 
+const SPECIAL_MENU_OPTIONS = Object.freeze({
+    motion_pointtowards_menu: ['_mouse_', '_random_'],
+    motion_goto_menu: ['_mouse_', '_random_'],
+    motion_glideto_menu: ['_mouse_', '_random_'],
+    control_create_clone_of_menu: ['_myself_'],
+    sensing_touchingobjectmenu: ['_mouse_', '_edge_'],
+    event_touchingobjectmenu: ['_mouse_', '_edge_'],
+    sensing_distancetomenu: ['_mouse_'],
+    sensing_of_object_menu: ['_stage_']
+});
+
+const normalizeCompletionOption = option => {
+    if (option && typeof option === 'object') {
+        const value = Object.prototype.hasOwnProperty.call(option, 'value') ? option.value :
+            Object.prototype.hasOwnProperty.call(option, 'text') ? option.text : option.label;
+        const label = option.label || option.text || value;
+        return {
+            value,
+            label: String(label),
+            detail: option.detail,
+            documentation: option.documentation,
+            kind: option.kind
+        };
+    }
+    return {value: option, label: String(option)};
+};
+
+const visibleArgumentOptions = (context, call) => {
+    if (!call) return [];
+    const metadata = getCatalog(context)[call.name] || eventRegistry[call.name];
+    const args = metadata && metadata.arguments || [];
+    const argument = args[call.argumentIndex] ||
+        (args.length && args[args.length - 1].variadic ? args[args.length - 1] : null);
+    if (!argument) return [];
+    const options = []
+        .concat(argument.options || [])
+        .concat(SPECIAL_MENU_OPTIONS[argument.menuOpcode] || []);
+    if (argument.shadowOpcode === 'colour_picker' && !options.length) options.push(...COLOR_OPTIONS);
+    const seen = new Set();
+    return options.map(normalizeCompletionOption).filter(option => {
+        if (option.value === undefined || option.value === null) return false;
+        const key = `${typeof option.value}:${String(option.value)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).map(option => Object.assign(option, {
+        argument,
+        callName: call.name
+    }));
+};
+
 const signature = (name, metadata) => {
     const args = (metadata.arguments || []).map(argument => {
         const optional = argument.optional ? '?' : '';
@@ -674,6 +731,7 @@ const argumentKinds = (metadata, argumentIndex) => {
     if (role === 'broadcast' || /message|broadcast/.test(name)) return ['broadcast'];
     if (role === 'variable') return ['variable'];
     if (role === 'list') return ['list'];
+    if (metadata && metadata.opcode === 'sensing_of' && argumentIndex === 0) return ['variable'];
     if (role === 'costume' || /costume|backdrop/.test(name)) return ['costume'];
     if (role === 'sound' || /sound/.test(name)) return ['sound'];
     if (/actor|target|object/.test(name)) return ['actor', 'stage'];
@@ -702,11 +760,17 @@ const availableHere = (metadata, context) => !(
 
 const snippetForMetadata = (name, metadata) => {
     const placeholders = (metadata.arguments || []).map((argument, index) => {
-        const example = argument.role === 'list' ? 'items' :
+        const firstOption = argument.options && argument.options.length ?
+            normalizeCompletionOption(argument.options[0]).value : undefined;
+        const example = firstOption !== undefined ? JSON.stringify(firstOption) :
+            argument.role === 'list' ? 'items' :
             argument.role === 'variable' ? 'value' :
                 argument.valueType === 'boolean' ? 'true' :
                     argument.valueType === 'string' || ['menu', 'broadcast', 'field'].includes(argument.role) ?
-                        '"value"' : argument.name === 'seconds' ? '1' : '10';
+                        JSON.stringify(
+                            Object.prototype.hasOwnProperty.call(argument, 'defaultValue') ?
+                                argument.defaultValue : 'value'
+                        ) : argument.name === 'seconds' ? '1' : '10';
         return `\${${index + 1}:${example}}`;
     });
     const body = placeholders.length + 1;
@@ -756,6 +820,15 @@ const getCompletions = (source, line, column, context = {}) => {
         suggestions.push(adjusted);
     };
 
+    visibleArgumentOptions(context, cursor.call).forEach(option => append({
+        id: `option:${option.callName}:${cursor.call.argumentIndex}:${String(option.value)}`,
+        label: option.label,
+        kind: option.kind || (option.argument.shadowOpcode === 'colour_picker' ? 'color' : 'option'),
+        detail: option.detail || `${option.argument.name} option · ${option.callName}`,
+        documentation: option.documentation || `Valid value for ${option.callName}(${option.argument.name}).`,
+        insertText: JSON.stringify(option.value),
+        sortText: `00-option-${option.label}`
+    }));
     visibleResources(context, cursor.call).forEach(item => append({
         id: `resource:${item.kind}:${item.id}`,
         label: item.name,

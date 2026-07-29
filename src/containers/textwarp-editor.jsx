@@ -121,37 +121,15 @@ const normalizeShortcut = value => shortcutParts(value).map(part => {
     return part;
 }).sort().join('+');
 
-const getTemplate = target => target && target.isStage ? `stage
-
-global variable score = 0
-global list messages = []
+const getTemplate = target => target && target.isStage ? 'stage' : `actor ${target ? target.getName() : 'Actor'}
 
 on green_flag:
-    score = 0
-    broadcast("start-game")
-
-on receive("game-over"):
-    stop_all()` : `actor ${target ? target.getName() : 'Actor'}
-
-variable speed = 5
-variable health = 100
-list hits = []
-
-procedure take_damage(amount):
-    health -= amount
-    list_add(hits, amount)
-
-on green_flag:
-    go_to(0, 0)
     forever:
-        if key_pressed("right"):
-            change_x(speed)
-        if key_pressed("left"):
-            change_x(-speed)
-        wait(0)
-
-on clone_started:
-    show()`;
+        if key_pressed("right arrow"):
+            change_x(10)
+        if key_pressed("left arrow"):
+            change_x(-10)
+        wait(0)`;
 
 const countErrors = diagnostics => diagnostics.filter(item => item.severity === 'error').length;
 
@@ -2082,16 +2060,21 @@ class TextEditor extends React.Component {
         const secondaryCompilation = secondaryTarget && secondarySource.length <= MAX_AUTO_SOURCE_LENGTH ?
             compileText(secondarySource, this.getCompileOptions(secondaryTarget)) : {diagnostics: []};
         if (this.debugController) this.debugController.setBreakpoints(target, breakpoints);
-        if (synchronized.count && compilation.success) applyCompilation(this.props.vm, target, compilation);
-        this.lastAppliedSource = stored ? source : '';
+        const starterApplied = !stored && !target.isStage && existingBlocks === 0 && compilation.success;
+        if ((synchronized.count || starterApplied) && compilation.success) {
+            this.suppressBlockSyncUntil = Date.now() + 750;
+            applyCompilation(this.props.vm, target, compilation);
+        }
+        this.lastAppliedSource = stored || starterApplied ? source : '';
         this.lastBlockFingerprint = blockFingerprint(target);
         this.setState({
             source,
             diagnostics: compilation.diagnostics,
             status: synchronized.count ? this.t('sourceReferencesUpdated') :
-                stored ? this.t('sourceLoaded') : existingBlocks ?
-                    this.t('existingBlocksHelp') : this.t('starterExample'),
-            statusKind: stored ? 'success' : 'idle',
+                stored ? this.t('sourceLoaded') : starterApplied ?
+                    this.t('starterApplied') : existingBlocks ?
+                        this.t('existingBlocksHelp') : this.t('emptyStarter'),
+            statusKind: stored || starterApplied ? 'success' : 'idle',
             targetName: target.getName(),
             isStage: target.isStage,
             breakpoints,

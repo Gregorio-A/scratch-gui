@@ -22,10 +22,12 @@ identity, lexical scope, owning target and local/global visibility, so parameter
 globals with the same spelling resolve independently.
 
 A single completion provider combines controls, events, operators, native commands, extensions, procedures,
-parameters, variables, lists and project resources without duplicate entries. It filters by prefix, scope,
-stage/actor and syntax position; comments do not receive code suggestions, while strings receive only resources
-valid for the active argument. Replacement ranges cover partial words and quoted values, and multiline snippets
-preserve the current indentation.
+parameters, variables, lists and project resources without duplicate entries. It also reads valid dropdown values
+from native and extension block metadata: keys, menu modes, effects, math operations and other finite choices appear
+inside the active argument, while color arguments offer selectable hexadecimal samples with Monaco color entries.
+It filters by prefix, scope, stage/actor and syntax position; comments do not receive code suggestions, while strings
+receive only values and resources valid for the active argument. Replacement ranges cover partial words and quoted
+values, and multiline snippets preserve the current indentation.
 
 Completion, hover, signatures, document symbols, definitions, references, scope-safe project rename, formatting
 and resource navigation all use the same index. An incomplete-call scanner handles nested calls, strings,
@@ -55,6 +57,10 @@ one Undo snapshot for the complete project.
 
 Compilation writes directly to `scratch-vm`; the native Blocks view reads the same target. The browser uses web
 file APIs and downloads. Electron injects native file handles through the shared platform boundary.
+
+An empty actor starts with a small arrow-key movement script. Its canonical Scratch values (`"right arrow"` and
+`"left arrow"`) are compiled into blocks as soon as the target is loaded, so the Text and Blocks views agree before
+the first edit. The stage starts as an empty `stage` module.
 
 Scratch variable and list names containing spaces, accents, or symbols receive a stable TextWarp identifier, such
 as `Gear Speed °/s` → `Gear_Speed_s`. Block fields retain the original name and ID, so round trips do not create a
@@ -144,6 +150,8 @@ reachable. The legacy permanent Find field stays hidden; `Ctrl+F` opens Monaco F
 | Project search | `Ctrl+Shift+F` |
 | Quick Open | `Ctrl+P` |
 | Command palette | `Ctrl+Shift+P` |
+| Move the caret by word | `Ctrl+←` / `Ctrl+→` |
+| Select by word | `Ctrl+Shift+←` / `Ctrl+Shift+→` |
 | Next problem | `F8` |
 | Previous problem | `Shift+F8` |
 | Toggle breakpoint at caret | `F9` |

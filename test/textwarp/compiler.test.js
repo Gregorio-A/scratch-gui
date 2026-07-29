@@ -77,6 +77,25 @@ on green_flag:
     assert.ok(result.diagnostics.some(item => item.code === 'scratch-coercion' && item.severity === 'warning'));
 });
 
+test('normalizes friendly arrow-key aliases to canonical Scratch menu values', () => {
+    const reporter = compileText(`actor Player
+on green_flag:
+    if key_pressed("right"):
+        wait(0)`, actorOptions);
+    assert.equal(reporter.success, true, JSON.stringify(reporter.diagnostics));
+    const keyMenu = Object.values(reporter.graph.blocks)
+        .find(block => block.opcode === 'sensing_keyoptions');
+    assert.equal(keyMenu.fields.KEY_OPTION.value, 'right arrow');
+
+    const event = compileText(`actor Player
+on key_pressed("left"):
+    wait(0)`, actorOptions);
+    assert.equal(event.success, true, JSON.stringify(event.diagnostics));
+    const keyEvent = Object.values(event.graph.blocks)
+        .find(block => block.opcode === 'event_whenkeypressed');
+    assert.equal(keyEvent.fields.KEY_OPTION.value, 'left arrow');
+});
+
 test('keeps IDs stable when an unrelated command is inserted', () => {
     const first = compileText(`actor Player
 on green_flag:

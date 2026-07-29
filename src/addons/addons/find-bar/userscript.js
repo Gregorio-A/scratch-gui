@@ -138,6 +138,12 @@ export default async function ({ addon, msg, console }) {
       if (addon.self.disabled || !this.findBarOuter) return;
 
       let ctrlKey = e.ctrlKey || e.metaKey;
+      const activeElement = document.activeElement;
+      const isEditingText =
+        activeElement &&
+        (activeElement.tagName === "INPUT" ||
+          activeElement.tagName === "TEXTAREA" ||
+          activeElement.isContentEditable);
 
       if (e.key.toLowerCase() === "f" && ctrlKey && !e.shiftKey) {
         const textWarpEditor = document.querySelector('[data-tabs="textwarp"]');
@@ -159,7 +165,7 @@ export default async function ({ addon, msg, console }) {
 
       if (e.key === "ArrowLeft" && ctrlKey) {
         // Ctrl + Left Arrow Key
-        if (document.activeElement.tagName === "INPUT") {
+        if (isEditingText) {
           return;
         }
 
@@ -173,7 +179,7 @@ export default async function ({ addon, msg, console }) {
 
       if (e.key === "ArrowRight" && ctrlKey) {
         // Ctrl + Right Arrow Key
-        if (document.activeElement.tagName === "INPUT") {
+        if (isEditingText) {
           return;
         }
 

@@ -19,6 +19,8 @@ The following repository-owned items from this audit are now implemented and cov
 - dual-editor command palette, formatting, Problems navigation, and breakpoint commands follow the focused pane;
 - only the glyph margin toggles breakpoints; line numbers retain normal Monaco caret/selection behavior;
 - `Ctrl+P` and **More actions → Quick Open** filter project actors and the stage;
+- `Ctrl+Left`/`Ctrl+Right` and their Shift selection variants remain owned by Monaco and native text fields instead
+  of being captured by the block-workspace navigation history;
 - `F8`/`Shift+F8` navigate Problems and `F9` toggles a breakpoint at the caret;
 - file-tab context menus support pointer, Menu key, and `Shift+F10`, focus the first enabled item, skip disabled and
   checkbox items correctly, and restore focus on Escape;

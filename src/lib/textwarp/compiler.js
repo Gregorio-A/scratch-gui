@@ -404,7 +404,16 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                     location
                 };
             }
-            const converted = convertExpression(node, parameters);
+            let converted = convertExpression(node, parameters);
+            if (
+                converted &&
+                converted.type === 'Literal' &&
+                typeof converted.value === 'string' &&
+                argumentMetadata.valueAliases
+            ) {
+                const canonicalValue = argumentMetadata.valueAliases[converted.value.toLowerCase()];
+                if (canonicalValue) converted = Object.assign({}, converted, {value: canonicalValue});
+            }
             if (
                 argumentMetadata.valueType &&
                 argumentMetadata.valueType !== 'any' &&

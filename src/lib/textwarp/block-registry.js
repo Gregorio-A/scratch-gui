@@ -1,5 +1,21 @@
 'use strict';
 
+const COLOR_OPTIONS = Object.freeze([
+    '#ff0000', '#ff8000', '#ffff00', '#00ff00', '#00ffff',
+    '#0000ff', '#8000ff', '#ff00ff', '#ffffff', '#808080', '#000000'
+]);
+const KEY_OPTIONS = Object.freeze([
+    'space', 'up arrow', 'down arrow', 'right arrow', 'left arrow', 'any',
+    ...'abcdefghijklmnopqrstuvwxyz'.split(''),
+    ...'0123456789'.split('')
+]);
+const KEY_VALUE_ALIASES = Object.freeze({
+    up: 'up arrow',
+    down: 'down arrow',
+    right: 'right arrow',
+    left: 'left arrow'
+});
+
 const numberInput = (name, input, shadowOpcode = 'math_number', shadowField = 'NUM') => Object.freeze({
     name,
     role: 'input',
@@ -42,15 +58,18 @@ const colorInput = (name, input, defaultValue = '#ff0000') => Object.freeze({
     input,
     shadowOpcode: 'colour_picker',
     shadowField: 'COLOUR',
-    defaultValue
+    defaultValue,
+    options: COLOR_OPTIONS
 });
 
-const fieldInput = (name, field, defaultValue = '') => Object.freeze({
+const fieldInput = (name, field, defaultValue = '', options = null, valueAliases = null) => Object.freeze({
     name,
     role: 'field',
     valueType: 'string',
     field,
-    defaultValue
+    defaultValue,
+    options,
+    valueAliases
 });
 
 const variableInput = (name = 'variable', field = 'VARIABLE') => Object.freeze({
@@ -75,14 +94,24 @@ const indexInput = (name = 'index', input = 'INDEX') => Object.freeze({
     defaultValue: 1
 });
 
-const menuInput = (name, input, menuOpcode, menuField, defaultValue) => Object.freeze({
+const menuInput = (
+    name,
+    input,
+    menuOpcode,
+    menuField,
+    defaultValue,
+    options = null,
+    valueAliases = null
+) => Object.freeze({
     name,
     role: 'menu',
     valueType: 'string',
     input,
     menuOpcode,
     menuField,
-    defaultValue
+    defaultValue,
+    options,
+    valueAliases
 });
 
 const blockRegistry = Object.freeze({
@@ -164,9 +193,12 @@ const blockRegistry = Object.freeze({
     }),
     set_rotation_style: Object.freeze({
         opcode: 'motion_setrotationstyle', kind: 'command', allowStage: false,
-        arguments: [Object.freeze({
-            name: 'style', role: 'field', valueType: 'string', field: 'STYLE', defaultValue: 'all around'
-        })],
+        arguments: [fieldInput(
+            'style',
+            'STYLE',
+            'all around',
+            ['all around', 'left-right', 'don\'t rotate']
+        )],
         documentation: 'set_rotation_style(style) — usa "all around", "left-right" ou "don\'t rotate".'
     }),
     scroll_right: Object.freeze({
@@ -181,7 +213,12 @@ const blockRegistry = Object.freeze({
     }),
     align_scene: Object.freeze({
         opcode: 'motion_align_scene', kind: 'command', allowStage: true,
-        arguments: [fieldInput('alignment', 'ALIGNMENT', 'middle')],
+        arguments: [fieldInput(
+            'alignment',
+            'ALIGNMENT',
+            'middle',
+            ['bottom-left', 'bottom-right', 'middle', 'top-left', 'top-right']
+        )],
         documentation: 'align_scene(alignment) — preserva o alinhamento legado: "bottom-left", "bottom-right", "middle", "top-left" ou "top-right".'
     }),
     x_scroll: Object.freeze({
@@ -250,12 +287,28 @@ const blockRegistry = Object.freeze({
     }),
     change_looks_effect: Object.freeze({
         opcode: 'looks_changeeffectby', kind: 'command', allowStage: true,
-        arguments: [fieldInput('effect', 'EFFECT', 'COLOR'), numberInput('amount', 'CHANGE')],
+        arguments: [
+            fieldInput(
+                'effect',
+                'EFFECT',
+                'COLOR',
+                ['COLOR', 'FISHEYE', 'WHIRL', 'PIXELATE', 'MOSAIC', 'BRIGHTNESS', 'GHOST']
+            ),
+            numberInput('amount', 'CHANGE')
+        ],
         documentation: 'change_looks_effect(effect, amount) — altera um efeito gráfico.'
     }),
     set_looks_effect: Object.freeze({
         opcode: 'looks_seteffectto', kind: 'command', allowStage: true,
-        arguments: [fieldInput('effect', 'EFFECT', 'COLOR'), numberInput('value', 'VALUE')],
+        arguments: [
+            fieldInput(
+                'effect',
+                'EFFECT',
+                'COLOR',
+                ['COLOR', 'FISHEYE', 'WHIRL', 'PIXELATE', 'MOSAIC', 'BRIGHTNESS', 'GHOST']
+            ),
+            numberInput('value', 'VALUE')
+        ],
         documentation: 'set_looks_effect(effect, value) — define um efeito gráfico.'
     }),
     clear_looks_effects: Object.freeze({
@@ -272,22 +325,25 @@ const blockRegistry = Object.freeze({
     }),
     go_to_layer: Object.freeze({
         opcode: 'looks_gotofrontback', kind: 'command', allowStage: false,
-        arguments: [fieldInput('layer', 'FRONT_BACK', 'front')],
+        arguments: [fieldInput('layer', 'FRONT_BACK', 'front', ['front', 'back'])],
         documentation: 'go_to_layer(layer) — move o ator para a camada "front" ou "back".'
     }),
     move_layers: Object.freeze({
         opcode: 'looks_goforwardbackwardlayers', kind: 'command', allowStage: false,
-        arguments: [fieldInput('direction', 'FORWARD_BACKWARD', 'forward'), numberInput('count', 'NUM')],
+        arguments: [
+            fieldInput('direction', 'FORWARD_BACKWARD', 'forward', ['forward', 'backward']),
+            numberInput('count', 'NUM')
+        ],
         documentation: 'move_layers(direction, count) — move camadas em "forward" ou "backward".'
     }),
     costume_number_name: Object.freeze({
         opcode: 'looks_costumenumbername', kind: 'reporter', allowStage: false, valueType: 'any',
-        arguments: [fieldInput('property', 'NUMBER_NAME', 'number')],
+        arguments: [fieldInput('property', 'NUMBER_NAME', 'number', ['number', 'name'])],
         documentation: 'costume_number_name(property) — retorna "number" ou "name" da fantasia atual.'
     }),
     backdrop_number_name: Object.freeze({
         opcode: 'looks_backdropnumbername', kind: 'reporter', allowStage: true, valueType: 'any',
-        arguments: [fieldInput('property', 'NUMBER_NAME', 'number')],
+        arguments: [fieldInput('property', 'NUMBER_NAME', 'number', ['number', 'name'])],
         documentation: 'backdrop_number_name(property) — retorna "number" ou "name" do cenário atual.'
     }),
     size: Object.freeze({
@@ -324,12 +380,12 @@ const blockRegistry = Object.freeze({
     }),
     change_sound_effect: Object.freeze({
         opcode: 'sound_changeeffectby', kind: 'command', allowStage: true,
-        arguments: [fieldInput('effect', 'EFFECT', 'PITCH'), numberInput('amount', 'VALUE')],
+        arguments: [fieldInput('effect', 'EFFECT', 'PITCH', ['PITCH', 'PAN']), numberInput('amount', 'VALUE')],
         documentation: 'change_sound_effect(effect, amount) — altera "PITCH" ou "PAN".'
     }),
     set_sound_effect: Object.freeze({
         opcode: 'sound_seteffectto', kind: 'command', allowStage: true,
-        arguments: [fieldInput('effect', 'EFFECT', 'PITCH'), numberInput('value', 'VALUE')],
+        arguments: [fieldInput('effect', 'EFFECT', 'PITCH', ['PITCH', 'PAN']), numberInput('value', 'VALUE')],
         documentation: 'set_sound_effect(effect, value) — define "PITCH" ou "PAN".'
     }),
     clear_sound_effects: Object.freeze({
@@ -478,7 +534,15 @@ const blockRegistry = Object.freeze({
     }),
     key_pressed: Object.freeze({
         opcode: 'sensing_keypressed', kind: 'boolean', allowStage: true,
-        arguments: [menuInput('key', 'KEY_OPTION', 'sensing_keyoptions', 'KEY_OPTION', 'space')],
+        arguments: [menuInput(
+            'key',
+            'KEY_OPTION',
+            'sensing_keyoptions',
+            'KEY_OPTION',
+            'space',
+            KEY_OPTIONS,
+            KEY_VALUE_ALIASES
+        )],
         documentation: 'key_pressed(key) — informa se uma tecla está pressionada.'
     }),
     touching: Object.freeze({
@@ -526,7 +590,7 @@ const blockRegistry = Object.freeze({
     }),
     set_drag_mode: Object.freeze({
         opcode: 'sensing_setdragmode', kind: 'command', allowStage: false,
-        arguments: [fieldInput('mode', 'DRAG_MODE', 'draggable')],
+        arguments: [fieldInput('mode', 'DRAG_MODE', 'draggable', ['draggable', 'not draggable'])],
         documentation: 'set_drag_mode(mode) — usa "draggable" ou "not draggable".'
     }),
     loudness: Object.freeze({
@@ -544,14 +608,24 @@ const blockRegistry = Object.freeze({
     property_of: Object.freeze({
         opcode: 'sensing_of', kind: 'reporter', allowStage: true, valueType: 'any',
         arguments: [
-            fieldInput('property', 'PROPERTY', 'x position'),
+            fieldInput(
+                'property',
+                'PROPERTY',
+                'x position',
+                ['x position', 'y position', 'direction', 'costume #', 'costume name', 'size', 'volume']
+            ),
             menuInput('object', 'OBJECT', 'sensing_of_object_menu', 'OBJECT', '_stage_')
         ],
         documentation: 'property_of(property, object) — retorna uma propriedade do palco ou de um ator.'
     }),
     current: Object.freeze({
         opcode: 'sensing_current', kind: 'reporter', allowStage: true, valueType: 'number',
-        arguments: [fieldInput('unit', 'CURRENTMENU', 'YEAR')],
+        arguments: [fieldInput(
+            'unit',
+            'CURRENTMENU',
+            'YEAR',
+            ['YEAR', 'MONTH', 'DATE', 'DAYOFWEEK', 'HOUR', 'MINUTE', 'SECOND']
+        )],
         documentation: 'current(unit) — retorna YEAR, MONTH, DATE, DAYOFWEEK, HOUR, MINUTE ou SECOND.'
     }),
     days_since_2000: Object.freeze({
@@ -581,7 +655,15 @@ const blockRegistry = Object.freeze({
     }),
     math: Object.freeze({
         opcode: 'operator_mathop', kind: 'reporter', allowStage: true, valueType: 'number',
-        arguments: [fieldInput('operation', 'OPERATOR', 'abs'), numberInput('value', 'NUM')],
+        arguments: [
+            fieldInput(
+                'operation',
+                'OPERATOR',
+                'abs',
+                ['abs', 'floor', 'ceiling', 'sqrt', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'ln', 'log', 'e ^', '10 ^']
+            ),
+            numberInput('value', 'NUM')
+        ],
         documentation: 'math(operation, value) — aplica abs, floor, ceiling, sqrt, sin, cos, tan, asin, acos, atan, ln, log, "e ^" ou "10 ^".'
     }),
     join: Object.freeze({
@@ -674,7 +756,8 @@ const eventRegistry = Object.freeze({
         documentation: 'on clicked: — inicia ao clicar no ator ou no palco atual.'
     }),
     key_pressed: Object.freeze({
-        opcode: 'event_whenkeypressed', arguments: [Object.freeze({name: 'key', role: 'field', field: 'KEY_OPTION'})],
+        opcode: 'event_whenkeypressed',
+        arguments: [fieldInput('key', 'KEY_OPTION', 'space', KEY_OPTIONS, KEY_VALUE_ALIASES)],
         documentation: 'on key_pressed(key): — inicia quando a tecla indicada é pressionada.'
     }),
     receive: Object.freeze({
@@ -709,11 +792,14 @@ const eventRegistry = Object.freeze({
 module.exports = {
     blockRegistry,
     booleanInput,
+    COLOR_OPTIONS,
     colorInput,
     controlRegistry,
     eventRegistry,
     fieldInput,
     indexInput,
+    KEY_OPTIONS,
+    KEY_VALUE_ALIASES,
     listInput,
     menuInput,
     numberInput,

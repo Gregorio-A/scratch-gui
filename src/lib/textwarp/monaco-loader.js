@@ -71,6 +71,7 @@ const completionKind = (monaco, kind) => {
     const kinds = monaco.languages.CompletionItemKind;
     return {
         boolean: kinds.Keyword,
+        color: kinds.Color,
         command: kinds.Function,
         conditional: kinds.Function,
         event: kinds.Event,
@@ -79,6 +80,7 @@ const completionKind = (monaco, kind) => {
         list: kinds.Array || kinds.Value,
         loop: kinds.Function,
         operator: kinds.Operator,
+        option: kinds.EnumMember || kinds.Value,
         parameter: kinds.Variable,
         procedure: kinds.Method,
         reporter: kinds.Function,

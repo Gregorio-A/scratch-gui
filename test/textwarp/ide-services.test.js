@@ -247,6 +247,48 @@ test('completion is context-aware, deduplicated and range-safe', () => {
         21,
         context
     ).code, 'Enemy');
+
+    const keyOptions = getCompletions(
+        'actor Cat\n\non green_flag:\n    if key_pressed("ri"):\n        pass',
+        4,
+        23,
+        context
+    );
+    assert.ok(keyOptions.some(item =>
+        item.label === 'right arrow' &&
+        item.insertText === '"right arrow"' &&
+        item.kind === 'option'
+    ));
+    assert.equal(keyOptions.some(item => item.label === 'right'), false);
+    assert.equal(
+        getCompletions('actor Cat\n\non green_flag:\n    key_', 4, 9, context)
+            .find(item => item.label === 'key_pressed').insertText,
+        'key_pressed(${1:"space"})'
+    );
+
+    const eventKeyOptions = getCompletions(
+        'actor Cat\n\non key_pressed("le"):\n    wait(0)',
+        3,
+        19,
+        context
+    );
+    assert.ok(eventKeyOptions.some(item => item.label === 'left arrow'));
+
+    const mathOptions = getCompletions(
+        'actor Cat\n\non green_flag:\n    math("sq")',
+        4,
+        13,
+        context
+    );
+    assert.ok(mathOptions.some(item => item.label === 'sqrt' && item.kind === 'option'));
+
+    const colorOptions = getCompletions(
+        'actor Cat\n\non green_flag:\n    touching_color("#ff")',
+        4,
+        24,
+        context
+    );
+    assert.ok(colorOptions.some(item => item.label === '#ff0000' && item.kind === 'color'));
 });
 
 test('signature help tracks nested and multiline calls', () => {
