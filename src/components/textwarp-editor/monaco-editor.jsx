@@ -671,6 +671,7 @@ MonacoEditor.propTypes = {
     instanceKey: PropTypes.string,
     languageContext: PropTypes.shape({
         documents: PropTypes.arrayOf(PropTypes.shape({
+            fileName: PropTypes.string,
             modelKey: PropTypes.string,
             source: PropTypes.string
         })),

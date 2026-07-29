@@ -929,6 +929,20 @@ const localizedSymbolDetail = (symbol, locale) => {
     return `${symbol.global ? 'Global · ' : ''}${labels[symbol.kind] || symbol.detail}`;
 };
 
+const documentDisplayName = (modelKey, context = {}) => {
+    const document = (context.documents || []).find(candidate =>
+        (candidate.modelKey || candidate.targetId) === modelKey
+    );
+    if (document) return document.fileName || document.name || modelKey;
+    if (
+        modelKey === (context.targetId || context.modelKey) &&
+        (context.targetName || context.isStage)
+    ) {
+        return context.isStage ? 'stage.tw' : `${context.targetName}.tw`;
+    }
+    return modelKey;
+};
+
 const getHover = (source, line, column, context = {}) => {
     const resource = getResourceAt(source, line, column, context);
     if (resource) {
@@ -953,7 +967,7 @@ const getHover = (source, line, column, context = {}) => {
                     `${parameter.name}: ${parameter.valueType || 'any'}`
                 ).join(', ')})${symbol.returnType ? ` -> ${symbol.returnType}` : ''}` :
                 symbol.name,
-            documentation: `${detail} declared in ${symbol.modelKey}.`
+            documentation: `${detail} declared in ${documentDisplayName(symbol.modelKey, context)}.`
         };
     }
     const index = createDocumentIndex(source, context.targetId || 'target');
@@ -994,7 +1008,7 @@ const getSignatureHelp = (source, line, column, context = {}) => {
             label: `${own.name}(${own.parameters.map(parameter =>
                 `${parameter.name}: ${parameter.valueType}`
             ).join(', ')})${own.returnType ? ` -> ${own.returnType}` : ''}`,
-            documentation: `Procedure declared in ${own.modelKey}.`,
+            documentation: `Procedure declared in ${documentDisplayName(own.modelKey, context)}.`,
             parameters
         };
         return Object.assign({}, entry, {

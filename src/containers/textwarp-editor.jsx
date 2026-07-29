@@ -1086,6 +1086,7 @@ class TextEditor extends React.Component {
             extensionCatalog: this.extensionCatalog,
             resources: workspace.resources,
             documents: workspace.modules.map(module => ({
+                fileName: module.fileName,
                 modelKey: module.id,
                 targetId: module.id,
                 source: module.id === targetId ? activeSource : module.source

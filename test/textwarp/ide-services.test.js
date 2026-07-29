@@ -56,8 +56,16 @@ test('language service exposes symbols, hover, definitions, references and safe 
     assert.equal(renameEdits(source, 'speed', 'velocity').length, 2);
     assert.equal(renameEdits(source, 'amount', 'distance', {line: 7}).length, 3);
     assert.equal(renameEdits(source, 'green_flag', 'start').length, 0);
-    const hover = getHover(source, 11, 18);
-    assert.equal(hover.title, 'Variável');
+    const languageContext = {
+        documents: [{fileName: 'Cat.tw', modelKey: 'cat-id', source}],
+        locale: 'en',
+        targetId: 'cat-id',
+        targetName: 'Cat'
+    };
+    const hover = getHover(source, 11, 18, languageContext);
+    assert.equal(hover.title, 'Variable');
+    assert.equal(hover.documentation, 'Variable declared in Cat.tw.');
+    assert.equal(getHover(source, 4, 7, languageContext).documentation, 'List declared in Cat.tw.');
     assert.match(getHover(source, 7, 7).documentation, /altera x/i);
     assert.ok(getSemanticTokens(source).some(token => token.type === 'namespace' && token.line === 1));
     assert.ok(getSemanticTokens(source).some(token => token.type === 'event' && token.line === 10));
@@ -67,8 +75,12 @@ test('language service offers signatures and project-aware resources', () => {
     const context = {resources: [{id: 'sprite-id', name: 'Enemy', kind: 'actor', kindLabel: 'Ator'}]};
     const completions = getCompletions('actor Cat\n\non green_flag:\n    go_to_target(', 4, 18, context);
     assert.ok(completions.some(item => item.label === 'Enemy' && item.insertText === '"Enemy"'));
-    const ownSignature = getSignatureHelp(source, 11, 20);
+    const ownSignature = getSignatureHelp(source, 11, 20, {
+        documents: [{fileName: 'Cat.tw', modelKey: 'cat-id', source}],
+        targetId: 'cat-id'
+    });
     assert.equal(ownSignature.label, 'move_twice(amount: number)');
+    assert.equal(ownSignature.documentation, 'Procedure declared in Cat.tw.');
     const nativeSignature = getSignatureHelp('actor Cat\n\non green_flag:\n    glide_to(', 4, 14);
     assert.match(nativeSignature.label, /^glide_to\(/);
     const overloaded = getSignatureHelp('actor Cat\n\non green_flag:\n    extension.mix(1, ', 4, 22, {
@@ -97,13 +109,15 @@ test('workspace index resolves global symbols without crossing local module boun
     const cat = 'actor Cat\n\nvariable lives = 3\n\non green_flag:\n    score += lives\n';
     const dog = 'actor Dog\n\nvariable lives = 5\n\non green_flag:\n    score += lives\n';
     const context = {
+        locale: 'en',
         targetId: 'cat',
         documents: [
-            {modelKey: 'stage', source: stage},
-            {modelKey: 'cat', source: cat},
-            {modelKey: 'dog', source: dog}
+            {fileName: 'stage.tw', modelKey: 'stage', source: stage},
+            {fileName: 'Cat.tw', modelKey: 'cat', source: cat},
+            {fileName: 'Dog.tw', modelKey: 'dog', source: dog}
         ]
     };
+    assert.equal(getHover(cat, 6, 5, context).documentation, 'Global · Variable declared in stage.tw.');
     assert.deepEqual(
         getDefinitionLocations(cat, 6, 5, context).map(location => location.modelKey),
         ['stage']
