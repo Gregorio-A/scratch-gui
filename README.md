@@ -1,4 +1,5 @@
 # TextWarp scratch-gui
+website preview here!!!: [`gregorioalves.com`](https://gregorioalves.com/textwarp)
 
 `scratch-gui` is the shared editor interface for TextWarp. It is used by both
 the browser application and the TextWarp Electron desktop application.
@@ -17,8 +18,6 @@ The Electron-specific implementation remains in
 [`TextWarp-Turbowarp`](https://github.com/Gregorio-A/turbowarp-by-text). Keeping
 the editor here prevents the web and desktop applications from maintaining two
 separate implementations.
-
-Live Preview Now: [`gregorioalves.com/textwarp/editor`](https://gregorioalves.com/textwarp/editor)
 
 TextWarp is derived from [TurboWarp scratch-gui](https://github.com/TurboWarp/scratch-gui)
 and [Scratch GUI](https://github.com/scratchfoundation/scratch-gui). TextWarp is
