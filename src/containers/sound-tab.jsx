@@ -226,6 +226,11 @@ class SoundTab extends React.Component {
 
         return (
             <AssetPanel
+                title={intl.formatMessage({
+                    id: 'tw.soundTab.soundsTitle',
+                    defaultMessage: 'Sounds',
+                    description: 'Heading for the sound asset sidebar'
+                })}
                 buttons={isSupported ? [{
                     title: intl.formatMessage(messages.addSound),
                     img: addSoundFromLibraryIcon,

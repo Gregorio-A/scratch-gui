@@ -94,7 +94,9 @@ class Stage extends React.Component {
         this.props.vm.runtime.addListener('QUESTION', this.questionListener);
     }
     shouldComponentUpdate (nextProps, nextState) {
-        return this.props.stageSize !== nextProps.stageSize ||
+        return this.props.availableHeight !== nextProps.availableHeight ||
+            this.props.availableWidth !== nextProps.availableWidth ||
+            this.props.stageSize !== nextProps.stageSize ||
             this.props.isColorPicking !== nextProps.isColorPicking ||
             this.state.colorInfo !== nextState.colorInfo ||
             this.props.isFullScreen !== nextProps.isFullScreen ||
@@ -464,6 +466,8 @@ class Stage extends React.Component {
 }
 
 Stage.propTypes = {
+    availableHeight: PropTypes.number,
+    availableWidth: PropTypes.number,
     onHighQualityPenChanged: PropTypes.func,
     highQualityPen: PropTypes.bool,
     customStageSize: PropTypes.shape({

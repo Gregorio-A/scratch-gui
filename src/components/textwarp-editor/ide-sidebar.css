@@ -1,6 +1,8 @@
 .root {
     width: var(--textwarp-sidebar-width, clamp(14rem, 19vw, 18rem));
     min-width: 12rem;
+    height: 100%;
+    max-height: 100%;
     min-height: 0;
     display: flex;
     flex: none;
@@ -20,8 +22,17 @@
     border-bottom: 1px solid var(--ui-black-transparent);
 }
 
-.sidebar-header strong {
+.sidebar-header select {
+    max-width: 7.5rem;
+    min-height: 1.75rem;
+    padding: 0 1.5rem 0 0.35rem;
+    color: var(--text-primary);
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.3rem;
+    font: inherit;
     font-size: 0.72rem;
+    font-weight: 700;
 }
 
 .sidebar-header span {
@@ -47,9 +58,51 @@
     cursor: pointer;
 }
 
-.sidebar-header .active-header-button {
-    color: var(--motion-primary);
+.panel-navigation {
+    min-height: 2.1rem;
+    display: flex;
+    flex: none;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: var(--ui-tertiary);
+    border-bottom: 1px solid var(--ui-black-transparent);
+    scrollbar-width: thin;
+}
+
+.panel-navigation button {
+    min-width: 2rem;
+    height: 2rem;
+    position: relative;
+    display: grid;
+    flex: 1 0 2rem;
+    place-items: center;
+    padding: 0;
+    color: var(--text-primary-transparent);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.panel-navigation button::after {
+    height: 2px;
+    position: absolute;
+    right: 0.35rem;
+    bottom: 0;
+    left: 0.35rem;
+    content: "";
+    background: transparent;
+}
+
+.panel-navigation button:hover,
+.panel-navigation button:focus-visible,
+.panel-navigation .active-panel {
+    color: var(--text-primary);
     background: var(--ui-black-transparent);
+}
+
+.panel-navigation .active-panel::after {
+    background: var(--motion-primary);
 }
 
 .overlay {
@@ -68,10 +121,12 @@
 }
 
 .content {
+    height: 0;
     min-height: 0;
     flex: 1;
     padding-bottom: 1rem;
     overflow: auto;
+    overscroll-behavior: contain;
     scrollbar-width: thin;
 }
 
@@ -82,6 +137,228 @@
     font-size: 0.6rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+}
+
+.command-search {
+    display: block;
+    padding: 0.65rem;
+}
+
+.command-search > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+
+.command-search input {
+    width: 100%;
+    min-height: var(--textwarp-control-height, 2rem);
+    padding: 0.35rem 0.5rem;
+    color: var(--text-primary);
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.3rem;
+    font: inherit;
+    font-size: 0.68rem;
+}
+
+.command-categories {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.2rem;
+    padding: 0 0.55rem 0.55rem;
+}
+
+.command-categories button {
+    min-width: 0;
+    min-height: 1.7rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.4rem;
+    overflow: hidden;
+    color: var(--text-primary-transparent);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    font-size: 0.6rem;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.command-categories button > span {
+    width: 0.48rem;
+    height: 0.48rem;
+    flex: none;
+    border-radius: 50%;
+}
+
+.command-categories button:hover,
+.command-categories .active-command-category {
+    color: var(--text-primary);
+    background: var(--ui-black-transparent);
+    border-color: var(--ui-black-transparent);
+}
+
+.command-categories button:disabled {
+    cursor: default;
+    opacity: 0.35;
+}
+
+.command-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.command-card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    color: var(--text-primary);
+    background: transparent;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--ui-black-transparent);
+}
+
+.command-insert {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.65rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.38rem 0.6rem;
+    overflow: hidden;
+    color: var(--text-primary);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+}
+
+.command-insert:hover,
+.command-insert:focus-visible {
+    background: var(--ui-black-transparent);
+}
+
+.command-context {
+    margin: 0 0.5rem 0.45rem;
+    color: var(--text-primary-transparent);
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.35rem;
+    font-size: 0.58rem;
+}
+
+.command-context summary {
+    min-height: 1.75rem;
+    display: flex;
+    align-items: center;
+    padding: 0.3rem 0.45rem;
+    cursor: pointer;
+    font-weight: 700;
+    list-style: none;
+}
+
+.command-context summary::before {
+    width: 1rem;
+    content: "›";
+    font-size: 0.8rem;
+}
+
+.command-context[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.command-preview,
+.command-argument {
+    padding: 0.4rem 0.45rem;
+    border-top: 1px solid var(--ui-black-transparent);
+}
+
+.command-preview > span,
+.argument-options > span {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: 700;
+}
+
+.command-preview pre {
+    margin: 0;
+    overflow: auto;
+    color: var(--text-primary);
+    font-size: 0.58rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+}
+
+.command-argument > div:first-child {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.4rem;
+}
+
+.command-argument strong {
+    color: var(--text-primary);
+    font-family: monospace;
+    font-size: 0.62rem;
+}
+
+.argument-options {
+    margin-top: 0.4rem;
+}
+
+.argument-options > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.argument-options code {
+    max-width: 100%;
+    padding: 0.18rem 0.3rem;
+    overflow: hidden;
+    color: var(--text-primary);
+    background: var(--ui-black-transparent);
+    border-radius: 0.25rem;
+    text-overflow: ellipsis;
+}
+
+.command-context > p {
+    padding: 0 0.45rem 0.45rem;
+}
+
+.command-insert code,
+.command-insert small {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.command-insert code {
+    color: inherit;
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.command-insert small,
+.command-list > p,
+.command-context > p {
+    margin: 0;
+    color: var(--text-primary-transparent);
+    font-size: 0.56rem;
+}
+
+.command-list > p {
+    padding: 0.6rem;
 }
 
 .tree,

@@ -6,6 +6,10 @@
     flex-direction: column;
     flex-grow: 1;
     padding: calc(2 * $space);
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    container-type: inline-size;
 }
 
 .row {
@@ -70,6 +74,23 @@
 
     margin-top: 20px;
     margin-bottom: 20px;
+    min-width: 0;
+    padding-top: 1.35rem;
+    overflow: hidden;
+}
+
+.timeline-ruler {
+    height: 1.35rem;
+    position: absolute;
+    top: 0;
+    right: 0.4rem;
+    left: 0.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: $text-primary-transparent;
+    border-bottom: 1px solid $ui-black-transparent;
+    font-size: 0.58rem;
 }
 
 $border-radius: 0.25rem;
@@ -161,10 +182,38 @@ $border-radius: 0.25rem;
 }
 
 .effects {
-    display: flex;
-    flex-wrap: wrap;
-    width: 100%;
+    position: relative;
+    width: min(18rem, 100%);
+    margin-left: 0.75rem;
 }
+
+.effects summary {
+    min-height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0.7rem;
+    color: $text-primary;
+    background: $ui-white;
+    border: 1px solid $ui-black-transparent;
+    border-radius: $form-radius;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.effects[open] {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem;
+    padding: 0.45rem;
+    background: $ui-secondary;
+    border: 1px solid $ui-black-transparent;
+    border-radius: $form-radius;
+}
+
+.effects[open] summary { grid-column: 1 / -1; }
+.effects section { display: flex; flex-wrap: wrap; min-width: 0; }
+.effects h3 { width: 100%; margin: 0.15rem 0.25rem; color: $text-primary-transparent; font-size: 0.58rem; text-transform: uppercase; }
+.effects .effect-button { flex-basis: 50%; }
 
 .effect-button {
     flex-basis: 60px;
@@ -253,12 +302,26 @@ $border-radius: 0.25rem;
     display: flex;
     justify-content: space-between;
     margin-top: calc(2 * $space);
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
 }
 .duration {
     font-weight: bold;
 }
 .advanced-info {
+    color: $text-primary-transparent;
+}
+.selection-info {
+    width: 100%;
+    color: $text-primary-transparent;
+    font-size: 0.68rem;
+}
 
+@container (max-width: 560px) {
+    .row { flex-wrap: wrap; gap: 0.4rem; }
+    .input-group { border: 0 !important; padding: 0 !important; }
+    .waveform-container { overflow-x: auto; justify-content: flex-start; }
+    .effects { margin-left: 0; }
 }
 
 .alert {

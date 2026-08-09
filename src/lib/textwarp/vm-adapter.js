@@ -13,6 +13,7 @@ const defaultRecord = (source, moduleId = null) => ({
     languageVersion: '0.3',
     moduleId,
     source,
+    sourceLanguage: 'en-US',
     generatedRootIds: [],
     generatedBlockIds: [],
     sourceMap: {},
@@ -308,7 +309,8 @@ const saveTextSource = (vm, target, source, options = {}) => {
     if (!current) {
         current = writeSourceRecord(vm, target, defaultRecord('', target.id));
     }
-    if (current.source === source) return current;
+    const sourceLanguage = options.sourceLanguage || current.sourceLanguage || 'en-US';
+    if (current.source === source && current.sourceLanguage === sourceLanguage) return current;
     const text = DRAFT_MARKER + source;
     const existing = findDraftComment(target);
     if (!existing) {
@@ -317,7 +319,7 @@ const saveTextSource = (vm, target, source, options = {}) => {
         existing.comment.text = text;
     }
     const sourceEntry = findSourceComment(target);
-    const normalized = Object.assign({}, current, {source, hasDraft: true});
+    const normalized = Object.assign({}, current, {source, sourceLanguage, hasDraft: true});
     sourceRecordCache.set(target, {
         sourceText: sourceEntry && sourceEntry.comment.text || '',
         draftText: text,
@@ -768,6 +770,7 @@ const applyCompilation = (vm, target, compilation) => {
         const record = writeSourceRecord(vm, target, Object.assign({}, previousRecord, {
             languageVersion: '0.3',
             source: compilation.source,
+            sourceLanguage: compilation.sourceLanguage || previousRecord.sourceLanguage || 'en-US',
             generatedRootIds: finalUnits.map(unit => unit.rootId),
             generatedBlockIds: finalUnits.flatMap(unit => unit.blockIds),
             sourceMap: finalSourceMap,
@@ -784,6 +787,42 @@ const applyCompilation = (vm, target, compilation) => {
         } catch (rollbackError) {
             error.message = `${error.message} (a restauração também falhou: ${rollbackError.message})`;
         }
+        throw error;
+    }
+};
+
+const applyProjectCompilation = (vm, entries) => {
+    if (!Array.isArray(entries) || entries.length === 0) {
+        throw new Error('A compilação do projeto não contém módulos.');
+    }
+    if (entries.some(entry => !entry || !entry.target || !entry.compilation || !entry.compilation.success)) {
+        throw new Error('Todos os módulos precisam ser válidos antes do commit do projeto.');
+    }
+    if (
+        vm && vm.runtime && Array.isArray(vm.runtime.threads) &&
+        vm.runtime.threads.some(thread => thread && (thread.topBlock || thread.stack && thread.stack.length) && thread.status !== 4)
+    ) throw new Error('A execução deve parar antes do commit do projeto.');
+    const snapshots = entries.map(entry => ({
+        target: entry.target,
+        snapshot: captureTargetSnapshot(vm, entry.target)
+    }));
+    const records = [];
+    try {
+        entries.forEach(entry => records.push({
+            target: entry.target,
+            record: applyCompilation(vm, entry.target, entry.compilation)
+        }));
+        return records;
+    } catch (error) {
+        const rollbackErrors = [];
+        snapshots.slice().reverse().forEach(entry => {
+            try {
+                restoreTargetSnapshot(vm, entry.target, entry.snapshot);
+            } catch (rollbackError) {
+                rollbackErrors.push(rollbackError.message);
+            }
+        });
+        if (rollbackErrors.length) error.message += ` (rollback: ${rollbackErrors.join('; ')})`;
         throw error;
     }
 };
@@ -811,6 +850,7 @@ const createImportedSourceRecord = (target, source, rootIds, sourceMap = {}, com
     });
     return Object.assign({}, base, {
         source,
+        sourceLanguage: compilation && compilation.sourceLanguage || base.sourceLanguage || 'en-US',
         sourceMap,
         units,
         generatedRootIds: rootIds,
@@ -834,6 +874,7 @@ module.exports = {
     SOURCE_MARKER,
     adoptImportedRoots,
     applyCompilation,
+    applyProjectCompilation,
     blockFingerprint,
     captureTargetSnapshot,
     collectBlockIds,

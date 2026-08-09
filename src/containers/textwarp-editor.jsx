@@ -7,12 +7,12 @@ import {setProjectChanged, setProjectUnchanged} from '../reducers/project-change
 import {setFileHandle, setTextwarpUiOperation, TEXTWARP_UI_COMMANDS} from '../reducers/tw';
 
 import {compileText} from '../lib/textwarp/compiler';
+import {CompilationManager} from '../lib/textwarp/compilation-manager';
 import {ConversionWorkerClient} from '../lib/textwarp/conversion-worker-client';
 import {getDebugController} from '../lib/textwarp/debug-controller';
 import {inspectExpression} from '../lib/textwarp/debug-inspector';
 import {decompileTarget} from '../lib/textwarp/decompiler';
 import {createDiagnosticReport} from '../lib/textwarp/diagnostic-report';
-import ActivityBar from '../components/textwarp-editor/activity-bar.jsx';
 import {buildExtensionInventory, summarizeExtensionCatalog} from '../lib/textwarp/extension-catalog';
 import IdeSidebar from '../components/textwarp-editor/ide-sidebar.jsx';
 import InterfaceIcon from '../components/textwarp-editor/interface-icon.jsx';
@@ -38,10 +38,13 @@ import {
     normalizeUiState
 } from '../lib/textwarp/interface-state';
 import {createTranslator} from '../lib/textwarp/i18n';
+import {createEditorStatus, transitionEditorStatus} from '../lib/textwarp/editor-state';
 import {sanitizeIdentifier} from '../lib/textwarp/identifier';
-import {getDiagnosticSuggestion, getOutline} from '../lib/textwarp/language-service';
+import {CODE_LANGUAGES, DEFAULT_CODE_LANGUAGE} from '../lib/textwarp/language-registry';
+import {getCommandCatalog, getDiagnosticSuggestion, getOutline} from '../lib/textwarp/language-service';
+import {localizeSource, switchCodeLanguage} from '../lib/textwarp/localized-syntax';
 import MonacoEditor from '../components/textwarp-editor/monaco-editor.jsx';
-import {mergeVisualSource} from '../lib/textwarp/source-merge';
+import {SourceManager} from '../lib/textwarp/source-manager';
 import {shortcutParts} from '../lib/textwarp/shortcut-service';
 import {exportTextwarpProject, importTextwarpProject} from '../lib/textwarp/textwarp-package';
 import {
@@ -58,6 +61,7 @@ import {
 import {
     adoptImportedRoots,
     applyCompilation,
+    applyProjectCompilation,
     blockFingerprint,
     captureTargetSnapshot,
     markGeneratedRootsDirty,
@@ -82,12 +86,10 @@ import {
 } from '../lib/textwarp/workspace-service';
 import styles from '../components/textwarp-editor/text-editor.css';
 
-const AUTO_COMPILE_DELAY = 300;
 const ANALYSIS_DELAY = 120;
 const HISTORY_DELAY = 1200;
 const SEARCH_DELAY = 160;
 const MAX_AUTO_SOURCE_LENGTH = 100000;
-const MAX_AUTO_BLOCKS = 10000;
 const emptyWorkspace = () => ({modules: [], resources: [], editableFiles: [], generatedFiles: []});
 const DEFAULT_SHORTCUTS = Object.freeze({
     compile: 'F7',
@@ -271,7 +273,9 @@ class TextEditor extends React.Component {
             activeEditorPane: 'primary',
             fontSize: DEFAULT_FONT_SIZE,
             compactUi: false,
-            autoSync: true,
+            authority: 'text',
+            codeLanguage: DEFAULT_CODE_LANGUAGE,
+            editorStatus: createEditorStatus(),
             sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
             bottomPanelHeight: DEFAULT_BOTTOM_PANEL_HEIGHT,
             splitRatio: DEFAULT_SPLIT_RATIO,
@@ -321,6 +325,10 @@ class TextEditor extends React.Component {
         this.cursorStatus = null;
         this.extensionCatalog = {};
         this.conversionWorker = new ConversionWorkerClient();
+        this.sourceManager = new SourceManager();
+        this.compilationManager = new CompilationManager((source, options) =>
+            this.conversionWorker.compile(source, options)
+        );
         this.conversionGeneration = 0;
         this.secondaryConversionGeneration = 0;
         this.blockConversionGeneration = 0;
@@ -389,6 +397,7 @@ class TextEditor extends React.Component {
         this.handleOpenExternalPanel = this.handleOpenExternalPanel.bind(this);
         this.handleOpenSettingsPanel = this.handleOpenSettingsPanel.bind(this);
         this.handleCompactUiChange = this.handleCompactUiChange.bind(this);
+        this.handleCodeLanguageChange = this.handleCodeLanguageChange.bind(this);
         this.handleToggleActionMenu = this.handleToggleActionMenu.bind(this);
         this.handleWindowResize = this.handleWindowResize.bind(this);
         this.handlePointerMove = this.handlePointerMove.bind(this);
@@ -405,6 +414,7 @@ class TextEditor extends React.Component {
         this.handleOpenModel = this.openTarget;
         this.handleSecondaryOpenModel = this.setSecondaryTarget;
         this.insertResource = this.insertResource.bind(this);
+        this.insertCommand = this.insertCommand.bind(this);
         this.restoreHistory = this.restoreHistory.bind(this);
         this.undoLastConversion = this.undoLastConversion.bind(this);
         this.handleExternalFile = this.handleExternalFile.bind(this);
@@ -422,22 +432,57 @@ class TextEditor extends React.Component {
         this.toggleSettings = this.toggleSettings.bind(this);
         this.changeSidebarPanel = this.changeSidebarPanel.bind(this);
         this.changeReplaceValue = this.changeReplaceValue.bind(this);
+        this.handleWorkspaceSearch = () => this.openSidebar('search');
+        this.handleWorkspaceSettings = () => this.setState({settingsOpen: true});
+        this.handleWorkspaceCommandPalette = () => this.handleMobileCommands();
+        this.handleWorkspaceRun = () => this.handleRun();
+        this.handleWorkspaceStop = () => this.handleStop();
+        this.handleWorkspacePanel = event => {
+            const panel = event && event.detail && event.detail.panel;
+            if (['explorer', 'commands', 'search', 'actors', 'extensions', 'symbols', 'history'].includes(panel)) {
+                this.openSidebar(panel);
+            }
+        };
+        this.handleWorkspaceDocumentation = () => this.openDocumentation();
+        this.handleWorkspaceDebugger = () => this.openBottomPanel('debugger');
+        this.handleWorkspaceCodeLanguageChange = event => {
+            const codeLanguage = event && event.detail && event.detail.codeLanguage;
+            if (CODE_LANGUAGES.includes(codeLanguage)) {
+                this.handleCodeLanguageChange({target: {value: codeLanguage}});
+            }
+        };
+        this.handleWorkspaceCodeLanguageRequest = () => this.broadcastCodeLanguage();
+        this.handleWorkspaceLayoutRequest = () => this.broadcastLayoutState();
+        this.handleWorkspaceLayoutToggle = event => {
+            const area = event && event.detail && event.detail.area;
+            if (area === 'left-sidebar') {
+                const sidebarVisible = !this.state.sidebarVisible;
+                this.setState({sidebarVisible});
+                this.persistUiState({sidebarVisible});
+            } else if (area === 'bottom-panel') {
+                const bottomPanelCollapsed = !this.state.bottomPanelCollapsed;
+                this.setState({bottomPanelCollapsed});
+                this.persistUiState({bottomPanelCollapsed});
+            }
+        };
     }
 
     componentDidMount () {
         this._isMounted = true;
         const storage = this.getStorage();
+        const restoredState = {};
         try {
             const savedShortcuts = storage && JSON.parse(storage.getItem('textwarp.ide.shortcuts'));
             if (savedShortcuts) {
                 const shortcuts = Object.assign({}, DEFAULT_SHORTCUTS, savedShortcuts);
-                this.setState({shortcuts, shortcutDrafts: Object.assign({}, shortcuts)});
+                Object.assign(restoredState, {shortcuts, shortcutDrafts: Object.assign({}, shortcuts)});
             }
             const savedPreferences = storage && JSON.parse(storage.getItem('textwarp.ide.preferences'));
             if (savedPreferences) {
-                this.setState({
-                    autoSync: savedPreferences.autoSync !== false,
+                Object.assign(restoredState, {
                     bottomPanelHeight: clampBottomPanelHeight(savedPreferences.bottomPanelHeight),
+                    codeLanguage: CODE_LANGUAGES.includes(savedPreferences.codeLanguage) ?
+                        savedPreferences.codeLanguage : DEFAULT_CODE_LANGUAGE,
                     compactUi: savedPreferences.compactUi === true,
                     fontSize: clampFontSize(savedPreferences.fontSize),
                     sidebarWidth: clampSidebarWidth(savedPreferences.sidebarWidth),
@@ -448,7 +493,7 @@ class TextEditor extends React.Component {
             const savedUiState = storage && JSON.parse(storage.getItem('textwarp.ide.ui-state'));
             if (savedUiState) {
                 const restoredUiState = normalizeUiState(savedUiState);
-                this.setState(restoredUiState);
+                Object.assign(restoredState, restoredUiState);
             }
         } catch (error) {
             // Invalid local preferences are ignored and defaults remain active.
@@ -483,12 +528,30 @@ class TextEditor extends React.Component {
         }
         document.addEventListener('keydown', this.handleKeyDown, true);
         document.addEventListener('pointerdown', this.handleDocumentPointerDown, true);
+        document.addEventListener('textwarp-open-search', this.handleWorkspaceSearch);
+        document.addEventListener('textwarp-open-settings', this.handleWorkspaceSettings);
+        document.addEventListener('textwarp-open-command-palette', this.handleWorkspaceCommandPalette);
+        document.addEventListener('textwarp-run-project', this.handleWorkspaceRun);
+        document.addEventListener('textwarp-stop-project', this.handleWorkspaceStop);
+        document.addEventListener('textwarp-open-panel', this.handleWorkspacePanel);
+        document.addEventListener('textwarp-open-documentation', this.handleWorkspaceDocumentation);
+        document.addEventListener('textwarp-open-debugger', this.handleWorkspaceDebugger);
+        document.addEventListener('textwarp-change-code-language', this.handleWorkspaceCodeLanguageChange);
+        document.addEventListener('textwarp-request-code-language', this.handleWorkspaceCodeLanguageRequest);
+        document.addEventListener('textwarp-request-layout-state', this.handleWorkspaceLayoutRequest);
+        document.addEventListener('textwarp-toggle-layout', this.handleWorkspaceLayoutToggle);
+        this.broadcastCodeLanguage();
+        this.broadcastLayoutState();
         window.addEventListener('pointermove', this.handlePointerMove);
         window.addEventListener('pointerup', this.handlePointerUp);
-        this.loadSelectedTarget();
+        if (Object.keys(restoredState).length) {
+            this.setState(restoredState, () => this.loadSelectedTarget());
+        } else {
+            this.loadSelectedTarget();
+        }
     }
 
-    componentDidUpdate (previousProps) {
+    componentDidUpdate (previousProps, previousState) {
         if (
             previousProps.editingTargetId !== this.props.editingTargetId ||
             previousProps.editingTargetName !== this.props.editingTargetName
@@ -502,11 +565,17 @@ class TextEditor extends React.Component {
                 activeTab.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'nearest'});
             }
         }
+        if (previousState.codeLanguage !== this.state.codeLanguage) this.broadcastCodeLanguage();
+        if (
+            previousState.sidebarVisible !== this.state.sidebarVisible ||
+            previousState.bottomPanelCollapsed !== this.state.bottomPanelCollapsed
+        ) this.broadcastLayoutState();
     }
 
     componentWillUnmount () {
         this._isMounted = false;
         this.conversionGeneration++;
+        this.compilationManager.cancel();
         this.secondaryConversionGeneration++;
         this.blockConversionGeneration++;
         clearTimeout(this.compileTimer);
@@ -535,6 +604,18 @@ class TextEditor extends React.Component {
         }
         document.removeEventListener('keydown', this.handleKeyDown, true);
         document.removeEventListener('pointerdown', this.handleDocumentPointerDown, true);
+        document.removeEventListener('textwarp-open-search', this.handleWorkspaceSearch);
+        document.removeEventListener('textwarp-open-settings', this.handleWorkspaceSettings);
+        document.removeEventListener('textwarp-open-command-palette', this.handleWorkspaceCommandPalette);
+        document.removeEventListener('textwarp-run-project', this.handleWorkspaceRun);
+        document.removeEventListener('textwarp-stop-project', this.handleWorkspaceStop);
+        document.removeEventListener('textwarp-open-panel', this.handleWorkspacePanel);
+        document.removeEventListener('textwarp-open-documentation', this.handleWorkspaceDocumentation);
+        document.removeEventListener('textwarp-open-debugger', this.handleWorkspaceDebugger);
+        document.removeEventListener('textwarp-change-code-language', this.handleWorkspaceCodeLanguageChange);
+        document.removeEventListener('textwarp-request-code-language', this.handleWorkspaceCodeLanguageRequest);
+        document.removeEventListener('textwarp-request-layout-state', this.handleWorkspaceLayoutRequest);
+        document.removeEventListener('textwarp-toggle-layout', this.handleWorkspaceLayoutToggle);
     }
 
     getTarget () {
@@ -561,7 +642,11 @@ class TextEditor extends React.Component {
     }
 
     saveDraftSource (target, source) {
-        const record = saveTextSource(this.props.vm, target, source, {emitProjectChanged: false});
+        const document = this.sourceManager.getDocument(target.id);
+        const record = saveTextSource(this.props.vm, target, source, {
+            emitProjectChanged: false,
+            sourceLanguage: document ? document.sourceLanguage : this.state.codeLanguage
+        });
         if (this.props.onSetProjectChanged) this.props.onSetProjectChanged();
         return record;
     }
@@ -592,6 +677,21 @@ class TextEditor extends React.Component {
 
     t (key, values) {
         return createTranslator(this.props.locale)(key, values);
+    }
+
+    broadcastCodeLanguage () {
+        document.dispatchEvent(new CustomEvent('textwarp-code-language-state', {
+            detail: {codeLanguage: this.state.codeLanguage}
+        }));
+    }
+
+    broadcastLayoutState () {
+        document.dispatchEvent(new CustomEvent('textwarp-layout-state', {
+            detail: {
+                bottomPanelVisible: !this.state.bottomPanelCollapsed,
+                leftSidebarVisible: this.state.sidebarVisible
+            }
+        }));
     }
 
     getCachedOutline () {
@@ -768,9 +868,9 @@ class TextEditor extends React.Component {
 
     persistPreferences (next = {}) {
         const preferences = {
-            autoSync: typeof next.autoSync === 'undefined' ? this.state.autoSync : next.autoSync,
             bottomPanelHeight: next.bottomPanelHeight === undefined ?
                 this.state.bottomPanelHeight : next.bottomPanelHeight,
+            codeLanguage: next.codeLanguage === undefined ? this.state.codeLanguage : next.codeLanguage,
             compactUi: typeof next.compactUi === 'undefined' ? this.state.compactUi : next.compactUi,
             fontSize: next.fontSize === undefined ? this.state.fontSize : next.fontSize,
             sidebarWidth: next.sidebarWidth === undefined ? this.state.sidebarWidth : next.sidebarWidth,
@@ -1018,11 +1118,6 @@ class TextEditor extends React.Component {
         });
     }
 
-    setAutoSync (autoSync) {
-        this.setState({autoSync, convertMenuOpen: false});
-        this.persistPreferences({autoSync});
-    }
-
     async compareTextAndBlocks () {
         this.setState({convertMenuOpen: false});
         const target = this.getTarget();
@@ -1038,6 +1133,7 @@ class TextEditor extends React.Component {
         let visualCompilation;
         try {
             result = await this.conversionWorker.decompile(target, {
+                codeLanguage: this.state.codeLanguage,
                 extensionCatalog: this.extensionCatalog,
                 stageTarget: this.getStage()
             });
@@ -1134,12 +1230,21 @@ class TextEditor extends React.Component {
                 entry.targetId === currentTarget.id
             );
             const source = record ? record.source : currentEntry ? currentEntry.source : this.state.source;
+            const codeLanguage = record && record.sourceLanguage || this.state.codeLanguage;
+            if (currentTarget) this.sourceManager.openDocument({
+                id: currentTarget.id,
+                content: source,
+                dirty: Boolean(record && record.hasDraft),
+                sourceLanguage: codeLanguage,
+                metadata: {targetId: currentTarget.id}
+            });
             const compilation = currentTarget && source.length <= MAX_AUTO_SOURCE_LENGTH ?
                 compileText(source, this.getCompileOptions(currentTarget)) : {diagnostics: []};
             this.lastAppliedSource = record ? source : '';
             this.lastBlockFingerprint = blockFingerprint(currentTarget);
             this.setState({
                 source,
+                codeLanguage,
                 diagnostics: compilation.diagnostics,
                 status: this.t('conversionUndone'),
                 statusKind: 'success',
@@ -1147,7 +1252,10 @@ class TextEditor extends React.Component {
                 visualConflict: null,
                 blocksDiverged: false,
                 blockRefresh: this.state.blockRefresh + 1
-            }, () => this.refreshWorkspace());
+            }, () => {
+                this.persistPreferences({codeLanguage});
+                this.refreshWorkspace();
+            });
             return;
         }
         const target = snapshot && this.props.vm.runtime.getTargetById(snapshot.targetId);
@@ -1155,12 +1263,21 @@ class TextEditor extends React.Component {
         restoreTargetSnapshot(this.props.vm, target, snapshot.projectSnapshot);
         const record = readSourceRecord(target);
         const source = record ? record.source : snapshot.source;
+        const codeLanguage = record && record.sourceLanguage || this.state.codeLanguage;
+        this.sourceManager.openDocument({
+            id: target.id,
+            content: source,
+            dirty: Boolean(record && record.hasDraft),
+            sourceLanguage: codeLanguage,
+            metadata: {targetId: target.id}
+        });
         const compilation = source.length > MAX_AUTO_SOURCE_LENGTH ?
             {success: false, diagnostics: []} : compileText(source, this.getCompileOptions(target));
         this.lastAppliedSource = record ? source : '';
         this.lastBlockFingerprint = blockFingerprint(target);
         this.setState({
             source,
+            codeLanguage,
             diagnostics: compilation.diagnostics,
             status: this.t('conversionUndone'),
             statusKind: 'success',
@@ -1168,7 +1285,7 @@ class TextEditor extends React.Component {
             visualConflict: null,
             blocksDiverged: false,
             blockRefresh: this.state.blockRefresh + 1
-        });
+        }, () => this.persistPreferences({codeLanguage}));
     }
 
     openActionPanel (panel) {
@@ -1212,6 +1329,55 @@ class TextEditor extends React.Component {
 
     handleCompactUiChange (event) {
         this.setCompactUi(event.target.checked);
+    }
+
+    handleCodeLanguageChange (event) {
+        const codeLanguage = event.target.value;
+        if (!CODE_LANGUAGES.includes(codeLanguage) || codeLanguage === this.state.codeLanguage) return;
+        if (
+            typeof window !== 'undefined' &&
+            typeof window.confirm === 'function' &&
+            !window.confirm(this.t('codeLanguageConfirm', {language: codeLanguage}))
+        ) return;
+        const target = this.getTarget();
+        if (!target) return;
+        const switched = switchCodeLanguage(
+            this.state.source,
+            this.state.codeLanguage,
+            codeLanguage,
+            canonicalSource => compileText(canonicalSource, Object.assign(
+                {},
+                this.getCompileOptions(target),
+                {analysisOnly: true, codeLanguage: DEFAULT_CODE_LANGUAGE}
+            ))
+        );
+        if (!switched.success) {
+            this.setState({
+                diagnostics: switched.diagnostics,
+                status: this.t('codeLanguageError'),
+                statusKind: 'error'
+            });
+            return;
+        }
+        const conversionSnapshot = this.captureConversionSnapshot('code-language');
+        this.sourceManager.setSourceLanguage(target.id, codeLanguage, switched.source);
+        this.saveDraftSource(target, switched.source);
+        const compilation = compileText(switched.source, Object.assign(
+            {},
+            this.getCompileOptions(target),
+            {analysisOnly: true, codeLanguage}
+        ));
+        this.setState({
+            codeLanguage,
+            diagnostics: compilation.diagnostics,
+            editorStatus: transitionEditorStatus(this.state.editorStatus, 'edit', this.sourceManager.projectVersion),
+            lastConversion: conversionSnapshot,
+            source: switched.source,
+            status: this.t('codeLanguageChanged', {language: codeLanguage}),
+            statusKind: 'success',
+            blocksDiverged: true
+        });
+        this.persistPreferences({codeLanguage});
     }
 
     handleDocumentPointerDown (event) {
@@ -1380,11 +1546,13 @@ class TextEditor extends React.Component {
         if (
             this.languageContextCache && this.languageContextCache.workspace === workspace &&
             this.languageContextCache.source === activeSource &&
+            this.languageContextCache.codeLanguage === this.state.codeLanguage &&
             this.languageContextCache.extensionCatalog === this.extensionCatalog &&
             this.languageContextCache.targetId === targetId
         ) return this.languageContextCache.value;
         const value = {
             extensionCatalog: this.extensionCatalog,
+            codeLanguage: this.state.codeLanguage,
             resources: workspace.resources,
             documents: workspace.modules.map(module => ({
                 fileName: module.fileName,
@@ -1401,6 +1569,7 @@ class TextEditor extends React.Component {
             workspace,
             source: activeSource,
             extensionCatalog: this.extensionCatalog,
+            codeLanguage: this.state.codeLanguage,
             targetId,
             value
         };
@@ -1451,7 +1620,9 @@ class TextEditor extends React.Component {
                 this.state.workspace && this.state.workspace.resources ||
                 buildWorkspace(this.props.vm).resources,
             extensionCatalog: this.extensionCatalog,
-            availableOpcodes: Object.keys(this.props.vm.runtime._primitives || {})
+            availableOpcodes: Object.keys(this.props.vm.runtime._primitives || {}),
+            codeLanguage: this.sourceManager.getDocument(target.id) ?
+                this.sourceManager.getDocument(target.id).sourceLanguage : this.state.codeLanguage
         };
     }
 
@@ -1500,133 +1671,21 @@ class TextEditor extends React.Component {
     handleProjectChanged () {
         if (Date.now() < this.suppressBlockSyncUntil) return;
         clearTimeout(this.blockSyncTimer);
-        const generation = ++this.blockConversionGeneration;
-        this.blockSyncTimer = setTimeout(async () => {
+        this.blockSyncTimer = setTimeout(() => {
             const target = this.getTarget();
             const workspace = buildWorkspace(this.props.vm);
             this.refreshWorkspace(null, workspace);
             if (!target) return;
-            if (Object.keys(target.blocks && target.blocks._blocks || {}).length > MAX_AUTO_BLOCKS) {
-                this.setState({
-                    blocksDiverged: true,
-                    status: this.t('largeProjectManualConversion'),
-                    statusKind: 'working'
-                });
-                return;
-            }
             const fingerprint = blockFingerprint(target);
             if (fingerprint === this.lastBlockFingerprint) return;
-            if (!this.state.autoSync || !['blocks', 'split'].includes(this.state.viewMode)) {
-                this.setState({
-                    blocksDiverged: true,
-                    status: this.t('syncBlocksChanged'),
-                    statusKind: 'working'
-                });
-                return;
-            }
-            const referencesUpdated = this.synchronizeProjectReferences(workspace);
-            if (referencesUpdated) return;
-            let result;
-            try {
-                result = await this.conversionWorker.decompile(target, {
-                    extensionCatalog: this.extensionCatalog,
-                    stageTarget: this.getStage()
-                });
-            } catch (error) {
-                if (generation !== this.blockConversionGeneration) return;
-                this.setState({status: error.message, statusKind: 'error'});
-                return;
-            }
-            if (
-                generation !== this.blockConversionGeneration ||
-                !this._isMounted ||
-                target !== this.getTarget() ||
-                fingerprint !== blockFingerprint(target)
-            ) return;
-            const compileOptions = this.getCompileOptions(target, workspace);
-            const sources = [
-                result.source,
-                this.state.source,
-                this.lastAppliedSource
-            ];
-            let compilations;
-            try {
-                compilations = await Promise.all(sources.map(source =>
-                    source ? this.conversionWorker.compile(source, compileOptions) : Promise.resolve(null)
-                ));
-            } catch (error) {
-                if (generation !== this.blockConversionGeneration) return;
-                this.setState({status: error.message, statusKind: 'error'});
-                return;
-            }
-            if (generation !== this.blockConversionGeneration || !this._isMounted) return;
-            const [visualCompilation, textCompilation, baseCompilation] = compilations;
-            result.canonicalSource = result.source;
-            result.visualCompilation = visualCompilation;
-            const hasPendingText = this.state.source !== this.lastAppliedSource || countErrors(this.state.diagnostics) > 0;
-            const merged = baseCompilation && visualCompilation.success ? mergeVisualSource({
-                baseSource: this.lastAppliedSource,
-                textSource: this.state.source,
-                visualSource: result.canonicalSource,
-                baseCompilation,
-                textCompilation,
-                visualCompilation
-            }) : null;
-            if (merged && merged.source !== null) {
-                result.source = merged.source;
-                result.semanticMerge = merged;
-            }
-            if (hasPendingText && (!merged || merged.conflicts.length > 0)) {
-                this.lastBlockFingerprint = fingerprint;
-                this.setState({
-                    visualConflict: result,
-                    blocksDiverged: true,
-                    status: merged && merged.conflicts.length ?
-                        this.t('semanticConflict', {count: merged.conflicts.length}) :
-                        this.t('invalidTextConflict'),
-                    statusKind: 'working'
-                });
-                return;
-            }
-            this.acceptVisualChanges(result);
+            this.lastBlockFingerprint = fingerprint;
+            this.setState({
+                blocksDiverged: true,
+                status: this.state.authority === 'blocks' ?
+                    this.t('blocksSourceOutdated') : this.t('blocksPreviewOutdated'),
+                statusKind: 'working'
+            });
         }, 220);
-    }
-
-    synchronizeProjectReferences (preparedWorkspace = null) {
-        if (this.isRuntimeActive()) return false;
-        const workspace = preparedWorkspace || buildWorkspace(this.props.vm);
-        let currentUpdate = null;
-        (this.props.vm.runtime.targets || []).forEach(target => {
-            const record = readSourceRecord(target);
-            if (!record) return;
-            const synchronized = synchronizeStableReferences(
-                record.source,
-                target,
-                record.resourceBindings,
-                workspace.resources
-            );
-            if (!synchronized.count) return;
-            const compilation = compileText(synchronized.source, this.getCompileOptions(target, workspace));
-            if (!compilation.success) return;
-            this.suppressBlockSyncUntil = Date.now() + 750;
-            applyCompilation(this.props.vm, target, compilation);
-            this.recordHistory(
-                target.id,
-                synchronized.source,
-                this.t('historyResourceSync')
-            );
-            if (target.id === this.props.editingTargetId) currentUpdate = {source: synchronized.source, compilation};
-        });
-        if (!currentUpdate) return false;
-        this.lastAppliedSource = currentUpdate.source;
-        this.lastBlockFingerprint = blockFingerprint(this.getTarget());
-        this.setState({
-            source: currentUpdate.source,
-            diagnostics: currentUpdate.compilation.diagnostics,
-            status: this.t('referencesUpdated'),
-            statusKind: 'success'
-        });
-        return true;
     }
 
     acceptVisualChanges (result = this.state.visualConflict) {
@@ -1675,10 +1734,22 @@ class TextEditor extends React.Component {
         }
         this.lastAppliedSource = result.source;
         this.lastBlockFingerprint = blockFingerprint(target);
+        if (this.sourceManager.getDocument(target.id)) {
+            this.sourceManager.setSourceLanguage(target.id, this.state.codeLanguage, result.source);
+        } else {
+            this.sourceManager.openDocument({
+                id: target.id,
+                content: result.source,
+                dirty: false,
+                sourceLanguage: this.state.codeLanguage,
+                metadata: {targetId: target.id}
+            });
+        }
         this.setState(state => ({
             source: result.source,
             diagnostics: compilation.diagnostics,
             visualConflict: null,
+            authority: 'text',
             conflictReviewOpen: false,
             blocksDiverged: false,
             lastConversion: conversionSnapshot || state.lastConversion,
@@ -1705,12 +1776,17 @@ class TextEditor extends React.Component {
     }
 
     setViewMode (viewMode) {
-        this.setState({viewMode}, () => {
+        const opensBlocks = viewMode === 'blocks' || viewMode === 'split';
+        this.setState({
+            viewMode,
+            authority: viewMode === 'blocks' ? 'blocks' : 'text'
+        }, () => {
             this.persistUiState({viewMode});
             if (typeof window !== 'undefined') window.dispatchEvent(new Event('resize'));
-            if (viewMode === 'blocks' || viewMode === 'split') {
-                this.lastBlockFingerprint = blockFingerprint(this.getTarget());
-            }
+            if (opensBlocks && (
+                this.state.source !== this.lastAppliedSource ||
+                this.state.blocksDiverged
+            )) this.compileCurrent(false);
         });
     }
 
@@ -1733,7 +1809,11 @@ class TextEditor extends React.Component {
         }
         const insideMonaco = event.target && typeof event.target.closest === 'function' &&
             event.target.closest('.monaco-editor');
-        if (isEditableElement(event.target) && !insideMonaco) return;
+        const trapSidebarFocus = event.key === 'Tab' &&
+            this.state.narrowLayout &&
+            this.state.sidebarVisible &&
+            this.state.viewMode !== 'docs';
+        if (isEditableElement(event.target) && !insideMonaco && !trapSidebarFocus) return;
         if (!event.ctrlKey && !event.metaKey && !event.altKey) {
             if (event.key === 'F8') {
                 event.preventDefault();
@@ -1759,13 +1839,7 @@ class TextEditor extends React.Component {
                 return;
             }
         }
-        if (
-            event.key === 'Tab' &&
-            this.state.narrowLayout &&
-            this.state.sidebarVisible &&
-            this.state.viewMode !== 'docs' &&
-            this.rootElement
-        ) {
+        if (trapSidebarFocus) {
             const sidebar = this.rootElement.querySelector('#textwarp-ide-sidebar');
             const focusable = sidebar && Array.from(sidebar.querySelectorAll(
                 'button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
@@ -1943,6 +2017,15 @@ class TextEditor extends React.Component {
         }, 0);
     }
 
+    insertCommand (command) {
+        if (!command || !command.snippet) return;
+        this.setViewMode('code');
+        setTimeout(() => {
+            const editor = this.getActiveMonacoEditor();
+            if (editor) editor.insertSnippet(command.snippet);
+        }, 0);
+    }
+
     handleSearch (searchQuery) {
         clearTimeout(this.searchTimer);
         if (!String(searchQuery || '').trim()) {
@@ -2028,7 +2111,11 @@ class TextEditor extends React.Component {
             'info',
             this.t('stopRequestedLog')
         );
-        this.setState({status: this.t('executionStopped'), statusKind: 'idle'});
+        this.setState({
+            editorStatus: transitionEditorStatus(this.state.editorStatus, 'stop'),
+            status: this.t('executionStopped'),
+            statusKind: 'idle'
+        });
     }
 
     handleRestart () {
@@ -2036,7 +2123,7 @@ class TextEditor extends React.Component {
         this.setState({
             status: this.t('executionRestarting'),
             statusKind: 'working'
-        }, () => this.compileCurrent(true));
+        }, () => this.compileProject(true));
     }
 
     async handleRunSelection (selection) {
@@ -2224,7 +2311,8 @@ class TextEditor extends React.Component {
         }
         this.refreshExtensionCatalog();
         const stored = readSourceRecord(target);
-        const initialSource = stored ? stored.source : getTemplate(target);
+        const codeLanguage = stored && stored.sourceLanguage || this.state.codeLanguage || DEFAULT_CODE_LANGUAGE;
+        const initialSource = stored ? stored.source : localizeSource(getTemplate(target), codeLanguage).source;
         const synchronized = stored ? synchronizeStableReferences(
             initialSource,
             target,
@@ -2232,7 +2320,33 @@ class TextEditor extends React.Component {
             buildWorkspace(this.props.vm).resources
         ) : {source: initialSource, count: 0};
         const source = synchronized.source;
-        const compilation = compileText(source, this.getCompileOptions(target));
+        const workspace = buildWorkspace(this.props.vm);
+        this.sourceManager.retainDocuments((this.props.vm.runtime.targets || []).map(runtimeTarget => runtimeTarget.id));
+        (this.props.vm.runtime.targets || []).forEach(runtimeTarget => {
+            const runtimeRecord = readSourceRecord(runtimeTarget);
+            if (!runtimeRecord && runtimeTarget !== target) return;
+            this.sourceManager.openDocument({
+                id: runtimeTarget.id,
+                content: runtimeTarget === target ? source : runtimeRecord.source,
+                dirty: Boolean(runtimeRecord && runtimeRecord.hasDraft),
+                sourceLanguage: runtimeTarget === target ? codeLanguage : (
+                    runtimeRecord && runtimeRecord.sourceLanguage || DEFAULT_CODE_LANGUAGE
+                ),
+                metadata: {targetId: runtimeTarget.id}
+            });
+        });
+        if (!this.sourceManager.getDocument(target.id)) this.sourceManager.openDocument({
+            id: target.id,
+            content: source,
+            dirty: !stored,
+            sourceLanguage: codeLanguage,
+            metadata: {targetId: target.id}
+        });
+        this.sourceManager.setActiveDocument(target.id);
+        const compilation = compileText(source, Object.assign({}, this.getCompileOptions(target), {
+            analysisOnly: true,
+            codeLanguage
+        }));
         const existingBlocks = target.blocks && target.blocks._blocks ? Object.keys(target.blocks._blocks).length : 0;
         const breakpoints = stored ? stored.breakpoints : [];
         const storage = this.getStorage();
@@ -2241,7 +2355,6 @@ class TextEditor extends React.Component {
         rememberRecentTarget(storage, projectId, target.id);
         const history = loadHistory(storage, projectId, target.id);
         const historyRequest = loadHistoryAsync(storage, projectId, target.id);
-        const workspace = buildWorkspace(this.props.vm);
         const openTargetIds = Array.from(new Set(
             this.state.openTargetIds.concat(recent).filter(id => workspace.modules.some(module => module.id === id)).concat(target.id)
         ));
@@ -2252,25 +2365,34 @@ class TextEditor extends React.Component {
         );
         const secondaryTarget = secondaryTargetId && this.props.vm.runtime.getTargetById(secondaryTargetId);
         const secondaryStored = secondaryTarget && readSourceRecord(secondaryTarget);
-        const secondarySource = secondaryTarget ? (secondaryStored ? secondaryStored.source : getTemplate(secondaryTarget)) : '';
+        const secondaryCodeLanguage = secondaryStored && secondaryStored.sourceLanguage ||
+            this.state.codeLanguage || DEFAULT_CODE_LANGUAGE;
+        const secondarySource = secondaryTarget ? (secondaryStored ? secondaryStored.source :
+            localizeSource(getTemplate(secondaryTarget), secondaryCodeLanguage).source) : '';
         const secondaryCompilation = secondaryTarget && secondarySource.length <= MAX_AUTO_SOURCE_LENGTH ?
-            compileText(secondarySource, this.getCompileOptions(secondaryTarget)) : {diagnostics: []};
+            compileText(secondarySource, Object.assign({}, this.getCompileOptions(secondaryTarget), {
+                analysisOnly: true,
+                codeLanguage: secondaryCodeLanguage
+            })) : {diagnostics: []};
         if (this.debugController) this.debugController.setBreakpoints(target, breakpoints);
-        const starterApplied = !stored && !target.isStage && existingBlocks === 0 && compilation.success;
-        if ((synchronized.count || starterApplied) && compilation.success) {
-            this.suppressBlockSyncUntil = Date.now() + 750;
-            applyCompilation(this.props.vm, target, compilation);
-        }
-        this.lastAppliedSource = stored || starterApplied ? source : '';
+        const starterApplied = false;
+        this.lastAppliedSource = stored && !stored.hasDraft ? source : '';
         this.lastBlockFingerprint = blockFingerprint(target);
         this.setState({
             source,
+            codeLanguage,
             diagnostics: compilation.diagnostics,
             status: synchronized.count ? this.t('sourceReferencesUpdated') :
                 stored ? this.t('sourceLoaded') : starterApplied ?
                     this.t('starterApplied') : existingBlocks ?
                         this.t('existingBlocksHelp') : this.t('emptyStarter'),
             statusKind: stored || starterApplied ? 'success' : 'idle',
+            editorStatus: {
+                state: stored && !stored.hasDraft ? 'ready' : 'dirty',
+                sourceVersion: this.sourceManager.projectVersion,
+                buildVersion: stored && !stored.hasDraft ? this.sourceManager.projectVersion : null,
+                runtimeVersion: null
+            },
             targetName: target.getName(),
             isStage: target.isStage,
             breakpoints,
@@ -2310,8 +2432,25 @@ class TextEditor extends React.Component {
         const generation = ++this.conversionGeneration;
         this.blockConversionGeneration++;
         this.conversionWorker.cancelPending();
+        if (this.sourceManager.getDocument(target.id)) {
+            this.sourceManager.updateDocument(target.id, source);
+        } else {
+            this.sourceManager.openDocument({
+                id: target.id,
+                content: source,
+                dirty: true,
+                sourceLanguage: this.state.codeLanguage,
+                metadata: {targetId: target.id}
+            });
+        }
         this.saveDraftSource(target, source);
         this.setState({
+            blocksDiverged: true,
+            editorStatus: transitionEditorStatus(
+                this.state.editorStatus,
+                'edit',
+                this.sourceManager.projectVersion
+            ),
             externalSyncState: this.state.externalHandle ? 'dirty' : this.state.externalSyncState,
             source,
             status: this.t('analyzing'),
@@ -2320,7 +2459,7 @@ class TextEditor extends React.Component {
         });
         clearTimeout(this.historyTimer);
         this.historyTimer = setTimeout(() => {
-            const history = this.recordHistory(
+            this.recordHistory(
                 target.id,
                 source,
                 this.t('historyAutosave')
@@ -2348,7 +2487,11 @@ class TextEditor extends React.Component {
             }
             let compilation;
             try {
-                compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
+                compilation = await this.conversionWorker.compile(source, Object.assign(
+                    {},
+                    this.getCompileOptions(target),
+                    {analysisOnly: true}
+                ));
             } catch (error) {
                 if (generation !== this.conversionGeneration) return;
                 this.setState({status: error.message, statusKind: 'error'});
@@ -2367,40 +2510,21 @@ class TextEditor extends React.Component {
                     this.t('sourceErrors', {count: errors}) : this.t('analyzing'),
                 statusKind: errors ? 'error' : 'working'
             });
-            if (compilation.success && this.state.autoSync) {
-                const conversionScopePrompt = getConversionScope(target, compilation);
-                if (conversionScopePrompt) {
-                    this.setState({
-                        conversionScopePrompt,
-                        blocksDiverged: true,
-                        status: this.t('conversionScopeTitle'),
-                        statusKind: 'working'
-                    });
-                    return;
-                }
-                this.compileTimer = setTimeout(() => {
-                    if (
-                        this.props.editingTargetId === targetId &&
-                        this.state.source === source
-                    ) this.applyCompilation(
-                        compilation,
-                        target,
-                        false,
-                        this.captureConversionSnapshot('text-to-blocks')
-                    );
-                }, AUTO_COMPILE_DELAY);
-            }
         }, ANALYSIS_DELAY);
     }
 
     handleWorkspaceModelChange (targetId, source) {
         const target = this.props.vm.runtime.getTargetById(targetId);
         if (!target || targetId === this.props.editingTargetId) return;
-        const compilation = compileText(source, this.getCompileOptions(target));
+        if (this.sourceManager.getDocument(targetId)) this.sourceManager.updateDocument(targetId, source);
+        else this.sourceManager.openDocument({
+            id: targetId,
+            content: source,
+            dirty: true,
+            sourceLanguage: readSourceRecord(target) && readSourceRecord(target).sourceLanguage || DEFAULT_CODE_LANGUAGE,
+            metadata: {targetId}
+        });
         this.saveDraftSource(target, source);
-        if (compilation.success && this.state.autoSync && !this.isRuntimeActive()) {
-            applyCompilation(this.props.vm, target, compilation);
-        }
         this.recordHistory(
             targetId,
             source,
@@ -2422,7 +2546,11 @@ class TextEditor extends React.Component {
         }
         const stored = readSourceRecord(target);
         const secondarySource = stored ? stored.source : getTemplate(target);
-        const compilation = compileText(secondarySource, this.getCompileOptions(target));
+        const compilation = compileText(secondarySource, Object.assign(
+            {},
+            this.getCompileOptions(target),
+            {analysisOnly: true}
+        ));
         this.setState({
             secondaryTargetId: selectedId,
             secondarySource,
@@ -2438,6 +2566,14 @@ class TextEditor extends React.Component {
         this.conversionGeneration++;
         this.blockConversionGeneration++;
         this.conversionWorker.cancelPending();
+        if (this.sourceManager.getDocument(target.id)) this.sourceManager.updateDocument(target.id, source);
+        else this.sourceManager.openDocument({
+            id: target.id,
+            content: source,
+            dirty: true,
+            sourceLanguage: readSourceRecord(target) && readSourceRecord(target).sourceLanguage || DEFAULT_CODE_LANGUAGE,
+            metadata: {targetId: target.id}
+        });
         this.saveDraftSource(target, source);
         this.setState({
             secondarySource: source,
@@ -2453,7 +2589,11 @@ class TextEditor extends React.Component {
             ) return;
             let compilation;
             try {
-                compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
+                compilation = await this.conversionWorker.compile(source, Object.assign(
+                    {},
+                    this.getCompileOptions(target),
+                    {analysisOnly: true}
+                ));
             } catch (error) {
                 if (generation === this.secondaryConversionGeneration) {
                     this.setState({status: error.message, statusKind: 'error'});
@@ -2472,20 +2612,6 @@ class TextEditor extends React.Component {
                 this.t('historyDualEditor')
             );
             this.setState({secondaryDiagnostics: compilation.diagnostics, saveState: 'salvo'});
-            if (!compilation.success || !this.state.autoSync) return;
-            this.secondaryCompileTimer = setTimeout(() => {
-                if (
-                    this.state.secondaryTargetId !== target.id ||
-                    this.state.secondarySource !== source
-                ) return;
-                this.suppressBlockSyncUntil = Date.now() + 750;
-                const conversionSnapshot = this.captureConversionSnapshot('text-to-blocks', target, source);
-                this.applySecondaryCompilation(compilation, target, false, conversionSnapshot);
-                if (this._isMounted && this.state.secondaryTargetId === target.id) {
-                    this.setState({saveState: 'salvo', lastConversion: conversionSnapshot}, () => this.refreshWorkspace());
-                    if (target.id === this.props.editingTargetId) this.setState({history});
-                }
-            }, AUTO_COMPILE_DELAY);
         }, ANALYSIS_DELAY);
     }
 
@@ -2495,6 +2621,10 @@ class TextEditor extends React.Component {
         const target = this.state.secondaryTargetId &&
             this.props.vm.runtime.getTargetById(this.state.secondaryTargetId);
         if (!target) return;
+        if (run) {
+            this.compileProject(true);
+            return;
+        }
         const generation = ++this.secondaryConversionGeneration;
         this.conversionGeneration++;
         this.blockConversionGeneration++;
@@ -2625,6 +2755,11 @@ class TextEditor extends React.Component {
             );
             this.setState(state => ({
                 diagnostics: compilation.diagnostics,
+                editorStatus: transitionEditorStatus(
+                    state.editorStatus,
+                    'compile-success',
+                    this.sourceManager.projectVersion
+                ),
                 status: this.t('compileSuccess', {
                     blocks: record.generatedBlockIds.length,
                     changed,
@@ -2637,6 +2772,11 @@ class TextEditor extends React.Component {
                 lastConversion: conversionSnapshot,
                 blockRefresh: state.blockRefresh + 1
             }));
+            const document = this.sourceManager.getDocument(target.id);
+            if (document) this.sourceManager.markCommitted({
+                version: this.sourceManager.projectVersion,
+                files: [document]
+            });
             if (run) this.props.vm.greenFlag();
         } catch (error) {
             if (replacementSnapshot) restoreTargetSnapshot(this.props.vm, target, replacementSnapshot);
@@ -2655,7 +2795,11 @@ class TextEditor extends React.Component {
         this.blockConversionGeneration++;
         this.conversionWorker.cancelPending();
         const source = this.state.source;
-        this.setState({status: this.t('analyzing'), statusKind: 'working'});
+        this.setState({
+            editorStatus: transitionEditorStatus(this.state.editorStatus, 'compile'),
+            status: this.t('analyzing'),
+            statusKind: 'working'
+        });
         let compilation;
         try {
             compilation = await this.conversionWorker.compile(source, this.getCompileOptions(target));
@@ -2676,12 +2820,93 @@ class TextEditor extends React.Component {
             this.saveDraftSource(target, source);
             this.setState({
                 diagnostics: compilation.diagnostics,
+                editorStatus: transitionEditorStatus(this.state.editorStatus, 'compile-error'),
                 status: this.t('compileErrors', {count: errors}),
                 statusKind: 'error'
             });
             return;
         }
         this.applyCompilation(compilation, target, run, conversionSnapshot);
+    }
+
+    async compileProject (run) {
+        const activeTarget = this.getTarget();
+        if (!activeTarget) return;
+        const snapshot = this.sourceManager.createSnapshot();
+        if (run && this.props.vm && typeof this.props.vm.stopAll === 'function') this.props.vm.stopAll();
+        this.compilationManager.cancel();
+        this.conversionWorker.cancelPending();
+        const generation = ++this.conversionGeneration;
+        this.setState({
+            editorStatus: transitionEditorStatus(this.state.editorStatus, 'compile'),
+            status: this.t('compilingProject'),
+            statusKind: 'working'
+        });
+        let build;
+        try {
+            build = await this.compilationManager.compile(snapshot, file => {
+                const target = this.props.vm.runtime.getTargetById(file.id);
+                return target ? this.getCompileOptions(target) : {};
+            });
+        } catch (error) {
+            if (generation !== this.conversionGeneration || /cancel/i.test(error.message)) return;
+            this.setState({
+                editorStatus: transitionEditorStatus(this.state.editorStatus, 'compile-error'),
+                status: error.message,
+                statusKind: 'error'
+            });
+            return;
+        }
+        if (
+            !build ||
+            generation !== this.conversionGeneration ||
+            !this._isMounted ||
+            !this.sourceManager.isCurrent(snapshot)
+        ) return;
+        const activeBuild = build.documents.find(document => document.file.id === activeTarget.id);
+        if (!build.success) {
+            this.setState({
+                diagnostics: activeBuild ? activeBuild.compilation.diagnostics : [],
+                editorStatus: transitionEditorStatus(this.state.editorStatus, 'compile-error'),
+                status: this.t('compileErrors', {count: countErrors(build.diagnostics)}),
+                statusKind: 'error'
+            });
+            return;
+        }
+        const entries = build.documents.map(document => ({
+            target: this.props.vm.runtime.getTargetById(document.file.id),
+            compilation: document.compilation
+        })).filter(entry => entry.target);
+        try {
+            this.suppressBlockSyncUntil = Date.now() + 1000;
+            applyProjectCompilation(this.props.vm, entries);
+        } catch (error) {
+            this.setState({
+                editorStatus: transitionEditorStatus(this.state.editorStatus, 'compile-error'),
+                status: error.message,
+                statusKind: 'error'
+            });
+            return;
+        }
+        this.sourceManager.markCommitted(snapshot);
+        const readyStatus = transitionEditorStatus(
+            Object.assign({}, this.state.editorStatus, {sourceVersion: snapshot.version}),
+            'compile-success',
+            snapshot.version
+        );
+        const editorStatus = run ? transitionEditorStatus(readyStatus, 'run') : readyStatus;
+        this.lastAppliedSource = activeBuild ? activeBuild.compilation.source : this.state.source;
+        this.lastBlockFingerprint = blockFingerprint(activeTarget);
+        this.setState(state => ({
+            blocksDiverged: false,
+            diagnostics: activeBuild ? activeBuild.compilation.diagnostics : [],
+            editorStatus,
+            status: run ? this.t('runningCurrentBuild', {version: snapshot.version}) :
+                this.t('projectBuildReady', {version: snapshot.version}),
+            statusKind: 'success',
+            blockRefresh: state.blockRefresh + 1
+        }), () => this.refreshWorkspace());
+        if (run) this.props.vm.greenFlag();
     }
 
     async handleCompile () {
@@ -2746,7 +2971,7 @@ class TextEditor extends React.Component {
     }
 
     handleRun () {
-        this.compileCurrent(true);
+        this.compileProject(true);
     }
 
     async handleImportBlocks () {
@@ -2871,6 +3096,7 @@ class TextEditor extends React.Component {
                     statusKind: 'working'
                 });
                 const result = await this.conversionWorker.decompile(target, {
+                    codeLanguage: this.state.codeLanguage,
                     extensionCatalog: this.extensionCatalog,
                     stageTarget
                 });
@@ -2952,6 +3178,17 @@ class TextEditor extends React.Component {
                         result.sourceMap,
                         compilation
                     );
+                    if (this.sourceManager.getDocument(target.id)) {
+                        this.sourceManager.setSourceLanguage(target.id, this.state.codeLanguage, result.source);
+                    } else {
+                        this.sourceManager.openDocument({
+                            id: target.id,
+                            content: result.source,
+                            dirty: false,
+                            sourceLanguage: this.state.codeLanguage,
+                            metadata: {targetId: target.id}
+                        });
+                    }
                 });
             } catch (error) {
                 projectSnapshots.slice().reverse().forEach(entry => {
@@ -2978,6 +3215,7 @@ class TextEditor extends React.Component {
                 history: currentHistory,
                 lastConversion: conversionSnapshot,
                 visualConflict: null,
+                authority: 'text',
                 blocksDiverged: false,
                 saveState: 'salvo',
                 blockRefresh: state.blockRefresh + 1
@@ -3622,40 +3860,11 @@ class TextEditor extends React.Component {
                 ref={element => { this.rootElement = element; }}
                 style={rootStyle}
             >
-                <header className={styles.toolbar} role="toolbar">
-                    <div className={styles.viewTabs} aria-label={t('viewModes')} role="tablist">
-                        {[
-                            ['code', t('textView')],
-                            ['blocks', t('blocks')],
-                            ['split', t('textAndBlocks')],
-                            ['docs', t('documentation')]
-                        ].map(([id, label]) => (
-                            <button
-                                aria-controls="textwarp-editor-area"
-                                aria-selected={this.state.viewMode === id}
-                                className={this.state.viewMode === id ? styles.activeTab : ''}
-                                data-tab-id={id}
-                                id={`textwarp-view-tab-${id}`}
-                                key={id}
-                                role="tab"
-                                tabIndex={this.state.viewMode === id ? 0 : -1}
-                                title={label}
-                                type="button"
-                                onClick={() => {
-                                    if (id === 'docs') this.setState({docsQuery: ''}, () => this.setViewMode(id));
-                                    else this.setViewMode(id);
-                                }}
-                                onKeyDown={event => this.handleTabKeyDown(
-                                    event,
-                                    VIEW_IDS,
-                                    id,
-                                    nextId => this.setViewMode(nextId)
-                                )}
-                            >{label}</button>
-                        ))}
-                    </div>
-                </header>
-                <div className={styles.openTabsRegion}>
+                <div
+                    aria-label={t('editor')}
+                    className={styles.openTabsRegion}
+                    role="toolbar"
+                >
                     <nav
                         aria-label={t('openScripts')}
                         className={styles.openTabs}
@@ -3787,14 +3996,50 @@ class TextEditor extends React.Component {
                             );
                         })}
                     </nav>
+                    <div className={styles.viewTabs} aria-label={t('viewModes')} role="tablist">
+                        {[
+                            ['code', t('textView')],
+                            ['blocks', t('blocks')],
+                            ['split', t('textAndBlocks')],
+                            ['docs', t('documentation')]
+                        ].map(([id, label]) => (
+                            <button
+                                aria-controls="textwarp-editor-area"
+                                aria-selected={this.state.viewMode === id}
+                                className={this.state.viewMode === id ? styles.activeTab : ''}
+                                data-tab-id={id}
+                                id={`textwarp-view-tab-${id}`}
+                                key={id}
+                                role="tab"
+                                tabIndex={this.state.viewMode === id ? 0 : -1}
+                                title={label}
+                                type="button"
+                                onClick={() => {
+                                    if (id === 'docs') this.setState({docsQuery: ''}, () => this.setViewMode(id));
+                                    else this.setViewMode(id);
+                                }}
+                                onKeyDown={event => this.handleTabKeyDown(
+                                    event,
+                                    VIEW_IDS,
+                                    id,
+                                    nextId => this.setViewMode(nextId)
+                                )}
+                            >{label}</button>
+                        ))}
+                    </div>
                     <button
+                        aria-controls="textwarp-ide-sidebar"
+                        aria-expanded={this.state.sidebarVisible && this.state.sidebarPanel === 'explorer'}
                         aria-label={t('openFileExplorer')}
                         className={styles.newFileTab}
                         title={t('openFileExplorer')}
                         type="button"
                         onClick={() => {
-                            this.setState({sidebarPanel: 'explorer', sidebarVisible: true});
-                            this.persistUiState({sidebarPanel: 'explorer', sidebarVisible: true});
+                            if (this.state.sidebarVisible && this.state.sidebarPanel === 'explorer') {
+                                this.closeSidebar();
+                            } else {
+                                this.openSidebar('explorer');
+                            }
                         }}
                     >
                         <InterfaceIcon name="plus" />
@@ -3858,16 +4103,6 @@ class TextEditor extends React.Component {
                                     this.closeConvertMenu();
                                     this.handleImportProjectBlocks();
                                 }}>{t('blocksToTextProject')}</button>
-                                <button
-                                    aria-checked={this.state.autoSync}
-                                    className={styles.menuStatusItem}
-                                    role="menuitemcheckbox"
-                                    type="button"
-                                    onClick={() => this.setAutoSync(!this.state.autoSync)}
-                                >
-                                    <span>{t('autoSync')}</span>
-                                    <small>{this.state.autoSync ? t('enabled') : t('disabled')}</small>
-                                </button>
                                 <button role="menuitem" type="button" onClick={() => this.compareTextAndBlocks()}>
                                     {t('compareVersions')}
                                 </button>
@@ -4002,6 +4237,13 @@ class TextEditor extends React.Component {
                                 onChange={event => this.setFontSize(event.target.value)}
                             />
                             <output>{`${this.state.fontSize}px`}</output>
+                        </label>
+                        <label>
+                            <span>{t('codeLanguage')}</span>
+                            <select value={this.state.codeLanguage} onChange={this.handleCodeLanguageChange}>
+                                <option value="en-US">English</option>
+                                <option value="pt-BR">Português (Brasil)</option>
+                            </select>
                         </label>
                         <label className={styles.compactPreference}>
                             <input
@@ -4222,24 +4464,12 @@ class TextEditor extends React.Component {
                             onClick={this.closeSidebar}
                         />
                     )}
-                    <ActivityBar
-                        activeBottomPanel={this.state.activeBottomPanel}
-                        activeSidebarPanel={this.state.sidebarPanel}
-                        bottomPanelCollapsed={this.state.bottomPanelCollapsed}
-                        locale={this.props.locale}
-                        settingsOpen={this.state.settingsOpen}
-                        sidebarVisible={this.state.sidebarVisible && this.state.viewMode !== 'docs'}
-                        viewMode={this.state.viewMode}
-                        onCloseSidebar={this.closeSidebar}
-                        onOpenBottomPanel={this.openBottomPanel}
-                        onOpenDocumentation={this.openDocumentation}
-                        onOpenSettings={this.toggleSettings}
-                        onOpenSidebar={this.openSidebar}
-                    />
                     <IdeSidebar
                         activeFileName={targetFileName(target)}
                         activePanel={this.state.sidebarPanel}
                         activeTargetId={this.props.editingTargetId}
+                        commands={this.state.sidebarPanel === 'commands' ?
+                            getCommandCatalog(this.getLanguageContext(target)) : []}
                         extensionSummary={this.state.extensionSummary}
                         history={this.state.history}
                         locale={this.props.locale}
@@ -4251,6 +4481,7 @@ class TextEditor extends React.Component {
                         visible={this.state.sidebarVisible && this.state.viewMode !== 'docs'}
                         workspace={this.state.workspace}
                         onClose={this.closeSidebar}
+                        onInsertCommand={this.insertCommand}
                         onInsertResource={this.insertResource}
                         onOpenLocation={this.openLocation}
                         onOpenExtensionLibrary={this.props.onOpenExtensionLibrary}
@@ -4413,6 +4644,7 @@ class TextEditor extends React.Component {
                     <div className={classNames(
                         styles.viewPane,
                         styles.blocksPane,
+                        this.state.viewMode === 'split' && styles.derivedBlocksPane,
                         !['blocks', 'split'].includes(this.state.viewMode) && styles.hiddenPane
                     )}>
                         <React.Suspense fallback={null}>
@@ -4493,20 +4725,6 @@ class TextEditor extends React.Component {
                                 {label} {typeof count === 'number' && <small>{count}</small>}
                             </button>
                         ))}
-                        <button
-                            aria-controls="textwarp-bottom-panel-content"
-                            aria-expanded={!this.state.bottomPanelCollapsed}
-                            aria-label={this.state.bottomPanelCollapsed ? t('panelExpand') : t('panelCollapse')}
-                            className={styles.collapsePanelButton}
-                            type="button"
-                            onClick={() => {
-                                const bottomPanelCollapsed = !this.state.bottomPanelCollapsed;
-                                this.setState({bottomPanelCollapsed});
-                                this.persistUiState({bottomPanelCollapsed});
-                            }}
-                        >
-                            <InterfaceIcon name={this.state.bottomPanelCollapsed ? 'chevron-up' : 'chevron-down'} />
-                        </button>
                     </nav>
                     {!this.state.bottomPanelCollapsed && (
                         <div
@@ -4553,6 +4771,13 @@ class TextEditor extends React.Component {
                     </span>
                     <span>{this.state.saveState === 'salvo' ? t('saved') : t('saving')}</span>
                     <span>{activeFileName}</span>
+                    <span>{`${this.state.editorStatus.state.toUpperCase()} · Source #${
+                        this.state.editorStatus.sourceVersion
+                    } · Build #${this.state.editorStatus.buildVersion === null ? '—' :
+                        this.state.editorStatus.buildVersion} · Runtime #${
+                        this.state.editorStatus.runtimeVersion === null ? '—' : this.state.editorStatus.runtimeVersion
+                    }`}</span>
+                    <span>{this.state.codeLanguage}</span>
                     <CursorStatus
                         locale={this.props.locale}
                         ref={component => { this.cursorStatus = component; }}

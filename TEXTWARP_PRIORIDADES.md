@@ -1,6 +1,10 @@
 # Problemas e prioridades do TextWarp
 
-Estado revisado em 29 de julho de 2026. Este arquivo é a lista canônica de riscos e limitações; a referência completa de uso continua em [TEXTWARP.md](TEXTWARP.md).
+Estado revisado em 7 de agosto de 2026. Este arquivo é a lista canônica de riscos e limitações; a referência completa de uso continua em [TEXTWARP.md](TEXTWARP.md).
+
+A arquitetura 0.4 torna cada `.tw` a fonte versionada de verdade. Digitar só atualiza análise e diagnósticos;
+blocos são derivados por compilação explícita, e **Executar** valida e aplica um snapshot de todos os módulos em uma
+única transação antes de iniciar a VM.
 
 ## Critério de prioridade
 
@@ -57,6 +61,6 @@ npm run build:textwarp:web
 git diff --check
 ```
 
-Resultado desta revisão: **57/57 testes passaram**; a auditoria cobre primitivas, hats e componentes visuais
+Resultado desta revisão: **149/149 testes passaram**; a auditoria cobre primitivas, hats e componentes visuais
 nativos; a referência gerada estava sincronizada; o bundle web de produção foi criado; e `git diff --check` não
 encontrou erros. O Webpack manteve avisos de tamanho dos bundles, Browserslist e Tapable.

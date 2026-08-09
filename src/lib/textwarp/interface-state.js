@@ -1,7 +1,9 @@
 'use strict';
 
 const PANEL_IDS = Object.freeze(['problems', 'console', 'debugger', 'output', 'backpack']);
-const SIDEBAR_PANEL_IDS = Object.freeze(['explorer', 'search', 'actors', 'extensions', 'symbols', 'history']);
+const SIDEBAR_PANEL_IDS = Object.freeze([
+    'explorer', 'commands', 'search', 'actors', 'extensions', 'symbols', 'history'
+]);
 const VIEW_IDS = Object.freeze(['code', 'blocks', 'split', 'docs']);
 const DEFAULT_LIST_LIMIT = 100;
 

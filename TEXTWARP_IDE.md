@@ -45,6 +45,17 @@ O Monaco oferece:
 - destaque semântico, destaque de referências, regiões dobráveis, seleção estrutural e nomes de parâmetros em
   chamadas.
 
+O realce léxico usa o mesmo registro semântico da tradução: palavras-chave, controles, eventos e chamadas ficam
+coloridos tanto em inglês quanto em português, inclusive aliases com acentos como `variável`, `senão` e `não`.
+Trocar o idioma do código não reduz a fonte a texto sem classificação. O pacote português cobre todo o registro
+canônico usado pelo catálogo: comandos, eventos, argumentos, opções, controles, operadores, literais e tipos.
+
+Um clique simples em literais cujo argumento possui metadados visuais abre um pequeno editor contextual: booleanos
+oferecem **Verdadeiro/Falso**, cores usam o seletor nativo, menus finitos usam uma lista e números oferecem incremento,
+decremento e entrada direta. O controle reutiliza os mesmos tipos e opções do catálogo de blocos, substitui somente o
+intervalo do literal e participa do desfazer/refazer do Monaco. Comentários, texto comum e argumentos sem um controle
+útil não abrem a caixa; a edição tradicional pelo teclado continua disponível em todos os casos.
+
 Existe um único provedor de autocompletar. Ele combina catálogo nativo, controles, eventos, operadores, extensões,
 procedimentos, parâmetros, variáveis, listas e recursos sem entradas duplicadas. As sugestões respeitam o prefixo,
 o escopo, palco/ator e a posição sintática; comentários não recebem código e strings recebem apenas recursos
@@ -74,11 +85,14 @@ palco por nome amigável ou nome de arquivo sem sair do editor.
 
 ## Integração com o software principal
 
-Alterações válidas são compiladas após 300 ms e atualizam somente as unidades modificadas. Alterações feitas nos blocos voltam para o texto, com mesclagem por unidade e resolução explícita de conflitos. O modo **Dividido** mantém o editor textual e o editor visual juntos para pré-visualização imediata.
+Alterações no texto incrementam a versão do `SourceDocument` e executam apenas análise e diagnósticos. Elas não
+alteram a VM durante a digitação. **Executar**, **Compilar**, abrir **Blocos** ou abrir **Dividido** criam uma
+compilação controlada; **Dividido** mantém os blocos como prévia derivada somente leitura. Alterações visuais só
+voltam para o texto pelo comando explícito **Blocos para texto**.
 
-Um ator vazio recebe somente um pequeno script inicial de movimento. Os valores canônicos do Scratch
-(`"right arrow"` e `"left arrow"`) são compilados em blocos assim que o alvo é carregado, antes da primeira edição.
-O palco começa como um módulo `stage` vazio.
+Um ator vazio recebe somente um pequeno script inicial de movimento, já emitido no `Code Language` persistido.
+Valores semânticos como `right_arrow`/`seta_direita` são convertidos para o valor canônico do Scratch somente na
+representação interna. O palco também começa no idioma de código escolhido (`stage` ou `palco`).
 
 A seleção de alvos é compartilhada com o TurboWarp, eventos são filtrados por tipo de alvo, valores vivos aparecem no depurador e referências persistem por IDs. Esse ciclo funciona como hot reload: uma unidade válida muda na VM sem reconstruir ou reiniciar todo o projeto.
 
@@ -116,10 +130,19 @@ O painel de depuração mostra:
 
 ## Produtividade e recuperação
 
-A paleta **Comandos** reúne as ações do Monaco e do TextWarp. **Atalhos** permite alterar e persistir as teclas de compilar, executar, executar seleção, parar, reiniciar e formatar.
+A barra lateral **Comandos** apresenta o catálogo textual por Movimento, Aparência, Som, Eventos, Controle,
+Sensores, Operadores, Variáveis, Funções e Extensões. A busca aceita o nome canônico ou traduzido; clicar em um item
+insere no Monaco o mesmo snippet localizado usado pelo autocomplete, com campos editáveis. Cada comando também
+possui uma caixa de contexto expansível com exemplo, parâmetros, tipos e valores aceitos. A **Paleta de comandos**
+continua reunindo ações do Monaco e do TextWarp. **Atalhos** permite alterar e persistir as teclas de compilar,
+executar, executar seleção, parar, reiniciar e formatar.
 
-A fonte é salva imediatamente no projeto e recebe snapshots locais após a edição. Antes de cada aplicação manual ou
-automática, um snapshot completo do alvo é criado e a faixa **Conversão realizada** oferece **Desfazer** e
+A caixa **Projeto** da barra superior mantém juntos o nome do projeto, o idioma da interface e o idioma da sintaxe
+TextWarp. A troca de sintaxe passa pela mesma validação e persistência das Preferências; em barras compactas, o
+código do idioma da interface continua visível para que a configuração não desapareça.
+
+A fonte é salva imediatamente no projeto e recebe snapshots locais após a edição. Antes de cada aplicação manual,
+um snapshot completo do alvo é criado e a faixa **Conversão realizada** oferece **Desfazer** e
 **Ver diferenças**. O painel
 **Histórico** restaura até 30 versões por módulo mesmo sem Git e continua disponível após fechar inesperadamente
 a aplicação. As abas recentes também são restauradas localmente.
@@ -136,22 +159,40 @@ a posição persistida do breakpoint.
 ## Layout responsivo e painéis
 
 **Problemas**, **Console**, **Depurador**, **Saída** e **Mochila** dividem a área inferior por abas e só a ferramenta
-ativa ocupa espaço. A barra de atividades abre **Arquivos**, **Pesquisa**, **Atores**, **Extensões**,
-**Documentação** e **Configurações**. A coluna direita segue a ordem **Palco**, **Inspetor** e uma área única com
-abas **Atores/Cenários**. As duas abas de alvos acompanham o espaço disponível, conservam pelo menos 12 rem de altura
-útil e rolam listas longas de atores dentro dessa área. Divisores arrastáveis redimensionam a barra lateral, o painel
-inferior, o palco e a proporção de **Dividido**; os valores ficam salvos localmente.
+ativa ocupa espaço. Uma única barra de atividades global alterna **Programação**, **Fantasias**, **Sons** e dá
+acesso direto a **Arquivos**, **Comandos**, **Atores**, **Extensões**, **Símbolos**, **Histórico**,
+**Documentação**, **Depurador**, **Pesquisa** e **Configurações**. A mesma navegação contextual fica visível no
+topo da barra lateral de Programação. A barra superior compacta contém o contexto do projeto, a entrada da paleta
+de comandos, o botão alternável **Run/Stop**, tela cheia da prévia e quatro controles de layout. Esses ícones
+mostram ou escondem a barra de atividades, a lateral esquerda, o painel inferior e a lateral direita; o estado
+ativo fica visível e as preferências persistentes de cada região continuam sendo respeitadas.
+
+A coluna direita segue a ordem **Prévia do palco**, **Inspetor**, **Palco e cenários** e **Atores**. Cenários e
+atores têm regiões e ações de adição distintas, com rótulos explícitos, sem dois botões visualmente iguais
+sobrepostos. O cartão do palco agrupa miniatura, identidade e quantidade de cenários; **Adicionar cenário** fica
+na mesma linha como ação própria. Executar, tamanho da visualização, tela cheia e recolhimento não são repetidos
+dentro desse dock. A prévia mede a largura realmente disponível, reduz o palco preservando a proporção e centraliza o
+canvas; o Inspetor reorganiza posição, aparência e direção em linhas ou colunas conforme a largura, sem cortar os
+controles. A coluna fica limitada à altura disponível: palco e cabeçalhos não crescem com as listas, e atores,
+explorador, comandos, fantasias e sons rolam apenas dentro de sua própria região. As barras de rolagem têm 6 px,
+ficam discretas em repouso e ganham contraste ao passar o mouse ou mover o foco. As barras laterais de Fantasias e Sons compartilham cabeçalho,
+adição, seleção, reordenação e ações por item; podem ser redimensionadas. O editor de som mostra régua, intervalo
+selecionado, taxa de amostragem, transporte e efeitos agrupados por velocidade, volume, fade e transformação.
+Divisores arrastáveis redimensionam a barra lateral, o painel inferior, o palco e a proporção de **Dividido**; os
+valores ficam salvos localmente.
 
 O painel **Problemas** oferece **Copiar relatório técnico** e **Baixar relatório técnico** mesmo quando não há
 diagnósticos. O relatório reúne estado do editor, falha de carregamento do Monaco, resultado Blocos → Texto, opcodes
 indisponíveis, variáveis/listas com IDs e nomes originais, erros de runtime, console e a fonte atual. Revise o arquivo
 antes de compartilhá-lo, pois ele inclui o código completo do módulo.
 
-**Programação** reúne os modos **Texto**, **Blocos**, **Dividido** e **Documentação** diretamente acima do editor.
+O cabeçalho local do arquivo reúne, na mesma linha compacta, as abas abertas, os modos **Texto**, **Blocos**,
+**Dividido** e **Documentação**, o estado de sincronização, **Converter** e **Mais ações**. Isso elimina a barra
+horizontal duplicada que antes separava os modos do arquivo ativo.
 O explorador organiza o projeto em Atores e Palco, enquanto o Outline agrupa Variáveis, Procedimentos e Eventos.
 Cada arquivo aberto aparece como uma aba comum, com indicador de alteração, fechamento, reordenação e menu de contexto.
-**Converter** reúne Texto → Blocos, Blocos → Texto, Blocos → Texto para o projeto inteiro, sincronização automática
-e comparação. A conversão do projeto inteiro processa palco e atores originais como módulos separados, só aplica
+**Converter** reúne Texto → Blocos, Blocos → Texto, Blocos → Texto para o projeto inteiro e comparação. Digitar não
+altera a VM; a conversão do projeto inteiro processa palco e atores originais como módulos separados, só aplica
 depois de validar todos e pode ser desfeita em uma ação. **Mais ações** concentra Paleta de comandos, Formatar,
 Abertura rápida, alternar breakpoint, navegar em Problemas, Dividir editor, Documentação, Editor externo e
 Preferências; o antigo botão Modelos não ocupa mais a interface. No editor duplo, esses comandos seguem o painel

@@ -115,8 +115,15 @@ test('language registration is idempotent and has one completion provider', () =
     assert.equal(monaco.providers.DocumentSemanticTokens.length, 1);
     assert.match('else:', monaco.languages.configuration.indentationRules.decreaseIndentPattern);
     assert.match('branch 2:', monaco.languages.configuration.indentationRules.decreaseIndentPattern);
+    assert.match('senão:', monaco.languages.configuration.indentationRules.decreaseIndentPattern);
+    assert.match('ramo 2:', monaco.languages.configuration.indentationRules.decreaseIndentPattern);
     assert.ok(monaco.languages.monarch.keywords.includes('actor'));
+    assert.ok(monaco.languages.monarch.keywords.includes('ator'));
+    assert.ok(monaco.languages.monarch.keywords.includes('variável'));
     assert.ok(monaco.languages.monarch.commands.includes('move'));
+    assert.ok(monaco.languages.monarch.commands.includes('mova'));
+    assert.equal(monaco.languages.monarch.ignoreCase, true);
+    assert.match('variável', monaco.languages.monarch.tokenizer.root[1][0]);
     first.dispose();
     resetMonacoForTests(monaco);
 });

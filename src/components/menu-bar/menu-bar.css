@@ -8,7 +8,7 @@
     flex-direction: row;
     justify-content: space-between;
     flex-wrap: nowrap;
-    gap: 0.5rem;
+    gap: 0.3rem;
 
     /*
         For most things, we shouldn't explicitly set height, and let the
@@ -19,7 +19,7 @@
         simplifies by all of this by removing padding from the equation.
     */
     box-sizing: border-box;
-    height: $menu-bar-height;
+    height: 2.15rem;
 
     /*
         @todo: This adds ~20px in Chrome, when scrolling to the right,
@@ -42,7 +42,7 @@
     flex-wrap: nowrap;
     align-items: center;
     flex-grow: 1;
-    gap: 0.5rem;
+    gap: 0.3rem;
 }
 .inactive {
     opacity: 0;
@@ -64,7 +64,7 @@
     position: relative;
     align-items: center;
     white-space: nowrap;
-    height: $menu-bar-height;
+    height: 2.15rem;
 }
 
 .menu-bar-item.hoverable {
@@ -86,12 +86,77 @@
     width: 2rem;
 }
 
+.command-palette-button,
+.run-project-button {
+    min-height: 1.7rem;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 0.6rem;
+    color: $menu-bar-foreground;
+    background: rgba(0, 0, 0, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: $form-radius;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.68rem;
+}
+
+.command-palette-button {
+    width: clamp(8rem, 18vw, 18rem);
+    justify-content: flex-start;
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.command-palette-button > span:nth-child(2) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.command-palette-button kbd {
+    margin-left: auto;
+    padding: 0.1rem 0.25rem;
+    color: inherit;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0.2rem;
+    font: inherit;
+    font-size: 0.58rem;
+}
+
+.run-project-button {
+    color: white;
+    border-color: rgba(70, 190, 120, 0.65);
+}
+
+.stop-project-button {
+    color: white;
+    background: rgba(255, 79, 89, 0.18);
+    border-color: rgba(255, 104, 113, 0.78);
+}
+
+.command-palette-button:hover,
+.command-palette-button:focus-visible,
+.run-project-button:hover,
+.run-project-button:focus-visible {
+    background: $ui-black-transparent;
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+}
+
+@media (max-width: 1099px) {
+    .command-palette-button { width: 2rem; padding: 0; justify-content: center; }
+    .command-palette-button > span:nth-child(2), .command-palette-button kbd { display: none; }
+}
+
 .file-group {
     display: flex;
     min-width: 0;
     flex-direction: row;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.3rem;
 }
 
 .textwarp-brand {
@@ -131,7 +196,7 @@
 }
 
 .menu-bar-menu {
-    margin-top: $menu-bar-height;
+    margin-top: 2.15rem;
     z-index: $z-index-menu-bar;
 }
 
@@ -205,9 +270,58 @@
 }
 
 .account-info-group {
+    min-width: 0;
+    flex: none;
     display: flex;
     flex-direction: row;
     align-items: center;
+    gap: 0.25rem;
+}
+
+.workspace-controls,
+.layout-controls {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.16rem;
+}
+
+.workspace-controls {
+    padding-right: 0.25rem;
+}
+
+.layout-controls {
+    margin-left: 0.14rem;
+    padding-left: 0.28rem;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.workspace-icon-button {
+    width: 1.7rem;
+    height: 1.7rem;
+    display: grid;
+    flex: none;
+    place-items: center;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.62);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 0.28rem;
+    cursor: pointer;
+}
+
+.workspace-icon-button:hover,
+.workspace-icon-button:focus-visible {
+    color: white;
+    background: $ui-black-transparent;
+    outline: 1px solid rgba(255, 255, 255, 0.55);
+    outline-offset: -1px;
+}
+
+.layout-control-active {
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.22);
 }
 
 .account-info-group .menu-bar-item {
@@ -327,6 +441,35 @@
     .top-menu-label {
         display: none;
     }
+
+    .run-project-button {
+        min-width: 1.7rem;
+        padding: 0;
+        justify-content: center;
+    }
+
+    .run-project-button > span:last-child {
+        display: none;
+    }
+
+    .workspace-controls,
+    .layout-controls {
+        gap: 0.05rem;
+    }
+
+    .workspace-controls {
+        padding-right: 0.1rem;
+    }
+
+    .layout-controls {
+        margin-left: 0;
+        padding-left: 0.05rem;
+    }
+
+    .workspace-icon-button {
+        width: 1.4rem;
+        height: 1.7rem;
+    }
 }
 
 .menu-item-link {
@@ -336,11 +479,11 @@
 
 :global(.textwarp-compact-ui) .menu-bar,
 :global(.textwarp-compact-ui) .menu-bar-item {
-    height: 2.35rem;
+    height: 2.15rem;
 }
 
 :global(.textwarp-compact-ui) .menu-bar-menu {
-    margin-top: 2.35rem;
+    margin-top: 2.15rem;
 }
 
 :global(.textwarp-compact-ui) .menu-bar {

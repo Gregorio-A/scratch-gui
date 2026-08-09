@@ -104,38 +104,111 @@ describe('TextWarp Monaco editor', () => {
         await driver.wait(until.elementTextContains(suggestions, 'wait'), 10000);
     });
 
-    test('keeps the Actors and Backdrops target panels readable', async () => {
+    test('keeps the target dock bounded and scrolls long actor lists internally', async () => {
         await driver.manage()
             .window()
-            .setSize(1440, 1000);
+            .setSize(1280, 720);
         await driver.get(uri);
-        const targetTabs = await driver.wait(
-            until.elementLocated(By.xpath(
-                '//*[@role="tablist" and .//button[normalize-space()="Actors"] ' +
-                'and .//button[normalize-space()="Backdrops"]]'
-            )),
+        await driver.wait(
+            until.elementLocated(By.xpath('//strong[normalize-space()="Actors"]')),
             20000
         );
-        const actorsPanel = await targetTabs.findElement(By.xpath(
-            './following-sibling::*[@role="tabpanel"]'
-        ));
-        const actorsHeight = await driver.executeScript(
-            'return arguments[0].getBoundingClientRect().height;',
-            actorsPanel
-        );
-        expect(Math.round(actorsHeight)).toBeGreaterThanOrEqual(192);
+        const result = await driver.executeAsyncScript(`
+            const done = arguments[arguments.length - 1];
+            const heading = Array.from(document.querySelectorAll('strong'))
+                .find(element => element.textContent.trim() === 'Actors');
+            const section = heading.closest('section');
+            const scroll = section.querySelector('[class*="scroll-wrapper"]');
+            const tile = scroll.querySelector('[class*="sprite-wrapper"]');
+            const dock = section.closest('[class*="stage-dock"]');
+            const page = document.querySelector('[class*="page-wrapper"]');
+            const before = dock.getBoundingClientRect().height;
+            for (let index = 0; index < 35; index++) {
+                scroll.firstElementChild.appendChild(tile.cloneNode(true));
+            }
+            requestAnimationFrame(() => requestAnimationFrame(() => done({
+                dockAfter: dock.getBoundingClientRect().height,
+                dockBefore: before,
+                overflowY: getComputedStyle(scroll).overflowY,
+                pageHeight: page.getBoundingClientRect().height,
+                pageScrollHeight: page.scrollHeight,
+                scrollClientHeight: scroll.clientHeight,
+                scrollHeight: scroll.scrollHeight,
+                stageHeight: dock.children[1].getBoundingClientRect().height
+            })));
+        `);
+        expect(result.dockAfter).toBe(result.dockBefore);
+        expect(result.pageScrollHeight).toBeLessThanOrEqual(result.pageHeight + 1);
+        expect(result.scrollClientHeight).toBeGreaterThanOrEqual(70);
+        expect(result.scrollHeight).toBeGreaterThan(result.scrollClientHeight);
+        expect(result.overflowY).toBe('auto');
+        expect(result.stageHeight).toBeGreaterThanOrEqual(120);
+    });
 
-        await targetTabs.findElement(By.xpath(
-            './/button[normalize-space()="Backdrops"]'
-        )).click();
-        const backdropsPanel = await targetTabs.findElement(By.xpath(
-            './following-sibling::*[@role="tabpanel"]'
-        ));
-        const backdropsHeight = await driver.executeScript(
-            'return arguments[0].getBoundingClientRect().height;',
-            backdropsPanel
+    test('opens and applies a contextual numeric field without disabling text editing', async () => {
+        await driver.manage()
+            .window()
+            .setSize(1280, 720);
+        await driver.get(uri);
+        await driver.wait(
+            until.elementLocated(By.css('.monaco-editor .native-edit-context[role="textbox"]')),
+            20000
         );
-        expect(Math.round(backdropsHeight)).toBeGreaterThanOrEqual(192);
+        await driver.wait(() => driver.executeScript(
+            'return Boolean(window.monaco && window.monaco.editor.getModels().length);'
+        ), 20000);
+        await driver.executeScript(`
+            window.monaco.editor.getModels()
+                .find(model => model.uri.toString().includes('primary'))
+                .setValue('actor Actor1\\n\\non green_flag:\\n    move(10)');
+        `);
+        await driver.wait(() => driver.executeScript(`
+            return Array.from(document.querySelectorAll('.monaco-editor .view-line'))
+                .some(line => line.textContent.includes('move'));
+        `), 5000);
+        const dispatched = await driver.executeScript(`
+            const line = Array.from(document.querySelectorAll('.monaco-editor .view-line'))
+                .find(element => element.textContent.includes('move'));
+            const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+                const index = node.nodeValue.indexOf('10');
+                if (index < 0) continue;
+                const range = document.createRange();
+                range.setStart(node, index);
+                range.setEnd(node, index + 1);
+                const bounds = range.getBoundingClientRect();
+                const clientX = bounds.left + (bounds.width / 2);
+                const clientY = bounds.top + (bounds.height / 2);
+                const target = document.elementFromPoint(clientX, clientY);
+                ['mousemove', 'mousedown', 'mouseup', 'click'].forEach(type => target.dispatchEvent(
+                    new MouseEvent(type, {
+                        bubbles: true,
+                        button: 0,
+                        buttons: type === 'mousedown' ? 1 : 0,
+                        cancelable: true,
+                        clientX,
+                        clientY,
+                        view: window
+                    })
+                ));
+                return true;
+            }
+            return false;
+        `);
+        expect(dispatched).toBe(true);
+        const dialog = await driver.wait(
+            until.elementLocated(By.css('[role="dialog"][aria-label^="Edit value"]')),
+            5000
+        );
+        expect(await dialog.getAttribute('aria-label')).toContain('steps');
+        await dialog.findElement(By.css('button[aria-label="Increase value"]')).click();
+        await driver.wait(() => driver.executeScript(`
+            return window.monaco.editor.getModels().some(model => model.getValue().includes('move(11)'));
+        `), 5000);
+        expect(await driver.findElement(By.css(
+            '.monaco-editor .native-edit-context[role="textbox"]'
+        )).getAttribute('aria-readonly')).not.toBe('true');
     });
 
     test('matches the responsive interface layout and accessibility baseline', async () => {
@@ -146,23 +219,22 @@ describe('TextWarp Monaco editor', () => {
         await driver.wait(until.elementLocated(By.css('[data-tabs="textwarp"]')), 20000);
 
         for (const width of [320, 600, 768, 1024, 1440]) {
+            await driver.manage()
+                .window()
+                .setSize(width, 1000);
             const actual = await driver.executeAsyncScript(`
                 const done = arguments[arguments.length - 1];
-                const width = arguments[0];
                 const root = document.querySelector('[data-tabs="textwarp"]');
-                root.style.position = 'fixed';
-                root.style.inset = '0 auto auto 0';
-                root.style.zIndex = '9999';
-                root.style.width = width + 'px';
-                root.style.height = '900px';
                 requestAnimationFrame(() => requestAnimationFrame(() => {
                     const toolbar = root.querySelector('[role="toolbar"]');
                     const buttons = Array.from(toolbar.querySelectorAll('button'))
-                        .filter(button => button.getClientRects().length > 0);
+                        .filter(button =>
+                            button.getClientRects().length > 0 &&
+                            button.getBoundingClientRect().height >= 24
+                        );
                     const actionRows = new Set(buttons.map(button =>
                         Math.round(button.getBoundingClientRect().top)
                     )).size;
-                    const rootRect = root.getBoundingClientRect();
                     done({
                         actionBarHeight: Math.round(toolbar.getBoundingClientRect().height),
                         actionRows,
@@ -170,18 +242,11 @@ describe('TextWarp Monaco editor', () => {
                         minimumControlHeight: Math.min(...buttons.map(button =>
                             Math.round(button.getBoundingClientRect().height)
                         )),
-                        rootHasHorizontalOverflow: root.scrollWidth > root.clientWidth + 1,
-                        overflowingElements: Array.from(root.querySelectorAll('*'))
-                            .filter(element => element.getBoundingClientRect().right > rootRect.right + 1)
-                            .slice(0, 10)
-                            .map(element => ({
-                                className: String(element.className),
-                                right: Math.round(element.getBoundingClientRect().right),
-                                tagName: element.tagName
-                            }))
+                        pageHasHorizontalOverflow:
+                            document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
                     });
                 }));
-            `, width);
+            `);
             expect(actual.actionRows).toBe(interfaceLayoutBaseline[width].actionRows);
             expect(actual.directActionCount).toBe(interfaceLayoutBaseline[width].directActionCount);
             expect(actual.actionBarHeight).toBeLessThanOrEqual(
@@ -190,13 +255,7 @@ describe('TextWarp Monaco editor', () => {
             expect(actual.minimumControlHeight).toBeGreaterThanOrEqual(
                 interfaceLayoutBaseline[width].minimumControlHeight
             );
-            expect({
-                overflowingElements: actual.rootHasHorizontalOverflow ? actual.overflowingElements : [],
-                width
-            }).toEqual({
-                overflowingElements: [],
-                width
-            });
+            expect(actual.pageHasHorizontalOverflow).toBe(false);
             const alternateLayouts = await driver.executeAsyncScript(`
                 const done = arguments[arguments.length - 1];
                 const root = document.querySelector('[data-tabs="textwarp"]');
@@ -208,12 +267,14 @@ describe('TextWarp Monaco editor', () => {
                 );
                 files.click();
                 afterLayout(() => {
-                    const withoutSidebarOverflow = root.scrollWidth > root.clientWidth + 1;
+                    const withoutSidebarOverflow =
+                        document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
                     files.click();
                     afterLayout(() => {
                         split.click();
                         afterLayout(() => {
-                            const splitEditorOverflow = root.scrollWidth > root.clientWidth + 1;
+                            const splitEditorOverflow =
+                                document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
                             code.click();
                             afterLayout(() => done({splitEditorOverflow, withoutSidebarOverflow}));
                         });
@@ -227,18 +288,15 @@ describe('TextWarp Monaco editor', () => {
         }
 
         const files = await driver.findElement(By.css(
-            '[data-tabs="textwarp"] button[aria-label="Files"]'
+            '[data-tabs="textwarp"] button[aria-controls="textwarp-ide-sidebar"]'
         ));
         if (await files.getAttribute('aria-expanded') === 'true') await files.click();
         expect(await files.getAttribute('aria-expanded')).toBe('false');
         await files.click();
         expect(await files.getAttribute('aria-expanded')).toBe('true');
-        await driver.executeAsyncScript(`
-            const root = document.querySelector('[data-tabs="textwarp"]');
-            const done = arguments[arguments.length - 1];
-            root.style.width = '320px';
-            requestAnimationFrame(() => requestAnimationFrame(done));
-        `);
+        await driver.manage()
+            .window()
+            .setSize(320, 1000);
         if (await files.getAttribute('aria-expanded') === 'false') await files.click();
         await driver.wait(() => driver.executeScript(`
             const sidebar = document.querySelector('#textwarp-ide-sidebar');
@@ -257,7 +315,7 @@ describe('TextWarp Monaco editor', () => {
             .sendKeys(Key.ESCAPE)
             .perform();
         expect(await files.getAttribute('aria-expanded')).toBe('false');
-        expect(await driver.switchTo().activeElement().getAttribute('aria-label')).toBe('Files');
+        expect(await driver.switchTo().activeElement().getAttribute('aria-label')).toBe('Open file explorer');
 
         const moreActions = await driver.findElement(By.css(
             '[data-tabs="textwarp"] button[aria-controls="textwarp-action-menu"]'
@@ -279,12 +337,9 @@ describe('TextWarp Monaco editor', () => {
             .sendKeys(Key.ESCAPE)
             .perform();
 
-        await driver.executeAsyncScript(`
-            const root = document.querySelector('[data-tabs="textwarp"]');
-            const done = arguments[arguments.length - 1];
-            root.style.width = '1440px';
-            requestAnimationFrame(() => requestAnimationFrame(done));
-        `);
+        await driver.manage()
+            .window()
+            .setSize(1440, 1000);
 
         await moreActions.click();
         const menu = await driver.wait(

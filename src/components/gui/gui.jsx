@@ -15,6 +15,7 @@ import StageWrapper from '../../containers/stage-wrapper.jsx';
 import Loader from '../loader/loader.jsx';
 import Box from '../box/box.jsx';
 import MenuBar from '../menu-bar/menu-bar.jsx';
+import WorkspaceActivityBar from './workspace-activity-bar.jsx';
 import Watermark from '../../containers/watermark.jsx';
 
 import Alerts from '../../containers/alerts.jsx';
@@ -40,20 +41,10 @@ const messages = defineMessages({
         description: 'Button to add an extension in the target pane',
         defaultMessage: 'Add Extension'
     },
-    hideStage: {
-        id: 'tw.stageDock.hide',
-        description: 'Button to collapse the stage dock',
-        defaultMessage: 'Hide stage'
-    },
     resizeStage: {
         id: 'tw.stageDock.resize',
         description: 'Accessible label for the stage resize handle',
         defaultMessage: 'Resize stage'
-    },
-    showStage: {
-        id: 'tw.stageDock.showLabel',
-        description: 'Button to restore the collapsed stage dock',
-        defaultMessage: 'Show stage'
     }
 });
 
@@ -71,6 +62,7 @@ const getFullscreenBackgroundColor = () => {
 const fullscreenBackgroundColor = getFullscreenBackgroundColor();
 
 const STAGE_LAYOUT_STORAGE_KEY = 'textwarp.workspace.stage-layout';
+const ACTIVITY_BAR_STORAGE_KEY = 'textwarp.workspace.activity-bar-visible';
 const CostumeTab = React.lazy(() =>
     import(/* webpackChunkName: "costume-editor" */ '../../containers/costume-tab.jsx')
 );
@@ -134,31 +126,41 @@ const readStageLayout = () => {
     }
 };
 
+const persistStageLayout = layout => {
+    try {
+        window.localStorage.setItem(STAGE_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+    } catch (error) {
+        // The layout remains active for this session when browser storage is unavailable.
+    }
+};
+
+const readActivityBarVisibility = () => {
+    try {
+        return window.localStorage.getItem(ACTIVITY_BAR_STORAGE_KEY) !== 'false';
+    } catch (error) {
+        return true;
+    }
+};
+
 /* eslint-disable react/jsx-no-bind */
 const ResizableStagePane = ({
     isFullScreen,
     intl,
     isRendererSupported: rendererSupported,
     isRtl,
+    layout,
+    onLayoutChange,
     stageSize,
     vm
 }) => {
-    const [layout, setLayout] = React.useState(readStageLayout);
     const resizeSession = React.useRef(null);
-    const persistLayout = nextLayout => {
-        try {
-            window.localStorage.setItem(STAGE_LAYOUT_STORAGE_KEY, JSON.stringify(nextLayout));
-        } catch (error) {
-            // The layout remains active for this session when browser storage is unavailable.
-        }
-    };
     React.useEffect(() => {
         const handlePointerMove = event => {
             if (!resizeSession.current) return;
             if (resizeSession.current.mobile) {
                 const rawHeight = resizeSession.current.bottom - event.clientY;
                 const maxHeight = Math.max(240, Math.min(600, window.innerHeight * 0.7));
-                setLayout(current => Object.assign({}, current, {
+                onLayoutChange(current => Object.assign({}, current, {
                     mobileHeight: Math.max(180, Math.min(maxHeight, rawHeight))
                 }));
                 return;
@@ -167,7 +169,7 @@ const ResizableStagePane = ({
                 event.clientX - resizeSession.current.left :
                 resizeSession.current.right - event.clientX;
             const maxWidth = Math.max(320, Math.min(720, window.innerWidth * 0.7));
-            setLayout(current => Object.assign({}, current, {
+            onLayoutChange(current => Object.assign({}, current, {
                 width: Math.max(300, Math.min(maxWidth, rawWidth))
             }));
         };
@@ -175,8 +177,8 @@ const ResizableStagePane = ({
             if (!resizeSession.current) return;
             resizeSession.current = null;
             document.body.classList.remove('textwarp-resizing');
-            setLayout(current => {
-                persistLayout(current);
+            onLayoutChange(current => {
+                persistStageLayout(current);
                 return current;
             });
             window.dispatchEvent(new Event('resize'));
@@ -189,31 +191,7 @@ const ResizableStagePane = ({
             document.body.classList.remove('textwarp-resizing');
         };
     }, []);
-    const setVisible = visible => {
-        const nextLayout = Object.assign({}, layout, {visible});
-        setLayout(nextLayout);
-        persistLayout(nextLayout);
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
-    };
-    if (!layout.visible) {
-        return (
-            <div className={styles.collapsedStageDock}>
-                <button
-                    aria-label={intl.formatMessage(messages.showStage)}
-                    title={intl.formatMessage(messages.showStage)}
-                    type="button"
-                    onClick={() => setVisible(true)}
-                >
-                    <span aria-hidden="true">{'◧'}</span>
-                    <FormattedMessage
-                        defaultMessage="Stage"
-                        description="Button to restore the collapsed stage"
-                        id="tw.stageDock.show"
-                    />
-                </button>
-            </div>
-        );
-    }
+    if (!layout.visible) return null;
     const renderedStageSize = layout.width < 410 ? STAGE_SIZE_MODES.small : stageSize;
     return (
         <Box
@@ -255,26 +233,19 @@ const ResizableStagePane = ({
                                 layout.mobileHeight + (event.key === 'ArrowUp' ? 20 : -20)
                             ));
                         const nextLayout = Object.assign({}, layout, {mobileHeight});
-                        setLayout(nextLayout);
-                        persistLayout(nextLayout);
+                        onLayoutChange(nextLayout);
+                        persistStageLayout(nextLayout);
                         window.dispatchEvent(new Event('resize'));
                         return;
                     }
                     const width = event.key === 'Home' ? 510 :
                         Math.max(300, Math.min(720, layout.width + (event.key === 'ArrowLeft' ? 20 : -20)));
                     const nextLayout = Object.assign({}, layout, {width});
-                    setLayout(nextLayout);
-                    persistLayout(nextLayout);
+                    onLayoutChange(nextLayout);
+                    persistStageLayout(nextLayout);
                     window.dispatchEvent(new Event('resize'));
                 }}
-            >
-                <button
-                    aria-label={intl.formatMessage(messages.hideStage)}
-                    title={intl.formatMessage(messages.hideStage)}
-                    type="button"
-                    onClick={() => setVisible(false)}
-                >{'›'}</button>
-            </div>
+            />
             <StageWrapper
                 isFullScreen={isFullScreen}
                 isRendererSupported={rendererSupported}
@@ -297,6 +268,12 @@ ResizableStagePane.propTypes = {
     intl: intlShape.isRequired,
     isRendererSupported: PropTypes.bool.isRequired,
     isRtl: PropTypes.bool.isRequired,
+    layout: PropTypes.shape({
+        mobileHeight: PropTypes.number.isRequired,
+        visible: PropTypes.bool.isRequired,
+        width: PropTypes.number.isRequired
+    }).isRequired,
+    onLayoutChange: PropTypes.func.isRequired,
     stageSize: PropTypes.string.isRequired,
     vm: PropTypes.instanceOf(VM).isRequired
 };
@@ -392,6 +369,29 @@ const GUIComponent = props => {
         vm,
         ...componentProps
     } = omit(props, 'dispatch');
+    const [stageLayout, setStageLayout] = React.useState(readStageLayout);
+    const [activityBarVisible, setActivityBarVisible] = React.useState(readActivityBarVisibility);
+    const setStageDockVisible = visible => {
+        setStageLayout(current => {
+            const nextLayout = Object.assign({}, current, {visible});
+            persistStageLayout(nextLayout);
+            return nextLayout;
+        });
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+    };
+    const toggleActivityBar = () => {
+        setActivityBarVisible(current => {
+            const next = !current;
+            try {
+                window.localStorage.setItem(ACTIVITY_BAR_STORAGE_KEY, String(next));
+            } catch (error) {
+                // The layout remains active for this session when browser storage is unavailable.
+            }
+            return next;
+        });
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+    };
+    const toggleStageDock = () => setStageDockVisible(!stageLayout.visible);
     if (children) {
         return <Box {...componentProps}>{children}</Box>;
     }
@@ -482,47 +482,47 @@ const GUIComponent = props => {
                                 onShowPrivacyPolicy={onShowPrivacyPolicy}
                             />
                         ) : null}
-                    {loading ? (
-                        <Loader isFullScreen />
-                    ) : null}
-                    {isCreating ? (
-                        <Loader
-                            isFullScreen
-                            messageId="gui.loader.creating"
-                        />
-                    ) : null}
-                    {isBrowserSupported() ? null : (
-                        <BrowserModal
-                            isRtl={isRtl}
-                            onClickDesktopSettings={onClickDesktopSettings}
-                        />
-                    )}
-                    {tipsLibraryVisible ? (
-                        <TipsLibrary />
-                    ) : null}
-                    {cardsVisible ? (
-                        <Cards />
-                    ) : null}
-                    {alertsVisible ? (
-                        <Alerts className={styles.alertsContainer} />
-                    ) : null}
-                    {connectionModalVisible ? (
-                        <ConnectionModal
-                            vm={vm}
-                        />
-                    ) : null}
-                    {costumeLibraryVisible ? (
-                        <CostumeLibrary
-                            vm={vm}
-                            onRequestClose={onRequestCloseCostumeLibrary}
-                        />
-                    ) : null}
-                    {backdropLibraryVisible ? (
-                        <BackdropLibrary
-                            vm={vm}
-                            onRequestClose={onRequestCloseBackdropLibrary}
-                        />
-                    ) : null}
+                        {loading ? (
+                            <Loader isFullScreen />
+                        ) : null}
+                        {isCreating ? (
+                            <Loader
+                                isFullScreen
+                                messageId="gui.loader.creating"
+                            />
+                        ) : null}
+                        {isBrowserSupported() ? null : (
+                            <BrowserModal
+                                isRtl={isRtl}
+                                onClickDesktopSettings={onClickDesktopSettings}
+                            />
+                        )}
+                        {tipsLibraryVisible ? (
+                            <TipsLibrary />
+                        ) : null}
+                        {cardsVisible ? (
+                            <Cards />
+                        ) : null}
+                        {alertsVisible ? (
+                            <Alerts className={styles.alertsContainer} />
+                        ) : null}
+                        {connectionModalVisible ? (
+                            <ConnectionModal
+                                vm={vm}
+                            />
+                        ) : null}
+                        {costumeLibraryVisible ? (
+                            <CostumeLibrary
+                                vm={vm}
+                                onRequestClose={onRequestCloseCostumeLibrary}
+                            />
+                        ) : null}
+                        {backdropLibraryVisible ? (
+                            <BackdropLibrary
+                                vm={vm}
+                                onRequestClose={onRequestCloseBackdropLibrary}
+                            />
+                        ) : null}
                     </React.Suspense>
                     <MenuBar
                         accountNavOpen={accountNavOpen}
@@ -562,9 +562,23 @@ const GUIComponent = props => {
                         onShare={onShare}
                         onStartSelectingFileUpload={onStartSelectingFileUpload}
                         onToggleLoginOpen={onToggleLoginOpen}
+                        onActivateTab={onActivateTab}
+                        activityBarVisible={activityBarVisible}
+                        rightSidebarVisible={stageLayout.visible}
+                        /* eslint-disable react/jsx-no-bind */
+                        onToggleActivityBar={toggleActivityBar}
+                        onToggleRightSidebar={toggleStageDock}
+                        /* eslint-enable react/jsx-no-bind */
                     />
                     <Box className={styles.bodyWrapper}>
                         <Box className={styles.flexWrapper}>
+                            {activityBarVisible && (
+                                <WorkspaceActivityBar
+                                    activeTabIndex={activeTabIndex}
+                                    targetIsStage={targetIsStage}
+                                    onSelect={onActivateTab}
+                                />
+                            )}
                             <Box className={styles.editorWrapper}>
                                 <Tabs
                                     forceRenderTabPanel
@@ -574,7 +588,7 @@ const GUIComponent = props => {
                                     selectedTabPanelClassName={tabClassNames.tabPanelSelected}
                                     onSelect={onActivateTab}
                                 >
-                                    <TabList className={tabClassNames.tabList}>
+                                    <TabList className={classNames(tabClassNames.tabList, styles.visuallyHiddenTabs)}>
                                         <Tab className={tabClassNames.tab}>
                                             <img
                                                 draggable={false}
@@ -679,6 +693,8 @@ const GUIComponent = props => {
                                 intl={intl}
                                 isRendererSupported={isRendererSupported()}
                                 isRtl={isRtl}
+                                layout={stageLayout}
+                                onLayoutChange={setStageLayout}
                                 stageSize={stageSize}
                                 vm={vm}
                             />

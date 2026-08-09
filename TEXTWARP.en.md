@@ -29,13 +29,18 @@ npm link
 ## Editor workflow
 
 Select the stage or an actor in the regular Scratch target pane. Each target becomes an editable `.tw` module.
-The Code, Blocks and Split views edit the same target. Dual editor opens two different target modules and keeps
-each Monaco model independent.
+Code is the source of truth. Blocks is an explicit visual-authority mode, while Split shows a read-only derived
+blocks preview. Dual editor opens two different target modules and keeps each Monaco model independent.
 
-TextWarp automatically validates text after an edit and compiles the last valid version while **Automatic
-synchronization** is enabled. Turning it off disables both directions: typing only analyzes and saves source, and
-visual edits remain explicitly marked as divergent. Use **Text to Blocks** for an explicit conversion, Run for the
-green flag, Stop to stop all threads and Restart to compile then run again.
+TextWarp validates text after an edit without mutating the VM. There is no automatic bidirectional synchronization.
+Use **Text to Blocks** for an explicit conversion and **Blocks to Text** to explicitly accept visual edits. Run
+captures an immutable project snapshot, stops the previous execution, compiles and validates every managed module,
+commits the project atomically, and only then starts the green flag.
+
+The compilation path is `SourceDocument → localized lexer → canonical tokens → CST/AST → TextWarp IR → Scratch IR
+→ VM`. Generation IDs and cancellation prevent an older build from replacing a newer source. The status bar shows
+Source, Build, and Runtime versions. **Preferences → Code language** supports `en-US` and `pt-BR` independently of
+the interface language; semantic translation preserves comments, strings, and user-defined names.
 
 The project sidebar exposes editable modules, resources, search, symbols and local history. The lower panel keeps
 Problems, Console, Debugger and extension information in separate tabs. All panels can be resized.
@@ -181,12 +186,14 @@ stage and every original actor in one action, validates every module before chan
 Undo snapshot. If any module fails, changes during processing, or already contains different TextWarp source, no
 target is changed. Each target remains a separate `.tw` module in the explorer.
 
-## Synchronized visual editing
+## Derived visual view and explicit conversion
 
-Blocks and text are compared at compilation-unit level. Independent edits merge automatically. Comments inside a
-visually changed unit create an explicit conflict instead of disappearing. **Compare versions** performs a fresh
-decompile and reports added, removed, changed and opaque units. Every manual or automatic apply stores a complete
-undo snapshot. Targets with unowned visual roots require a replace, add or cancel scope choice.
+Split renders Blocks as a read-only view derived from the last valid source build. Blocks mode grants explicit
+temporary visual authority, but its changes never flow back into Monaco automatically. **Compare versions**
+performs a fresh decompile and reports added, removed, changed and opaque units without applying them. Only
+**Blocks to Text** accepts visual edits as source; independent units merge, conflicts remain explicit, and the
+operation stores a complete undo snapshot. Targets with unowned visual roots require a replace, add or cancel
+scope choice.
 
 ## Concurrent debugger
 
@@ -222,8 +229,8 @@ ownership map, and import matches the saved target ID before name/order migratio
   original authorized extension.
 - Interactive compilation, decompilation, and comparison use a cancellable Worker; only the final transactional
   VM apply remains on the main thread.
-- Automatic conversion is bounded at 100,000 source characters or 10,000 blocks; larger modules use explicit
-  conversion to keep typing and visual events responsive.
+- Debounced typing analysis is suspended above 100,000 source characters; larger modules remain available to
+  explicit compilation without automatic text/block conversion on each edit.
 - Scratch cloud variables and network features still follow the host platform policy.
 - Browser filesystem handles depend on File System Access API support; download/upload remains the fallback.
 - External editor synchronization is explicit: write the `.tw` file, edit it externally, then reload it.

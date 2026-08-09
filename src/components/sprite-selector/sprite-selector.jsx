@@ -1,6 +1,5 @@
 import PropTypes from 'prop-types';
 import React from 'react';
-import classNames from 'classnames';
 import {defineMessages, injectIntl, intlShape} from 'react-intl';
 
 import Box from '../box/box.jsx';
@@ -19,6 +18,26 @@ import surpriseIcon from '../action-menu/icon--surprise.svg';
 import searchIcon from '../action-menu/icon--search.svg';
 
 const messages = defineMessages({
+    targets: {
+        id: 'tw.targetPane.targets',
+        description: 'Heading for the unified stage and actor list',
+        defaultMessage: 'Targets'
+    },
+    inspector: {
+        id: 'tw.targetPane.inspector',
+        description: 'Heading for the selected target properties',
+        defaultMessage: 'Inspector'
+    },
+    stageAndBackdrops: {
+        id: 'tw.targetPane.stageAndBackdrops',
+        description: 'Heading for the stage and its backdrops',
+        defaultMessage: 'Stage and backdrops'
+    },
+    addActor: {
+        id: 'tw.targetPane.addActor',
+        description: 'Visible label for adding an actor',
+        defaultMessage: 'Add actor'
+    },
     actors: {
         id: 'tw.targetPane.actors',
         description: 'Tab containing the actors in the target pane',
@@ -81,8 +100,6 @@ const SpriteSelectorComponent = function (props) {
         stageSize,
         ...componentProps
     } = props;
-    const [activePanel, setActivePanel] = React.useState('actors');
-    const handlePanelChange = event => setActivePanel(event.currentTarget.dataset.panel);
     let selectedSprite = sprites[selectedId];
     let spriteInfoDisabled = false;
     if (typeof selectedSprite === 'undefined') {
@@ -95,53 +112,74 @@ const SpriteSelectorComponent = function (props) {
             {...componentProps}
         >
 
-            <SpriteInfo
-                direction={selectedSprite.direction}
-                disabled={spriteInfoDisabled}
-                name={selectedSprite.name}
-                rotationStyle={selectedSprite.rotationStyle}
-                size={selectedSprite.size}
-                stageSize={stageSize}
-                visible={selectedSprite.visible}
-                x={selectedSprite.x}
-                y={selectedSprite.y}
-                onChangeDirection={onChangeSpriteDirection}
-                onChangeName={onChangeSpriteName}
-                onChangeRotationStyle={onChangeSpriteRotationStyle}
-                onChangeSize={onChangeSpriteSize}
-                onChangeVisibility={onChangeSpriteVisibility}
-                onChangeX={onChangeSpriteX}
-                onChangeY={onChangeSpriteY}
-            />
-
-            <div
-                aria-label={intl.formatMessage(messages.actors)}
-                className={styles.targetTabs}
-                role="tablist"
-            >
-                {[
-                    ['actors', messages.actors],
-                    ['backdrops', messages.backdrops]
-                ].map(([id, message]) => (
-                    <button
-                        aria-selected={activePanel === id}
-                        className={activePanel === id ? styles.activeTargetTab : ''}
-                        data-panel={id}
-                        key={id}
-                        role="tab"
-                        type="button"
-                        // eslint-disable-next-line react/jsx-no-bind
-                        onClick={handlePanelChange}
-                    >
-                        {intl.formatMessage(message)}
-                    </button>
-                ))}
-            </div>
-            {activePanel === 'actors' ? (
-                <div
-                    className={styles.targetPanel}
-                    role="tabpanel"
-                >
+            <section className={styles.inspectorPanel}>
+                <div className={styles.sectionHeader}>
+                    <strong>{intl.formatMessage(messages.inspector)}</strong>
+                </div>
+                <SpriteInfo
+                    direction={selectedSprite.direction}
+                    disabled={spriteInfoDisabled}
+                    name={selectedSprite.name}
+                    rotationStyle={selectedSprite.rotationStyle}
+                    size={selectedSprite.size}
+                    stageSize={stageSize}
+                    visible={selectedSprite.visible}
+                    x={selectedSprite.x}
+                    y={selectedSprite.y}
+                    onChangeDirection={onChangeSpriteDirection}
+                    onChangeName={onChangeSpriteName}
+                    onChangeRotationStyle={onChangeSpriteRotationStyle}
+                    onChangeSize={onChangeSpriteSize}
+                    onChangeVisibility={onChangeSpriteVisibility}
+                    onChangeX={onChangeSpriteX}
+                    onChangeY={onChangeSpriteY}
+                />
+            </section>
+            <div className={styles.targetPanel}>
+                <section className={styles.stageSection}>
+                    <div className={styles.sectionHeader}>
+                        <strong>{intl.formatMessage(messages.stageAndBackdrops)}</strong>
+                    </div>
+                    <div className={styles.stageTarget}>{stageSelector}</div>
+                </section>
+                <section className={styles.actorSection}>
+                    <div className={styles.sectionHeader}>
+                        <strong>{intl.formatMessage(messages.actors)}</strong>
+                        <div className={styles.addActorControl}>
+                            <span>{intl.formatMessage(messages.addActor)}</span>
+                            <ActionMenu
+                                className={styles.addButton}
+                                img={spriteIcon}
+                                moreButtons={[
+                                    {
+                                        title: intl.formatMessage(messages.addSpriteFromFile),
+                                        img: fileUploadIcon,
+                                        onClick: onFileUploadClick,
+                                        fileAccept: '.svg, .png, .bmp, .jpg, .jpeg, .jfif, .webp, .sprite2, ' +
+                                            '.sprite3, .gif',
+                                        fileChange: onSpriteUpload,
+                                        fileInput: spriteFileInput,
+                                        fileMultiple: true
+                                    }, {
+                                        title: intl.formatMessage(messages.addSpriteFromSurprise),
+                                        img: surpriseIcon,
+                                        onClick: onSurpriseSpriteClick
+                                    }, {
+                                        title: intl.formatMessage(messages.addSpriteFromPaint),
+                                        img: paintIcon,
+                                        onClick: onPaintSpriteClick
+                                    }, {
+                                        title: intl.formatMessage(messages.addSpriteFromLibrary),
+                                        img: searchIcon,
+                                        onClick: onNewSpriteClick
+                                    }
+                                ]}
+                                title={intl.formatMessage(messages.addSpriteFromLibrary)}
+                                tooltipPlace={isRtl(intl.locale) ? 'right' : 'left'}
+                                onClick={onNewSpriteClick}
+                            />
+                        </div>
+                    </div>
                     <SpriteList
                         editingTarget={editingTarget}
                         hoveredTarget={hoveredTarget}
@@ -154,45 +192,8 @@ const SpriteSelectorComponent = function (props) {
                         onExportSprite={onExportSprite}
                         onSelectSprite={onSelectSprite}
                     />
-                    <ActionMenu
-                        className={styles.addButton}
-                        img={spriteIcon}
-                        moreButtons={[
-                            {
-                                title: intl.formatMessage(messages.addSpriteFromFile),
-                                img: fileUploadIcon,
-                                onClick: onFileUploadClick,
-                                fileAccept: '.svg, .png, .bmp, .jpg, .jpeg, .jfif, .webp, .sprite2, .sprite3, .gif',
-                                fileChange: onSpriteUpload,
-                                fileInput: spriteFileInput,
-                                fileMultiple: true
-                            }, {
-                                title: intl.formatMessage(messages.addSpriteFromSurprise),
-                                img: surpriseIcon,
-                                onClick: onSurpriseSpriteClick
-                            }, {
-                                title: intl.formatMessage(messages.addSpriteFromPaint),
-                                img: paintIcon,
-                                onClick: onPaintSpriteClick
-                            }, {
-                                title: intl.formatMessage(messages.addSpriteFromLibrary),
-                                img: searchIcon,
-                                onClick: onNewSpriteClick
-                            }
-                        ]}
-                        title={intl.formatMessage(messages.addSpriteFromLibrary)}
-                        tooltipPlace={isRtl(intl.locale) ? 'right' : 'left'}
-                        onClick={onNewSpriteClick}
-                    />
-                </div>
-            ) : (
-                <div
-                    className={classNames(styles.targetPanel, styles.backdropPanel)}
-                    role="tabpanel"
-                >
-                    {stageSelector}
-                </div>
-            )}
+                </section>
+            </div>
         </Box>
     );
 };

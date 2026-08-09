@@ -37,6 +37,16 @@ document highlights, syntax folding, structural selection, parameter inlay hints
 Diagnostics always retain their stable error code. Analysis is debounced away from the immediate keystroke path,
 associated with the current source version, range-clamped to the model and discarded when stale. Suggestions and
 quick actions follow the active interface language. VM compilation/application remains a separate delayed step.
+Syntax highlighting reads the same semantic translation registry, so English and Portuguese keywords, controls,
+events, and calls keep their token colors, including accented aliases such as `variável`, `senão`, and `não`.
+The Portuguese pack covers the complete canonical catalog registry: commands, events, arguments, options,
+controls, operators, literals, and types.
+
+A plain click on a literal whose argument has useful visual metadata opens a small contextual editor: booleans
+offer **True/False**, colors use the native color picker, finite menus use a dropdown, and numbers offer decrement,
+increment, and direct entry. The control reuses the same types and options as the block catalog, replaces only the
+literal range, and participates in Monaco undo/redo. Comments, ordinary text, and arguments without a useful visual
+control do not open it; traditional keyboard editing remains available in every case.
 
 ## Software-specific resources
 
@@ -58,9 +68,9 @@ one Undo snapshot for the complete project.
 Compilation writes directly to `scratch-vm`; the native Blocks view reads the same target. The browser uses web
 file APIs and downloads. Electron injects native file handles through the shared platform boundary.
 
-An empty actor starts with a small arrow-key movement script. Its canonical Scratch values (`"right arrow"` and
-`"left arrow"`) are compiled into blocks as soon as the target is loaded, so the Text and Blocks views agree before
-the first edit. The stage starts as an empty `stage` module.
+An empty actor starts with a small arrow-key movement source already emitted in the persisted Code Language.
+Semantic values such as `right_arrow`/`seta_direita` become canonical Scratch values only in the internal
+representation. The stage likewise starts as `stage` or `palco` according to the selected code language.
 
 Scratch variable and list names containing spaces, accents, or symbols receive a stable TextWarp identifier, such
 as `Gear Speed °/s` → `Gear_Speed_s`. Block fields retain the original name and ID, so round trips do not create a
@@ -84,22 +94,43 @@ to toggle a breakpoint at the caret; clicking a line number only moves the caret
 
 ## Productivity and recovery
 
-Autosave snapshots remain local to the device. Every manual or automatic block mutation creates an exact target
+Autosave snapshots remain local to the device. Every explicit block mutation creates an exact target
 snapshot and exposes **Undo** and **View differences**. Formatting, project-wide replacement and `.textwarp` packages help
 recover and transfer editable work.
 
 Preferences includes a persistent **Compact interface** option for denser toolbars, tabs, sidebars, and panels on
-larger screens. **Programming** contains Text, Blocks, Split, and Documentation directly above the editor. Files,
-Search, Actors, Extensions, Debugging, Documentation, and Settings live in the activity bar.
+larger screens. The local file header now combines open files, Text, Blocks, Split, Documentation, synchronization,
+Convert, and More actions in one compact row. Files, Commands, Search, Actors, Extensions, Debugging,
+Documentation, and Settings live in the compact activity bar. The **Commands** sidebar groups the shared semantic
+catalog by Scratch category, searches canonical and translated names, and inserts the same localized snippets used
+by completion into Monaco. Each command has an expandable context box showing an example, parameters, types, and
+accepted values. The top-bar **Project** context keeps the project name, interface language, and TextWarp syntax
+language together; its locale indicator remains visible in compact layouts.
 Conversion is a file-level menu with explicit synchronization state; **More actions** contains the command palette,
 Quick Open, formatting, breakpoint and Problems navigation, split editor, documentation, external editor, and
 preferences. In dual view these editor commands follow the last-focused pane. On mobile, the sidebar becomes a
 dismissible overlay and the stage starts collapsed to preserve code space.
 
-The right dock follows Stage, Actor Inspector, then one Actors/Backdrops tabbed area. Both target tabs expand with
-the dock, retain at least 12 rem of working height, and scroll long actor lists inside that area. The explorer groups
-modules under Actors and Stage, while Outline groups Variables, Procedures, and Events. When text and blocks differ,
-the in-app conflict surface offers Compare, Use text, Use blocks, and Cancel instead of silently replacing work.
+The unified activity bar switches Programming, Costumes, and Sounds and directly exposes Files, Commands, Actors,
+Extensions, Symbols, History, Documentation, Debugging, Search, and Settings. The same contextual navigation stays
+visible at the top of the Programming sidebar. The compact top bar keeps the Project context, command-palette entry,
+toggleable **Run/Stop** action, game-preview full screen, and four layout controls. The icons show or hide the
+activity bar, left sidebar, bottom panel, and right sidebar while exposing their active state. Text/Blocks/Split and
+conversion remain local to the Programming editor. The right dock follows the stage preview, Actor Inspector, Stage
+and Backdrops, then Actors. Backdrop and actor creation use separate, explicit actions. The stage card groups its
+thumbnail, identity, backdrop count, and dedicated Add backdrop action. Run, preview sizing, full screen, and dock
+collapse are not duplicated inside the right sidebar. The preview measures its real available width, scales without
+changing aspect ratio, and centers the canvas;
+the Inspector reflows position, appearance, and direction instead of clipping them. The dock is bounded by the
+available application height: stage and headers do not grow with lists, while Actors, Explorer, Commands, Costumes,
+and Sounds scroll only inside their own region. Scrollbars are 6 px wide, stay subdued at rest, and gain contrast on
+hover or focus. The explorer groups modules under Actors and Stage, while Outline groups Variables, Procedures, and Events.
+When text and blocks differ, the in-app conflict surface offers Compare, Use text, Use blocks, and Cancel instead of
+silently replacing work.
+
+Costume and Sound workspaces share a compact, resizable asset sidebar with a header add action, selection,
+reordering, and per-item actions. Sound editing adds a timeline ruler, explicit selection range, sample-rate metadata,
+integrated transport, and effects grouped by speed, volume, fade, and transform.
 
 Configurable shortcuts support letters, digits, function keys, arrows, navigation keys, Space, Tab, Escape,
 Backspace and Delete. Preferences stages edits until **Apply shortcuts** is selected, rejects duplicates, and accepts

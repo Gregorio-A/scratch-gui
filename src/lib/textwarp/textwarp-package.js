@@ -155,6 +155,7 @@ const packTextwarp = async ({projectData, modules, extensions = [], metadata = {
             targetId: module.targetId || null,
             name: module.name,
             isStage: Boolean(module.isStage),
+            sourceLanguage: module.sourceLanguage || 'en-US',
             source: module.source,
             state: module.state
         })),
@@ -326,6 +327,7 @@ const exportTextwarpProject = async (vm, metadata = {}) => {
             targetId: target.id,
             name: target.getName ? target.getName() : target.sprite && target.sprite.name || (target.isStage ? 'Stage' : 'Actor'),
             isStage: target.isStage,
+            sourceLanguage: conversionState.sourceLanguage || 'en-US',
             sourceText,
             conversionState
         };
@@ -440,6 +442,7 @@ const importTextwarpProject = async (vm, data) => {
             return runtimeRecord ? runtimeRecord.generatedVariables : [];
         }).map(item => item.id));
         const compilation = compileText(module.sourceText, {
+            codeLanguage: module.sourceLanguage || conversionState.sourceLanguage || 'en-US',
             targetId: moduleId,
             stageId,
             targetName: target.getName ? target.getName() : module.name,
@@ -476,6 +479,7 @@ const importTextwarpProject = async (vm, data) => {
                     adopted.generatedVariables = conversionState.generatedVariables || adopted.generatedVariables;
                     adopted.resourceBindings = conversionState.resourceBindings || adopted.resourceBindings;
                     adopted.breakpoints = conversionState.breakpoints || adopted.breakpoints;
+                    adopted.sourceLanguage = module.sourceLanguage || conversionState.sourceLanguage || 'en-US';
                 }
                 applyCompilation(vm, target, compilation);
             } catch (error) {

@@ -62,6 +62,14 @@ const ActivityBar = props => {
                     onClick={() => openSidebar('explorer')}
                 />
                 <ActivityButton
+                    active={props.sidebarVisible && props.activeSidebarPanel === 'commands'}
+                    controls="textwarp-ide-sidebar"
+                    expanded={props.sidebarVisible && props.activeSidebarPanel === 'commands'}
+                    icon="commands"
+                    label={t('commands')}
+                    onClick={() => openSidebar('commands')}
+                />
+                <ActivityButton
                     active={props.sidebarVisible && props.activeSidebarPanel === 'search'}
                     controls="textwarp-ide-sidebar"
                     expanded={props.sidebarVisible && props.activeSidebarPanel === 'search'}

@@ -9,6 +9,7 @@ const {
     findReferences,
     formatText,
     getCompletions,
+    getContextualValueControl,
     getDefinitionLocations,
     getDiagnosticSuggestion,
     getDocumentSymbols,
@@ -66,7 +67,8 @@ test('language service exposes symbols, hover, definitions, references and safe 
     assert.equal(hover.title, 'Variable');
     assert.equal(hover.documentation, 'Variable declared in Cat.tw.');
     assert.equal(getHover(source, 4, 7, languageContext).documentation, 'List declared in Cat.tw.');
-    assert.match(getHover(source, 7, 7).documentation, /altera x/i);
+    assert.match(getHover(source, 7, 7, {codeLanguage: 'pt-BR'}).documentation, /altera x/i);
+    assert.match(getHover(source, 7, 7, {codeLanguage: 'en-US'}).documentation, /TextWarp command/i);
     assert.ok(getSemanticTokens(source).some(token => token.type === 'namespace' && token.line === 1));
     assert.ok(getSemanticTokens(source).some(token => token.type === 'event' && token.line === 10));
 });
@@ -83,6 +85,14 @@ test('language service offers signatures and project-aware resources', () => {
     assert.equal(ownSignature.documentation, 'Procedure declared in Cat.tw.');
     const nativeSignature = getSignatureHelp('actor Cat\n\non green_flag:\n    glide_to(', 4, 14);
     assert.match(nativeSignature.label, /^glide_to\(/);
+    const portugueseSignature = getSignatureHelp(
+        'ator Gato\n\nao bandeira_verde:\n    mude_x(',
+        4,
+        12,
+        {codeLanguage: 'pt-BR'}
+    );
+    assert.equal(portugueseSignature.label, 'mude_x(valor: numero)');
+    assert.equal(portugueseSignature.parameters[0].label, 'valor');
     const overloaded = getSignatureHelp('actor Cat\n\non green_flag:\n    extension.mix(1, ', 4, 22, {
         extensionCatalog: {
             'extension.mix': {
@@ -102,6 +112,44 @@ test('language service offers signatures and project-aware resources', () => {
     assert.equal(overloaded.signatures.length, 2);
     assert.equal(overloaded.activeSignature, 1);
     assert.equal(overloaded.activeParameter, 1);
+});
+
+test('contextual value controls reuse block metadata while preserving text replacements', () => {
+    const number = getContextualValueControl('move(-10)', 1, 7);
+    assert.equal(number.kind, 'number');
+    assert.equal(number.argumentName, 'steps');
+    assert.equal(number.step, 1);
+    assert.deepEqual(number.range, {
+        startLineNumber: 1,
+        startColumn: 6,
+        endLineNumber: 1,
+        endColumn: 9
+    });
+    assert.equal(number.replacement(12), '12');
+
+    const angle = getContextualValueControl('point_in_direction(90)', 1, 21);
+    assert.equal(angle.kind, 'number');
+    assert.equal(angle.step, 15);
+
+    const boolean = getContextualValueControl('espere_ate(verdadeiro)', 1, 13, {codeLanguage: 'pt-BR'});
+    assert.equal(boolean.kind, 'boolean');
+    assert.equal(boolean.value, true);
+    assert.equal(boolean.values.find(item => item.value === false).replacement, 'falso');
+
+    const color = getContextualValueControl('touching_color("#ff0000")', 1, 18);
+    assert.equal(color.kind, 'color');
+    assert.equal(color.replacement('#00ff00'), '"#00ff00"');
+
+    const option = getContextualValueControl('key_pressed("space")', 1, 14);
+    assert.equal(option.kind, 'select');
+    assert.equal(option.argumentName, 'key');
+    assert.equal(
+        option.options.find(item => item.value === 'right arrow').replacement,
+        '"right arrow"'
+    );
+
+    assert.equal(getContextualValueControl('say("#ff0000")', 1, 8), null);
+    assert.equal(getContextualValueControl('# move(10)', 1, 8), null);
 });
 
 test('workspace index resolves global symbols without crossing local module boundaries', () => {
@@ -194,6 +242,14 @@ test('completion is context-aware, deduplicated and range-safe', () => {
         .some(item => item.label === 'wait'));
     const commands = getCompletions('actor Cat\n\non green_flag:\n    mo', 4, 7, context);
     assert.ok(commands.some(item => item.label === 'move'));
+    const portugueseCommands = getCompletions(
+        'ator Gato\n\nao bandeira_verde:\n    ',
+        4,
+        5,
+        Object.assign({}, context, {codeLanguage: 'pt-BR'})
+    );
+    assert.ok(portugueseCommands.some(item => item.label === 'verdadeiro'));
+    assert.ok(portugueseCommands.some(item => item.label === 'e'));
     assert.equal(new Set(commands.map(item => item.id)).size, commands.length);
     assert.deepEqual(commands.find(item => item.label === 'move').range, {
         startLineNumber: 4,
@@ -263,7 +319,7 @@ test('completion is context-aware, deduplicated and range-safe', () => {
     assert.equal(
         getCompletions('actor Cat\n\non green_flag:\n    key_', 4, 9, context)
             .find(item => item.label === 'key_pressed').insertText,
-        'key_pressed(${1:"space"})'
+        'key_pressed(${1:key: "space"})'
     );
 
     const eventKeyOptions = getCompletions(

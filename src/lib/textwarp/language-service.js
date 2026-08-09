@@ -8,6 +8,8 @@ const {
     operatorRegistry
 } = require('./block-registry');
 const {parseText} = require('./parser');
+const {canonicalFor, preferredFor, semanticIdsFor} = require('./language-registry');
+const {canonicalizeSource, localizeSource} = require('./localized-syntax');
 
 const KEYWORDS = new Set([
     'actor', 'stage', 'on', 'global', 'variable', 'list', 'procedure', 'if', 'else', 'repeat',
@@ -701,6 +703,32 @@ const getCatalog = context => Object.assign(
     context && context.extensionCatalog || {}
 );
 
+const canonicalCallName = (context, name) => {
+    const semanticId = semanticIdsFor(context && context.codeLanguage, name).find(id =>
+        /^function\.[^.]+$/.test(id) || /^event\.[^.]+$/.test(id) || /^control\.[^.]+$/.test(id)
+    );
+    return semanticId ? canonicalFor(semanticId) : name;
+};
+
+const localizedName = (context, prefix, name) => preferredFor(
+    context && context.codeLanguage,
+    `${prefix}.${name}`
+);
+
+const documentationFor = (context, name, metadata) => {
+    if (context && context.codeLanguage === 'pt-BR') {
+        return metadata.documentation || `Comando TextWarp ${name}.`;
+    }
+    const kind = metadata.kind === 'event' || eventRegistry[name] ? 'event' :
+        metadata.kind === 'reporter' || metadata.kind === 'boolean' ? 'reporter' :
+            metadata.kind === 'conditional' || metadata.kind === 'loop' ? 'control block' : 'command';
+    const opcode = metadata.opcode ? ` backed by Scratch opcode ${metadata.opcode}` : '';
+    return `${name} — TextWarp ${kind}${opcode}.`;
+};
+
+const codeDocumentation = (context, english, portuguese) =>
+    context && context.codeLanguage === 'pt-BR' ? portuguese : english;
+
 const SPECIAL_MENU_OPTIONS = Object.freeze({
     motion_pointtowards_menu: ['_mouse_', '_random_'],
     motion_goto_menu: ['_mouse_', '_random_'],
@@ -730,7 +758,9 @@ const normalizeCompletionOption = option => {
 
 const visibleArgumentOptions = (context, call) => {
     if (!call) return [];
-    const metadata = getCatalog(context)[call.name] || eventRegistry[call.name];
+    const callName = canonicalCallName(context, call.name);
+    call = Object.assign({}, call, {name: callName});
+    const metadata = getCatalog(context)[callName] || eventRegistry[callName];
     const args = metadata && metadata.arguments || [];
     const argument = args[call.argumentIndex] ||
         (args.length && args[args.length - 1].variadic ? args[args.length - 1] : null);
@@ -750,6 +780,124 @@ const visibleArgumentOptions = (context, call) => {
         argument,
         callName: call.name
     }));
+};
+
+const contextualLiteralAt = (source, line, column) => {
+    const text = normalizedSource(source);
+    const lineText = text.split('\n')[line - 1] || '';
+    const scanned = scanSource(text).filter(token => token.line === line);
+    const comment = scanned.find(token => token.type === 'comment');
+    const codeEnd = comment ? comment.column - 1 : lineText.length;
+    if (column > codeEnd + 1) return null;
+    const candidates = scanned.filter(token => ['identifier', 'keyword', 'string'].includes(token.type));
+    const numberPattern = /-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?/ig;
+    let match = null;
+    while ((match = numberPattern.exec(lineText.slice(0, codeEnd)))) {
+        const start = match.index;
+        const end = start + match[0].length;
+        const before = start > 0 ? lineText[start - 1] : '';
+        const after = end < codeEnd ? lineText[end] : '';
+        if (/[A-Za-z0-9_.]/.test(before) || /[A-Za-z0-9_.]/.test(after)) continue;
+        candidates.push({
+            type: 'number',
+            value: Number(match[0]),
+            raw: match[0],
+            line,
+            column: start + 1,
+            endColumn: end + 1
+        });
+    }
+    const token = candidates.find(candidate =>
+        column >= candidate.column && column < candidate.endColumn
+    );
+    if (!token) return null;
+    return Object.assign({}, token, {
+        range: lineRange(token.line, token.column, token.raw)
+    });
+};
+
+const quoteContextualString = (value, quote = '"') => {
+    const string = String(value);
+    if (quote === '"') return JSON.stringify(string);
+    return `'${string.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`;
+};
+
+const contextualReplacement = (token, value, context, kind) => {
+    if (kind === 'boolean') {
+        return preferredFor(context && context.codeLanguage, value ? 'literal.true' : 'literal.false');
+    }
+    if (kind === 'number') return String(value);
+    return quoteContextualString(value, token.quote || '"');
+};
+
+/*
+ * Resolve Blockly-like field controls without taking text editing away from Monaco.
+ * A control is only returned for a literal whose active argument has useful type
+ * metadata (colour, finite options, boolean or number).
+ */
+const getContextualValueControl = (source, line, column, context = {}) => {
+    const token = contextualLiteralAt(source, line, column);
+    if (!token) return null;
+    const cursor = cursorContext(source, line, token.column);
+    const call = cursor.call;
+    const callName = call && canonicalCallName(context, call.name);
+    const metadata = callName && (getCatalog(context)[callName] || eventRegistry[callName]);
+    const args = metadata && metadata.arguments || [];
+    const argument = call && (args[call.argumentIndex] ||
+        (args.length && args[args.length - 1].variadic ? args[args.length - 1] : null));
+    const options = visibleArgumentOptions(context, call);
+    const base = {
+        argumentIndex: call ? call.argumentIndex : null,
+        argumentName: argument && argument.name || '',
+        callName: callName || '',
+        range: token.range,
+        raw: token.raw,
+        value: token.value
+    };
+    if (argument && argument.shadowOpcode === 'colour_picker' && token.type === 'string') {
+        const color = String(token.value || '');
+        if (!/^#[0-9a-f]{6}$/i.test(color)) return null;
+        return Object.assign(base, {
+            kind: 'color',
+            value: color.toLowerCase(),
+            replacement: value => contextualReplacement(token, value, context, 'color')
+        });
+    }
+    if (argument && options.length && ['string', 'identifier', 'keyword', 'number'].includes(token.type)) {
+        return Object.assign(base, {
+            kind: 'select',
+            options: options.map(option => ({
+                label: option.label,
+                value: option.value,
+                replacement: contextualReplacement(token, option.value, context, 'select')
+            }))
+        });
+    }
+    const semanticIds = ['identifier', 'keyword'].includes(token.type) ?
+        semanticIdsFor(context && context.codeLanguage, token.raw) : [];
+    const booleanValue = semanticIds.includes('literal.true') ? true :
+        semanticIds.includes('literal.false') ? false : null;
+    if (booleanValue !== null && (!argument || argument.valueType === 'boolean')) {
+        return Object.assign(base, {
+            kind: 'boolean',
+            value: booleanValue,
+            values: [false, true].map(value => ({
+                value,
+                replacement: contextualReplacement(token, value, context, 'boolean')
+            }))
+        });
+    }
+    if (argument && argument.valueType === 'number' && token.type === 'number' && Number.isFinite(token.value)) {
+        const decimal = token.raw.match(/\.(\d+)/);
+        const step = argument.shadowOpcode === 'math_angle' ? 15 :
+            decimal ? Math.pow(10, -decimal[1].length) : 1;
+        return Object.assign(base, {
+            kind: 'number',
+            step,
+            replacement: value => contextualReplacement(token, value, context, 'number')
+        });
+    }
+    return null;
 };
 
 const signature = (name, metadata) => {
@@ -779,7 +927,9 @@ const argumentKinds = (metadata, argumentIndex) => {
 
 const visibleResources = (context, call) => {
     if (!call) return [];
-    const metadata = getCatalog(context)[call.name] || eventRegistry[call.name];
+    const callName = canonicalCallName(context, call.name);
+    call = Object.assign({}, call, {name: callName});
+    const metadata = getCatalog(context)[callName] || eventRegistry[callName];
     const kinds = argumentKinds(metadata, call.argumentIndex);
     if (!kinds.length) return [];
     const argument = metadata && (metadata.arguments || [])[call.argumentIndex] || {};
@@ -797,7 +947,8 @@ const availableHere = (metadata, context) => !(
     !context.isStage && metadata.allowSprite === false
 );
 
-const snippetForMetadata = (name, metadata) => {
+const snippetForMetadata = (name, metadata, context = {}, prefix = 'function') => {
+    const visibleName = localizedName(context, prefix, name);
     const placeholders = (metadata.arguments || []).map((argument, index) => {
         const firstOption = argument.options && argument.options.length ?
             normalizeCompletionOption(argument.options[0]).value : undefined;
@@ -810,26 +961,254 @@ const snippetForMetadata = (name, metadata) => {
                             Object.prototype.hasOwnProperty.call(argument, 'defaultValue') ?
                                 argument.defaultValue : 'value'
                         ) : argument.name === 'seconds' ? '1' : '10';
-        return `\${${index + 1}:${example}}`;
+        const argumentName = preferredFor(context.codeLanguage, `${prefix}.${name}.${argument.name}`);
+        return `\${${index + 1}:${argumentName}: ${example}}`;
     });
     const body = placeholders.length + 1;
-    let insertText = `${name}(${placeholders.join(', ')})`;
+    let insertText = `${visibleName}(${placeholders.join(', ')})`;
     if (metadata.kind === 'hat' || metadata.kind === 'event') {
-        const eventCall = placeholders.length ? insertText : name;
-        insertText = `on ${eventCall}:\n    \${${body}:wait(0)}`;
+        const eventCall = placeholders.length ? insertText : visibleName;
+        insertText = `${preferredFor(context.codeLanguage, 'syntax.on')} ${eventCall}:\n    ` +
+            `\${${body}:${localizedName(context, 'function', 'wait')}(0)}`;
     } else if (['conditional', 'loop'].includes(metadata.kind)) {
-        insertText += `:\n    \${${body}:wait(0)}`;
+        insertText += `:\n    \${${body}:${localizedName(context, 'function', 'wait')}(0)}`;
         for (let branch = 2; branch <= Math.max(1, Number(metadata.branchCount) || 1); branch++) {
-            insertText += `\nbranch ${branch}:\n    \${${body + branch - 1}:wait(0)}`;
+            insertText += `\n${preferredFor(context.codeLanguage, 'syntax.branch')} ${branch}:\n    ` +
+                `\${${body + branch - 1}:${localizedName(context, 'function', 'wait')}(0)}`;
         }
     }
     return insertText;
 };
 
+const COMMAND_CATEGORY_COLORS = Object.freeze({
+    control: '#ffab19',
+    events: '#ffbf00',
+    extensions: '#0fbd8c',
+    functions: '#ff6680',
+    looks: '#9966ff',
+    motion: '#4c97ff',
+    operators: '#59c059',
+    sensing: '#5cb1d6',
+    sound: '#cf63cf',
+    variables: '#ff8c1a'
+});
+
+const commandCategory = metadata => {
+    const opcode = String(metadata && metadata.opcode || '');
+    if (/^motion_/.test(opcode)) return 'motion';
+    if (/^looks_/.test(opcode)) return 'looks';
+    if (/^sound_/.test(opcode)) return 'sound';
+    if (/^event_/.test(opcode)) return 'events';
+    if (/^control_/.test(opcode)) return 'control';
+    if (/^sensing_/.test(opcode)) return 'sensing';
+    if (/^operator_/.test(opcode)) return 'operators';
+    if (/^(?:data|procedures)_/.test(opcode)) return /^data_/.test(opcode) ? 'variables' : 'functions';
+    return 'extensions';
+};
+
+const PORTUGUESE_OPTION_LABELS = Object.freeze({
+    '_edge_': 'borda',
+    '_mouse_': 'ponteiro do mouse',
+    '_myself_': 'este ator',
+    '_random_': 'posição aleatória',
+    '_stage_': 'palco',
+    'all around': 'rotação completa',
+    'left-right': 'esquerda e direita',
+    'don\'t rotate': 'não girar',
+    'front': 'frente',
+    'back': 'trás',
+    'forward': 'para frente',
+    'backward': 'para trás'
+});
+
+const ARGUMENT_TYPE_LABELS = Object.freeze({
+    'broadcast-field': ['Broadcast', 'Mensagem'],
+    'field': ['Option', 'Opção'],
+    'input': ['Value', 'Valor'],
+    'list': ['List', 'Lista'],
+    'menu': ['Option', 'Opção'],
+    'variable': ['Variable', 'Variável']
+});
+
+const localizedOption = (context, option) => {
+    const normalized = normalizeCompletionOption(option);
+    const keyId = semanticIdsFor('en-US', normalized.value).find(id => id.startsWith('key.'));
+    const translated = keyId ? preferredFor(context.codeLanguage, keyId) :
+        context.codeLanguage === 'pt-BR' && PORTUGUESE_OPTION_LABELS[normalized.value];
+    return Object.assign({}, normalized, {label: translated || normalized.label});
+};
+
+const commandArguments = (context, name, metadata, prefix = 'function') =>
+    (metadata && metadata.arguments || []).map((argument, argumentIndex) => {
+        const optionValues = []
+            .concat(argument.options || [])
+            .concat(SPECIAL_MENU_OPTIONS[argument.menuOpcode] || [])
+            .map(option => localizedOption(context, option));
+        const resourceValues = visibleResources(context, {name, argumentIndex}).map(resource => ({
+            label: resource.name,
+            value: resource.name
+        }));
+        const seen = new Set();
+        const options = optionValues.concat(resourceValues).filter(option => {
+            const key = String(option.value);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+        const valueType = argument.valueType || argument.role || 'any';
+        const typeLabels = ARGUMENT_TYPE_LABELS[valueType];
+        const specificArgumentId = `${prefix}.${name}.${argument.name}`;
+        const argumentId = canonicalFor(specificArgumentId) ? specificArgumentId : `argument.${argument.name}`;
+        return {
+            name: preferredFor(context.codeLanguage, argumentId),
+            options,
+            type: typeLabels ? typeLabels[context.codeLanguage === 'pt-BR' ? 1 : 0] :
+                preferredFor(context.codeLanguage, `type.${valueType}`),
+            valueType
+        };
+    });
+
+const previewSnippet = snippet => {
+    let preview = String(snippet || '');
+    let previous;
+    do {
+        previous = preview;
+        preview = preview.replace(/\$\{\d+:([^{}]*)\}/g, '$1');
+    } while (preview !== previous);
+    return preview.replace(/\$\{\d+\}/g, '');
+};
+
+const getCommandCatalog = (context = {}) => {
+    const items = [];
+    const add = item => items.push(Object.assign({color: COMMAND_CATEGORY_COLORS[item.category]}, item));
+    const word = semanticId => preferredFor(context.codeLanguage, semanticId);
+    const pass = word('syntax.pass');
+    const trueWord = word('literal.true');
+
+    Object.entries(eventRegistry).forEach(([name, metadata]) => {
+        if (!availableHere(metadata, context)) return;
+        const visibleName = localizedName(context, 'event', name);
+        const snippet = snippetForMetadata(name, Object.assign({}, metadata, {kind: 'event'}), context, 'event');
+        add({
+            id: `event.${name}`,
+            category: 'events',
+            label: `${word('syntax.on')} ${visibleName}`,
+            searchText: `${name} ${visibleName}`,
+            documentation: documentationFor(context, name, metadata),
+            arguments: commandArguments(context, name, metadata, 'event'),
+            preview: previewSnippet(snippet),
+            snippet
+        });
+    });
+
+    [
+        ['if', `${word('control.if')} \${1:${trueWord}}:\n    \${2:${pass}}`],
+        ['repeat', `${word('control.repeat')}(\${1:10}):\n    \${2:${pass}}`],
+        ['repeat_until', `${word('control.repeat_until')}(\${1:${trueWord}}):\n    \${2:${pass}}`],
+        ['while', `${word('control.while')}(\${1:${trueWord}}):\n    \${2:${pass}}`],
+        ['forever', `${word('control.forever')}:\n    \${1:${pass}}`],
+        ['return', `${word('syntax.return')} \${1:value}`],
+        ['pass', pass]
+    ].forEach(([name, snippet]) => {
+        const controlArguments = {
+            if: [{name: 'condition', valueType: 'boolean'}],
+            repeat: [{name: 'count', valueType: 'number'}],
+            repeat_until: [{name: 'condition', valueType: 'boolean'}],
+            return: [{name: 'value', valueType: 'any'}],
+            while: [{name: 'condition', valueType: 'boolean'}]
+        };
+        const metadata = Object.assign({}, controlRegistry[name], {arguments: controlArguments[name] || []});
+        add({
+            id: `control.${name}`,
+            category: 'control',
+            label: snippet.split(/[\s(:]/)[0],
+            searchText: name,
+            documentation: controlRegistry[name] ? documentationFor(context, name, controlRegistry[name]) :
+                `TextWarp ${name}.`,
+            arguments: commandArguments(context, name, metadata, 'control'),
+            preview: previewSnippet(snippet),
+            snippet
+        });
+    });
+
+    Object.entries(Object.assign({}, blockRegistry, context.extensionCatalog || {})).forEach(([name, metadata]) => {
+        if (!metadata || !availableHere(metadata, context)) return;
+        const label = metadata.displayName || metadata.canonicalName || localizedName(context, 'function', name);
+        const category = commandCategory(metadata);
+        const snippet = snippetForMetadata(name, metadata, context);
+        add({
+            id: metadata.semanticId || `function.${name}`,
+            category,
+            label,
+            searchText: `${name} ${label}`,
+            documentation: documentationFor(context, name, metadata),
+            arguments: commandArguments(context, name, metadata),
+            preview: previewSnippet(snippet),
+            snippet
+        });
+    });
+
+    const operatorSnippets = {
+        '+': '\${1:a} + \${2:b}', '-': '\${1:a} - \${2:b}', '*': '\${1:a} * \${2:b}',
+        '/': '\${1:a} / \${2:b}', '%': '\${1:a} % \${2:b}', '<': '\${1:a} < \${2:b}',
+        '==': '\${1:a} == \${2:b}', '>': '\${1:a} > \${2:b}',
+        and: `\${1:${trueWord}} ${word('operator.and')} \${2:${trueWord}}`,
+        or: `\${1:${trueWord}} ${word('operator.or')} \${2:${trueWord}}`,
+        not: `${word('operator.not')} \${1:${trueWord}}`
+    };
+    Object.entries(operatorRegistry).forEach(([name, metadata]) => {
+        const snippet = operatorSnippets[name] || name;
+        add({
+            id: `operator.${name}`,
+            category: 'operators',
+            label: ['and', 'or', 'not'].includes(name) ? word(`operator.${name}`) : name,
+            searchText: name,
+            documentation: documentationFor(context, name, metadata),
+            arguments: commandArguments(context, name, metadata, 'operator'),
+            preview: previewSnippet(snippet),
+            snippet
+        });
+    });
+
+    [
+        ['variables', 'syntax.variable', `${word('syntax.variable')} \${1:name} = \${2:0}`],
+        ['variables', 'syntax.list', `${word('syntax.list')} \${1:items} = [\${2}]`],
+        ['functions', 'syntax.procedure',
+            `${word('syntax.procedure')} \${1:name}(\${2:value: ${word('type.any')}}):\n    \${3:${pass}}`]
+    ].forEach(([category, semanticId, snippet]) => add({
+        id: semanticId,
+        category,
+        label: word(semanticId),
+        searchText: semanticId,
+        documentation: `TextWarp ${semanticId.split('.')[1]}.`,
+        arguments: [],
+        preview: previewSnippet(snippet),
+        snippet
+    }));
+
+    (context.resources || []).filter(resource => ['variable', 'list'].includes(resource.kind)).forEach(resource => add({
+        id: `resource.${resource.kind}.${resource.id}`,
+        category: 'variables',
+        label: resource.name,
+        searchText: `${resource.name} ${resource.ownerName || ''}`,
+        documentation: resource.detail,
+        snippet: resource.name
+    }));
+
+    const seen = new Set();
+    return items.filter(item => {
+        const key = `${item.id}:${item.snippet}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).sort((left, right) => left.category.localeCompare(right.category) || left.label.localeCompare(right.label));
+};
+
 const getCompletions = (source, line, column, context = {}) => {
     const cursor = cursorContext(source, line, column);
     if (cursor.inComment) return [];
-    const index = createDocumentIndex(source, context.targetId || 'target');
+    const canonicalSource = canonicalizeSource(source, context.codeLanguage).source;
+    const index = createDocumentIndex(canonicalSource, context.targetId || 'target');
     const stringToken = tokenAt(index, line, column, ['string']);
     if (cursor.inString && stringToken) {
         cursor.replaceRange = lineRange(stringToken.line, stringToken.column, stringToken.raw);
@@ -927,28 +1306,40 @@ const getCompletions = (source, line, column, context = {}) => {
 
     const topLevel = baseIndent.length === 0;
     if (topLevel) {
+        const word = semanticId => preferredFor(context.codeLanguage, semanticId);
         const declarations = [
-            ['variable', 'variable ${1:name} = ${2:0}', 'Declare a variable.'],
-            ['list', 'list ${1:items} = [${2}]', 'Declare a list.'],
-            ['stack', 'stack:\n    ${1:pass}', 'Preserve a command stack without an event.'],
-            ['reporter', 'reporter ${1:expression}', 'Preserve a disconnected reporter block.'],
-            ['procedure', 'procedure ${1:name}(${2:value: any}):\n    ${3:pass}', 'Declare a procedure.'],
+            [word('syntax.variable'), `${word('syntax.variable')} \${1:name} = \${2:0}`,
+                codeDocumentation(context, 'Declare a variable.', 'Declare uma variável.')],
+            [word('syntax.list'), `${word('syntax.list')} \${1:items} = [\${2}]`,
+                codeDocumentation(context, 'Declare a list.', 'Declare uma lista.')],
+            [word('syntax.stack'), `${word('syntax.stack')}:\n    \${1:${word('syntax.pass')}}`,
+                codeDocumentation(context, 'Preserve a command stack without an event.',
+                    'Preserve uma pilha de comandos sem evento.')],
+            [word('syntax.reporter'), `${word('syntax.reporter')} \${1:expression}`,
+                codeDocumentation(context, 'Preserve a disconnected reporter block.',
+                    'Preserve um bloco repórter desconectado.')],
+            [word('syntax.procedure'), `${word('syntax.procedure')} \${1:name}(\${2:value: ${word('type.any')}}):\n    \${3:${word('syntax.pass')}}`,
+                codeDocumentation(context, 'Declare a procedure.', 'Declare um procedimento.')],
             [
                 'procedure with return',
-                'procedure ${1:name}(${2:value: number}) -> ${3:number}:\n    return ${4:value}',
-                'Declare a reporter procedure.'
+                `${word('syntax.procedure')} \${1:name}(\${2:value: ${word('type.number')}}) -> ` +
+                    `\${3:${word('type.number')}}:\n    ${word('syntax.return')} \${4:value}`,
+                codeDocumentation(context, 'Declare a reporter procedure.', 'Declare um procedimento repórter.')
             ]
         ];
         if (!index.symbols.some(symbol => ['actor', 'stage'].includes(symbol.kind))) {
             declarations.unshift(context.isStage ?
-                ['stage', 'stage', 'Declare the stage module.'] :
-                ['actor', 'actor ${1:name}', 'Declare an actor module.']);
+                [word('syntax.stage'), word('syntax.stage'),
+                    codeDocumentation(context, 'Declare the stage module.', 'Declare o módulo do palco.')] :
+                [word('syntax.actor'), `${word('syntax.actor')} \${1:name}`,
+                    codeDocumentation(context, 'Declare an actor module.', 'Declare um módulo de ator.')]);
         }
         if (context.isStage) {
             declarations.splice(2, 0, [
                 'global variable',
-                'global variable ${1:name} = ${2:0}',
-                'Declare a project variable on the stage.'
+                `${word('syntax.global')} ${word('syntax.variable')} \${1:name} = \${2:0}`,
+                codeDocumentation(context, 'Declare a project variable on the stage.',
+                    'Declare uma variável do projeto no palco.')
             ]);
         }
         declarations.forEach(([label, insertText, documentation], snippetIndex) => append({
@@ -964,29 +1355,33 @@ const getCompletions = (source, line, column, context = {}) => {
             if (!availableHere(metadata, context)) return;
             append({
                 id: `event:${name}`,
-                label: `on ${name}`,
-                filterText: `on ${name}`,
+                label: `${word('syntax.on')} ${localizedName(context, 'event', name)}`,
+                filterText: `${word('syntax.on')} ${localizedName(context, 'event', name)} on ${name}`,
                 kind: 'event',
-                documentation: metadata.documentation,
-                insertText: snippetForMetadata(name, Object.assign({}, metadata, {kind: 'event'})),
+                documentation: documentationFor(context, name, metadata),
+                insertText: snippetForMetadata(name, Object.assign({}, metadata, {kind: 'event'}), context, 'event'),
                 snippet: true,
                 sortText: `21-${name}`
             });
         });
     } else {
+        const controlWord = name => preferredFor(context.codeLanguage, `control.${name}`);
+        const pass = preferredFor(context.codeLanguage, 'syntax.pass');
+        const trueWord = preferredFor(context.codeLanguage, 'literal.true');
         [
-            ['if', 'if ${1:true}:\n    ${2:pass}'],
-            ['repeat', 'repeat(${1:10}):\n    ${2:pass}'],
-            ['repeat_until', 'repeat_until(${1:true}):\n    ${2:pass}'],
-            ['while', 'while(${1:true}):\n    ${2:pass}'],
-            ['forever', 'forever:\n    ${1:pass}'],
-            ['return', 'return ${1:value}'],
-            ['pass', 'pass']
-        ].forEach(([label, insertText], snippetIndex) => append({
-            id: `control:${label}`,
-            label,
+            ['if', `${controlWord('if')} \${1:${trueWord}}:\n    \${2:${pass}}`],
+            ['repeat', `${controlWord('repeat')}(\${1:10}):\n    \${2:${pass}}`],
+            ['repeat_until', `${controlWord('repeat_until')}(\${1:${trueWord}}):\n    \${2:${pass}}`],
+            ['while', `${controlWord('while')}(\${1:${trueWord}}):\n    \${2:${pass}}`],
+            ['forever', `${controlWord('forever')}:\n    \${1:${pass}}`],
+            ['return', `${preferredFor(context.codeLanguage, 'syntax.return')} \${1:value}`],
+            ['pass', pass]
+        ].forEach(([name, insertText], snippetIndex) => append({
+            id: `control:${name}`,
+            label: name === 'return' || name === 'pass' ? insertText.split(/\s/)[0] : controlWord(name),
             kind: 'snippet',
-            documentation: controlRegistry[label] && controlRegistry[label].documentation || `TextWarp ${label}.`,
+            documentation: controlRegistry[name] ? documentationFor(context, name, controlRegistry[name]) :
+                `TextWarp ${name}.`,
             insertText,
             snippet: true,
             sortText: `20-${snippetIndex}`
@@ -994,26 +1389,32 @@ const getCompletions = (source, line, column, context = {}) => {
         Object.entries(Object.assign({}, blockRegistry, operatorRegistry, context.extensionCatalog || {}))
             .forEach(([name, metadata]) => {
                 if (!metadata || !availableHere(metadata, context)) return;
-                const label = metadata.displayName || metadata.canonicalName || name;
+                const label = metadata.displayName || metadata.canonicalName || localizedName(context, 'function', name);
                 append({
                     id: metadata.semanticId || `catalog:${name}`,
                     label,
                     filterText: `${label} ${name}`,
                     kind: metadata.kind || 'function',
                     detail: signature(label, metadata),
-                    documentation: metadata.documentation,
-                    callName: name,
-                    insertText: snippetForMetadata(name, metadata),
+                    documentation: documentationFor(context, name, metadata),
+                    callName: label,
+                    insertText: snippetForMetadata(name, metadata, context),
                     snippet: true,
                     sortText: `30-${label}`
                 });
             });
-        ['and', 'or', 'not', 'true', 'false'].forEach((keyword, keywordIndex) => append({
-            id: `keyword:${keyword}`,
-            label: keyword,
+        [
+            ['and', 'operator.and'],
+            ['or', 'operator.or'],
+            ['not', 'operator.not'],
+            ['true', 'literal.true'],
+            ['false', 'literal.false']
+        ].forEach(([keyword, semanticId], keywordIndex) => append({
+            id: `keyword:${semanticId}`,
+            label: preferredFor(context.codeLanguage, semanticId),
             kind: 'keyword',
             documentation: `TextWarp ${keyword}.`,
-            insertText: keyword,
+            insertText: preferredFor(context.codeLanguage, semanticId),
             sortText: `40-${keywordIndex}`
         }));
     }
@@ -1056,6 +1457,26 @@ const documentDisplayName = (modelKey, context = {}) => {
 };
 
 const getHover = (source, line, column, context = {}) => {
+    const localizedToken = scanSource(source).find(token =>
+        token.line === line && column >= token.column && column <= token.endColumn
+    );
+    if (localizedToken && localizedToken.type === 'identifier') {
+        const semanticId = semanticIdsFor(context.codeLanguage, localizedToken.value).find(id =>
+            /^function\.[^.]+$/.test(id) || /^event\.[^.]+$/.test(id) || /^control\.[^.]+$/.test(id)
+        );
+        const canonicalName = semanticId && canonicalFor(semanticId);
+        const metadata = canonicalName && (getCatalog(context)[canonicalName] || eventRegistry[canonicalName]);
+        if (metadata) return {
+            range: lineRange(localizedToken.line, localizedToken.column, localizedToken.raw),
+            title: metadata.kind || 'TextWarp command',
+            code: signature(preferredFor(context.codeLanguage, semanticId), Object.assign({}, metadata, {
+                arguments: (metadata.arguments || []).map(argument => Object.assign({}, argument, {
+                    name: preferredFor(context.codeLanguage, `${semanticId}.${argument.name}`)
+                }))
+            })),
+            documentation: documentationFor(context, canonicalName, metadata)
+        };
+    }
     const resource = getResourceAt(source, line, column, context);
     if (resource) {
         const index = createDocumentIndex(source, context.targetId || 'target');
@@ -1090,7 +1511,7 @@ const getHover = (source, line, column, context = {}) => {
         range: lineRange(identifier.line, identifier.column, identifier.raw),
         title: metadata.kind || 'TextWarp command',
         code: signature(metadata.displayName || identifier.value, metadata),
-        documentation: metadata.documentation || 'Available in the current TextWarp catalog.'
+        documentation: documentationFor(context, identifier.value, metadata)
     };
     const matchingResources = (context.resources || []).filter(item => item.name === identifier.value);
     if (matchingResources.length === 1) {
@@ -1129,23 +1550,39 @@ const getSignatureHelp = (source, line, column, context = {}) => {
             signatures: [entry]
         });
     }
-    const metadata = getCatalog(context)[call.name] || eventRegistry[call.name];
+    const callName = canonicalCallName(context, call.name);
+    const metadata = getCatalog(context)[callName] || eventRegistry[callName];
     if (!metadata) return null;
+    const semanticId = `${eventRegistry[callName] ? 'event' : 'function'}.${callName}`;
+    const localizedArgumentType = argument => {
+        const type = argument.valueType || argument.role || 'any';
+        return ['any', 'number', 'string', 'boolean'].includes(type) ?
+            preferredFor(context.codeLanguage, `type.${type}`) : type;
+    };
     const variants = Array.isArray(metadata.overloads) && metadata.overloads.length ?
         metadata.overloads.map(overload => Object.assign({}, metadata, overload)) : [metadata];
-    const signatures = variants.map(variant => ({
-        label: signature(call.name, variant),
-        documentation: variant.documentation || metadata.documentation || '',
-        parameters: (variant.arguments || []).map(argument => ({
-            label: argument.name,
-            documentation: `${argument.valueType || argument.role || 'any'}${
-                argument.optional ? ' (optional)' : ''
-            }${argument.variadic ? ' (variadic)' : ''}${
-                Object.prototype.hasOwnProperty.call(argument, 'defaultValue') ?
-                    ` · default ${argument.defaultValue}` : ''
-            }`
-        }))
-    }));
+    const signatures = variants.map(variant => {
+        const localizedArguments = (variant.arguments || []).map(argument => Object.assign({}, argument, {
+            name: preferredFor(context.codeLanguage, `${semanticId}.${argument.name}`),
+            valueType: localizedArgumentType(argument)
+        }));
+        return {
+            label: signature(
+                localizedName(context, eventRegistry[callName] ? 'event' : 'function', callName),
+                Object.assign({}, variant, {arguments: localizedArguments})
+            ),
+            documentation: documentationFor(context, callName, variant),
+            parameters: localizedArguments.map(argument => ({
+                label: argument.name,
+                documentation: `${argument.valueType}${
+                    argument.optional ? ' (optional)' : ''
+                }${argument.variadic ? ' (variadic)' : ''}${
+                    Object.prototype.hasOwnProperty.call(argument, 'defaultValue') ?
+                        ` · default ${argument.defaultValue}` : ''
+                }`
+            }))
+        };
+    });
     const activeSignature = Math.max(0, variants.findIndex(variant => {
         const args = variant.arguments || [];
         return call.argumentIndex < args.length || Boolean(args.length && args[args.length - 1].variadic);
@@ -1191,7 +1628,7 @@ const codeBeforeComment = line => {
     return line.trimEnd();
 };
 
-const formatText = source => {
+const formatCanonicalText = source => {
     const text = normalizedSource(source);
     const lines = text.split('\n');
     const reparableCodes = new Set(['empty-block', 'indent-tabs', 'invalid-indent', 'top-level-indent']);
@@ -1260,6 +1697,11 @@ const formatText = source => {
         return rendered;
     });
     return `${output.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
+};
+
+const formatText = (source, context = {}) => {
+    const canonical = canonicalizeSource(source, context.codeLanguage).source;
+    return localizeSource(formatCanonicalText(canonical), context.codeLanguage).source;
 };
 
 const getOutline = source => getDocumentSymbols(source);
@@ -1461,6 +1903,8 @@ module.exports = {
     findReferences,
     formatText,
     getCompletions,
+    getCommandCatalog,
+    getContextualValueControl,
     getDefinitionLocations,
     getDiagnosticSuggestion,
     getDocumentIndexCacheStats,

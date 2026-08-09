@@ -11,6 +11,9 @@ import Loader from '../loader/loader.jsx';
 
 import styles from './stage-wrapper.css';
 
+const TARGET_DOCK_HEIGHT_RESERVE = 420;
+const MINIMUM_STAGE_HEIGHT = 120;
+
 const StageWrapperComponent = function (props) {
     const {
         isEmbedded,
@@ -21,6 +24,32 @@ const StageWrapperComponent = function (props) {
         stageSize,
         vm
     } = props;
+    const [availableWidth, setAvailableWidth] = React.useState(0);
+    const [availableHeight, setAvailableHeight] = React.useState(0);
+    const [rootElement, setRootElement] = React.useState(null);
+
+    React.useEffect(() => {
+        if (!rootElement) return;
+        const parentElement = rootElement.parentElement;
+        const updateAvailableSize = () => {
+            setAvailableWidth(Math.max(0, Math.floor(rootElement.getBoundingClientRect().width - 2)));
+            if (isEmbedded || isFullScreen || !parentElement) {
+                setAvailableHeight(0);
+                return;
+            }
+            const parentHeight = parentElement.getBoundingClientRect().height;
+            setAvailableHeight(Math.max(
+                MINIMUM_STAGE_HEIGHT,
+                Math.floor(parentHeight - TARGET_DOCK_HEIGHT_RESERVE)
+            ));
+        };
+        updateAvailableSize();
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(updateAvailableSize);
+        observer.observe(rootElement);
+        if (parentElement) observer.observe(parentElement);
+        return () => observer.disconnect();
+    }, [isEmbedded, isFullScreen, rootElement]);
 
     return (
         <Box
@@ -29,10 +58,10 @@ const StageWrapperComponent = function (props) {
                 {
                     [styles.embedded]: isEmbedded,
                     [styles.fullScreen]: isFullScreen,
-                    [styles.loading]: loading,
-                    [styles.offsetControls]: !(isEmbedded || isFullScreen)
+                    [styles.loading]: loading
                 }
             )}
+            componentRef={setRootElement}
             dir={isRtl ? 'rtl' : 'ltr'}
         >
             <Box className={styles.stageMenuWrapper}>
@@ -45,6 +74,8 @@ const StageWrapperComponent = function (props) {
                 {
                     isRendererSupported ?
                         <Stage
+                            availableHeight={availableHeight}
+                            availableWidth={availableWidth}
                             stageSize={stageSize}
                             vm={vm}
                         /> :

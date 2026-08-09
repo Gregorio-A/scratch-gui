@@ -2,10 +2,10 @@
 
 This file records release priorities for the shared web and Desktop editor.
 
-Conversion safety was re-audited on July 29, 2026. Unknown blocks now round-trip through non-executing opaque
+Conversion safety was re-audited on August 7, 2026. Unknown blocks now round-trip through non-executing opaque
 syntax; apply/undo is transactional; variable, procedure and unit identities are durable; marker-free package
-round trips retain root ownership; synchronization is bidirectional and truthful; and conversion tests are required
-by CI and publishing.
+round trips retain root ownership; text is the versioned source of truth and blocks change only after an explicit,
+transactional build; and conversion tests are required by CI and publishing.
 
 ## Priority criteria
 
@@ -25,7 +25,7 @@ polish or optional integration.
 ## Medium priority
 
 - Expand translations beyond English and Portuguese through the normal Scratch localization pipeline.
-- Improve compiler diagnostic translations while keeping stable error codes.
+- Add structured interpolation values and more language packs to diagnostics while keeping their stable error IDs.
 - Add opt-in automatic watching for external files where the host platform supports it.
 - Continue reducing inherited dependency audit warnings through tested dependency upgrades.
 

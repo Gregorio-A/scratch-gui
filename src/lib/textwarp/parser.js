@@ -118,7 +118,7 @@ const lexExpression = (source, lineToken, diagnostics, columnOffset = 0) => {
             index++;
             continue;
         }
-        if ('(),[]'.includes(character)) {
+        if ('(),[]:'.includes(character)) {
             push(character, character, start, character);
             index++;
             continue;
@@ -233,7 +233,13 @@ const parseExpression = (source, lineToken, diagnostics, columnOffset = 0) => {
             const args = [];
             if (current().type !== ')') {
                 while (current().type !== 'eof') {
-                    args.push(parseBinary(0));
+                    if (current().type === 'identifier' && tokens[cursor + 1] && tokens[cursor + 1].type === ':') {
+                        const name = current().value;
+                        cursor += 2;
+                        args.push({type: 'NamedArgument', name, value: parseBinary(0), location});
+                    } else {
+                        args.push(parseBinary(0));
+                    }
                     if (!consume(',')) break;
                 }
             }
@@ -277,6 +283,15 @@ const parseExpression = (source, lineToken, diagnostics, columnOffset = 0) => {
 const parseText = source => {
     const diagnostics = [];
     const tokens = tokenizeLines(source, diagnostics);
+    const cst = {
+        type: 'Document',
+        source,
+        lines: String(source || '').replace(/\r\n?/g, '\n').split('\n').map((raw, index) => ({
+            line: index + 1,
+            raw
+        })),
+        tokens
+    };
     const excessiveNesting = tokens.find(token => Math.floor(token.indent / INDENT_SIZE) > MAX_NESTING_DEPTH);
     if (excessiveNesting) {
         diagnostics.push(diagnostic(
@@ -297,6 +312,7 @@ const parseText = source => {
                 stacks: [],
                 reporters: []
             },
+            cst,
             diagnostics
         };
     }
@@ -653,6 +669,7 @@ const parseText = source => {
 
     return {
         ast: {type: 'ActorModule', declaration, declarations, procedures, scripts, stacks, reporters},
+        cst,
         diagnostics
     };
 };

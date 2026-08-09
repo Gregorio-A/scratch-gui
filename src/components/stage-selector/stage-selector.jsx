@@ -34,8 +34,20 @@ const messages = defineMessages({
         id: 'gui.stageSelector.addBackdropFromFile',
         description: 'Button to add a stage in the target pane from file',
         defaultMessage: 'Upload Backdrop'
+    },
+    addBackdrop: {
+        id: 'tw.targetPane.addBackdrop',
+        description: 'Visible label for adding a backdrop to the existing stage',
+        defaultMessage: 'Add backdrop'
+    },
+    backdropCount: {
+        id: 'tw.targetPane.backdropCount',
+        description: 'Number of backdrops belonging to the stage',
+        defaultMessage: '{count, plural, one {# backdrop} other {# backdrops}}'
     }
 });
+
+const stopPropagation = event => event.stopPropagation();
 
 const StageSelector = props => {
     const {
@@ -71,14 +83,15 @@ const StageSelector = props => {
             onMouseLeave={onMouseLeave}
             {...componentProps}
         >
-            <div className={styles.header}>
-                <div className={styles.headerTitle}>
+            <div className={styles.stageMeta}>
+                <strong>
                     <FormattedMessage
                         defaultMessage="Stage"
                         description="Label for the stage in the stage selector"
                         id="gui.stageSelector.stage"
                     />
-                </div>
+                </strong>
+                <span>{intl.formatMessage(messages.backdropCount, {count: backdropCount})}</span>
             </div>
             {url ? (
                 <img
@@ -87,45 +100,43 @@ const StageSelector = props => {
                     draggable={false}
                 />
             ) : null}
-            <div className={styles.label}>
-                <FormattedMessage
-                    defaultMessage="Backdrops"
-                    description="Label for the backdrops in the stage selector"
-                    id="gui.stageSelector.backdrops"
+            <div
+                className={styles.addBackdropControl}
+                onClick={stopPropagation}
+            >
+                <span>{intl.formatMessage(messages.addBackdrop)}</span>
+                <ActionMenu
+                    className={styles.addButton}
+                    img={backdropIcon}
+                    moreButtons={[
+                        {
+                            title: intl.formatMessage(messages.addBackdropFromFile),
+                            img: fileUploadIcon,
+                            onClick: onBackdropFileUploadClick,
+                            fileAccept: '.svg, .png, .bmp, .jpg, .jpeg, .jfif, .webp, .gif',
+                            fileChange: onBackdropFileUpload,
+                            fileInput: fileInputRef,
+                            fileMultiple: true
+                        }, {
+                            title: intl.formatMessage(messages.addBackdropFromSurprise),
+                            img: surpriseIcon,
+                            onClick: onSurpriseBackdropClick
+
+                        }, {
+                            title: intl.formatMessage(messages.addBackdropFromPaint),
+                            img: paintIcon,
+                            onClick: onEmptyBackdropClick
+                        }, {
+                            title: intl.formatMessage(messages.addBackdropFromLibrary),
+                            img: searchIcon,
+                            onClick: onNewBackdropClick
+                        }
+                    ]}
+                    title={intl.formatMessage(messages.addBackdropFromLibrary)}
+                    tooltipPlace={isRtl(intl.locale) ? 'right' : 'left'}
+                    onClick={onNewBackdropClick}
                 />
             </div>
-            <div className={styles.count}>{backdropCount}</div>
-            <ActionMenu
-                className={styles.addButton}
-                img={backdropIcon}
-                moreButtons={[
-                    {
-                        title: intl.formatMessage(messages.addBackdropFromFile),
-                        img: fileUploadIcon,
-                        onClick: onBackdropFileUploadClick,
-                        fileAccept: '.svg, .png, .bmp, .jpg, .jpeg, .jfif, .webp, .gif',
-                        fileChange: onBackdropFileUpload,
-                        fileInput: fileInputRef,
-                        fileMultiple: true
-                    }, {
-                        title: intl.formatMessage(messages.addBackdropFromSurprise),
-                        img: surpriseIcon,
-                        onClick: onSurpriseBackdropClick
-
-                    }, {
-                        title: intl.formatMessage(messages.addBackdropFromPaint),
-                        img: paintIcon,
-                        onClick: onEmptyBackdropClick
-                    }, {
-                        title: intl.formatMessage(messages.addBackdropFromLibrary),
-                        img: searchIcon,
-                        onClick: onNewBackdropClick
-                    }
-                ]}
-                title={intl.formatMessage(messages.addBackdropFromLibrary)}
-                tooltipPlace={isRtl(intl.locale) ? 'right' : 'left'}
-                onClick={onNewBackdropClick}
-            />
         </Box>
     );
 };

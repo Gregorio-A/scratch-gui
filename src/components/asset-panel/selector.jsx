@@ -21,6 +21,7 @@ const Selector = props => {
         draggingIndex,
         draggingType,
         ordering,
+        title,
         onAddSortable,
         onRemoveSortable,
         onDeleteClick,
@@ -34,14 +35,15 @@ const Selector = props => {
     let newButtonSection = null;
 
     if (buttons.length > 0) {
-        const {img, title, onClick} = buttons[0];
+        const {img, title: actionTitle, onClick} = buttons[0];
         const moreButtons = buttons.slice(1);
         newButtonSection = (
-            <Box className={styles.newButtons}>
+            <Box className={styles.assetHeader}>
+                <h2>{title}</h2>
                 <ActionMenu
                     img={img}
                     moreButtons={moreButtons}
-                    title={title}
+                    title={actionTitle}
                     tooltipPlace={isRtl ? 'left' : 'right'}
                     onClick={onClick}
                 />
@@ -54,6 +56,7 @@ const Selector = props => {
             className={styles.wrapper}
             componentRef={containerRef}
         >
+            {newButtonSection}
             <Box className={styles.listArea}>
                 {items.map((item, index) => (
                     <SortableAsset
@@ -85,7 +88,6 @@ const Selector = props => {
                     </SortableAsset>
                 ))}
             </Box>
-            {newButtonSection}
         </Box>
     );
 };
@@ -112,7 +114,8 @@ Selector.propTypes = {
     onItemClick: PropTypes.func.isRequired,
     onRemoveSortable: PropTypes.func,
     ordering: PropTypes.arrayOf(PropTypes.number),
-    selectedItemIndex: PropTypes.number.isRequired
+    selectedItemIndex: PropTypes.number.isRequired,
+    title: PropTypes.string.isRequired
 };
 
 export default SortableHOC(Selector);

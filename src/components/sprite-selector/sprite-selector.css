@@ -4,7 +4,9 @@
 
 .sprite-selector {
     display: flex;
-    flex: 1 0 auto;
+    height: 100%;
+    max-height: 100%;
+    flex: 1 1 0;
     flex-direction: column;
     position: relative;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -20,46 +22,70 @@
     border-bottom: 0;
 }
 
-.target-tabs {
+.section-header {
     height: 2.15rem;
-    display: grid;
+    display: flex;
     flex: none;
-    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
     padding: 0 0.45rem;
     background: $ui-white;
     border-bottom: 1px solid $ui-black-transparent;
 }
 
-.target-tabs button {
-    color: $text-primary;
-    background: transparent;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    font: inherit;
+.section-header strong {
+    color: $text-primary-transparent;
     font-size: 0.68rem;
     font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
-.target-tabs button:hover {
-    background: $ui-black-transparent;
+.inspector-panel,
+.stage-section,
+.actor-section {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
 }
 
-.target-tabs .active-target-tab {
-    color: $motion-primary;
-    border-bottom-color: $motion-primary;
+.inspector-panel {
+    flex: none;
+    max-height: min(18rem, 45%);
+    overflow: auto;
+    border-bottom: 1px solid $ui-black-transparent;
 }
 
 .target-panel {
-    min-height: 12rem;
-    position: relative;
+    min-height: 0;
     display: flex;
-    flex: 1 0 clamp(12rem, 30vh, 22rem);
+    flex: 1 1 0;
+    flex-direction: column;
     overflow: hidden;
 }
 
-.backdrop-panel {
-    min-height: 12rem;
+.stage-section {
+    flex: none;
+    border-bottom: 1px solid $ui-black-transparent;
+}
+
+.actor-section {
+    min-height: 7rem;
+    flex: 1 1 0;
+    overflow: hidden;
+}
+
+.stage-target {
+    flex: none;
+    margin: 0.4rem;
+}
+
+.stage-target > :global([class^="stage-selector_stage-selector"]) {
+    min-height: 4.25rem;
+    margin: 0;
+    border: 1px solid $ui-black-transparent;
+    border-radius: $space;
 }
 
 .sprite-wrapper {
@@ -97,10 +123,12 @@
               also introduces a new bug in Chrome when vertically resizing window down,
               then back up, introduces white space in the outside the page container.
     */
-    height: auto;
-    min-height: 9rem;
-    flex: 1;
+    height: 0;
+    min-height: 0;
+    flex: 1 1 0;
+    overscroll-behavior: contain;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .scroll-wrapper-dragging {
@@ -121,24 +149,29 @@
     overflow: hidden;
 }
 
+.add-actor-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: $text-primary;
+    font-size: 0.62rem;
+    font-weight: 700;
+}
+
 .add-button {
-    position: absolute;
-    bottom: 0.75rem;
+    position: relative;
+    margin: -0.5rem -0.4rem -0.5rem -0.35rem;
+    transform: scale(0.68);
+    transform-origin: right center;
 }
 
-.target-panel > :global([class^="stage-selector_stage-selector"]) {
-    min-height: 7rem;
-    margin: 0.45rem;
-    border: 1px solid $ui-black-transparent;
-    border-radius: $space;
-}
-
-[dir="ltr"] .add-button {
-    right: 1rem;
-}
-
-[dir="rtl"] .add-button {
-    left: 1rem;
+.add-button :global([class^="action-menu_more-buttons-outer"]) {
+    top: 2.45rem;
+    bottom: auto;
+    margin-bottom: 0;
+    padding-top: 1.35rem;
+    padding-bottom: 0;
+    border-radius: 0 0 2.25rem 2.25rem;
 }
 
 .raised {
@@ -180,4 +213,8 @@
 .placeholder > .sprite {
     background: black;
     filter: opacity(15%) brightness(0%);
+}
+
+@media (max-width: 430px) {
+    .add-actor-control > span { display: none; }
 }

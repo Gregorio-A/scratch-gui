@@ -17,6 +17,8 @@ import styles from './stage.css';
 const StageComponent = props => {
     const {
         canvas,
+        availableHeight,
+        availableWidth,
         customStageSize,
         dragRef,
         isColorPicking,
@@ -35,8 +37,20 @@ const StageComponent = props => {
         ...boxProps
     } = props;
 
-    const stageDimensions = getStageDimensions(stageSize, customStageSize, isFullScreen);
-    const minWidth = getMinWidth(stageSize);
+    let stageDimensions = getStageDimensions(stageSize, customStageSize, isFullScreen);
+    if (!isFullScreen) {
+        const widthScale = availableWidth > 0 ? availableWidth / stageDimensions.width : 1;
+        const heightScale = availableHeight > 0 ? availableHeight / stageDimensions.height : 1;
+        const scale = Math.min(1, widthScale, heightScale);
+        if (scale < 1) {
+            stageDimensions = Object.assign({}, stageDimensions, {
+                height: Math.round(stageDimensions.height * scale),
+                scale: stageDimensions.scale * scale,
+                width: Math.round(stageDimensions.width * scale)
+            });
+        }
+    }
+    const minWidth = Math.min(getMinWidth(stageSize), stageDimensions.width);
     const transformStyle = stageDimensions.width < minWidth && !isFullScreen ? {
         transform: `translateX(${(minWidth - stageDimensions.width) / (isRtl ? -2 : 2)}px)`
     } : {};
@@ -150,6 +164,8 @@ const StageComponent = props => {
     );
 };
 StageComponent.propTypes = {
+    availableHeight: PropTypes.number,
+    availableWidth: PropTypes.number,
     canvas: PropTypes.instanceOf(Element).isRequired,
     customStageSize: PropTypes.shape({
         width: PropTypes.number,

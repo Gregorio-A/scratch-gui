@@ -1,5 +1,7 @@
 'use strict';
 
+const {localizeSource, mapSourceMapThroughRanges} = require('./localized-syntax');
+
 const {blockRegistry, eventRegistry} = require('./block-registry');
 const {encodeConversionMetadata} = require('./conversion-metadata');
 const {dynamicMetadata} = require('./extension-catalog');
@@ -767,9 +769,14 @@ const decompileTarget = (target, options = {}) => {
         else unsupportedRootIds.push(root.id);
     });
 
+    const canonicalSource = output.join('\n');
+    const localized = localizeSource(canonicalSource, options.codeLanguage || options.sourceLanguage || 'en-US');
     return {
-        source: output.join('\n'),
-        sourceMap,
+        source: localized.source,
+        canonicalSource,
+        sourceLanguage: options.codeLanguage || options.sourceLanguage || 'en-US',
+        translationRanges: localized.ranges,
+        sourceMap: mapSourceMapThroughRanges(sourceMap, localized.ranges),
         importedRootIds,
         unsupportedRootIds,
         opaqueRootIds,

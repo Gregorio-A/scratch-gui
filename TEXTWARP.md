@@ -1,7 +1,7 @@
 # TextWarp 0.3
 
-TextWarp é uma linguagem textual por ator sobre a `scratch-vm` do TurboWarp. O Monaco Editor é a fonte principal,
-mas o workspace Blockly continua disponível em modo editável e sincronizado. A mesma interface de palco, atores,
+TextWarp é uma linguagem textual por ator sobre a `scratch-vm` do TurboWarp. Os arquivos `.tw` no Monaco são a
+única fonte de verdade no modo textual; o workspace Blockly é uma representação compilada. A mesma interface de palco, atores,
 fantasias, sons, monitores e extensões é usada no navegador e no aplicativo Desktop.
 
 O compilador gera blocos Scratch reais. Dessa forma, concorrência, esperas, transmissões, clones, coerções e procedimentos continuam sendo executados pela `scratch-vm`, em vez de uma tradução direta e incompatível para JavaScript.
@@ -52,21 +52,20 @@ Os recursos completos da IDE e seus atalhos estão em [TEXTWARP_IDE.md](TEXTWARP
 
 1. Selecione o palco ou um ator.
 2. Edite `stage.tw` ou o arquivo virtual do ator.
-3. Aguarde o debounce de 300 ms ou clique em **Compilar**.
-4. Clique em **Executar** ou use a bandeira verde normal.
-5. Use **Blocos** para editar visualmente ou **Dividido** para manter texto e blocos lado a lado.
+3. Aguarde a análise rápida de diagnósticos; ela não altera a VM.
+4. Clique em **Executar** para capturar um snapshot, compilar o projeto, fazer o commit e só então iniciar a VM.
+5. Use **Blocos** para trocar explicitamente para edição visual ou **Dividido** para uma prévia derivada somente leitura.
 6. Abra **Documentação** para consultar o manual, a referência de todos os blocos, as prioridades atuais e as
    extensões carregadas sem sair do editor. A guia possui índice lateral, busca e cópia dos exemplos.
 7. Use **Projeto** para abrir módulos, recursos, busca global, símbolos e histórico local.
 8. Clique na margem de uma linha para criar um breakpoint e abra **Depurar** para acompanhar threads, pilhas,
    variáveis e expressões Watch.
 
-Alterações válidas no texto são compiladas para o workspace quando **Sincronização automática** está ativa.
-Desativar essa opção interrompe os dois sentidos: digitar apenas analisa e salva a fonte, e editar blocos marca a
-divergência até uma conversão explícita. Alterações no Blockly são decompiladas e mescladas por unidade. Comentários
-dentro de uma unidade alterada produzem conflito em vez de serem descartados. A comparação mostra unidades
-adicionadas, removidas e alteradas, raízes afetadas e opcodes opacos. Cada aplicação automática ou manual guarda
-um snapshot completo para **Desfazer**.
+Não existe sincronização bidirecional automática. Digitar atualiza um `SourceDocument` versionado, salva o rascunho
+e executa somente lexer, parser, análise semântica e diagnósticos. Abrir **Blocos**, **Dividido**, usar **Texto para
+blocos** ou executar inicia uma compilação controlada. Alterações no modo Blocos deixam o texto desatualizado; elas
+só substituem a fonte pelo comando explícito **Blocos para texto**. Cada conversão manual guarda um snapshot completo
+para **Desfazer**.
 
 A ação **Blocos para texto** também faz uma conversão explícita do alvo. Todos os opcodes carregados no runtime têm
 sintaxe nativa, especial ou gerada de `getInfo()`. Se um `.sb3` contiver um opcode cuja extensão não está carregada,
@@ -81,10 +80,23 @@ palco e atores originais em uma única operação, valida todos os módulos ante
 diferente, nenhum alvo é alterado. Cada alvo continua sendo um arquivo `.tw` separado no explorador.
 
 Antes de **Texto para blocos** em um alvo com raízes visuais sem proprietário, a interface exige escolher entre
-substituir raízes correspondentes, adicionar novas raízes ou cancelar. Conversões são transacionais e ficam
-enfileiradas enquanto o projeto executa; uma falha restaura o alvo completo.
+substituir raízes correspondentes, adicionar novas raízes ou cancelar. Conversões são transacionais. **Executar**
+interrompe a execução anterior, descarta compilações obsoletas e aplica todos os módulos válidos como uma única
+transação; uma falha restaura o projeto e não inicia um build antigo.
 
 `Ctrl+S` salva no arquivo `.textwarp` aberto e `Ctrl+Shift+S` escolhe outro arquivo. **Salvar como…** faz a mesma exportação editável; **Abrir .textwarp** abre o pacote. O fluxo padrão do TurboWarp continua disponível para gerar `.sb3` como artefato compilado.
+
+## Arquitetura de compilação e idiomas
+
+O pipeline é `SourceDocument → lexer localizado → tokens canônicos → CST/AST → TextWarp IR → Scratch IR → VM`.
+Cada tentativa usa um snapshot imutável e um generation ID; um resultado só pode ser aplicado se sua versão ainda
+for a versão atual. A barra de status mostra as versões de Source, Build e Runtime e os estados `DIRTY`, `COMPILING`,
+`ERROR`, `READY` e `RUNNING`.
+
+**Preferências → Idioma do código** separa o idioma da interface do idioma da sintaxe. `en-US` e `pt-BR` produzem
+a mesma IR. A troca usa ranges semânticos, nunca substituição textual: comentários, strings e identificadores do
+usuário são preservados. Chamadas nativas aceitam argumentos nomeados, por exemplo `mude_x(valor: 10)` e
+`tecla_pressionada(tecla: seta_direita)`.
 
 ## Sintaxe
 
@@ -360,14 +372,15 @@ Nomes Scratch que não são identificadores válidos são normalizados. Identifi
 gramática são codificados de forma estável como `encoded_<pontos-de-código>`. `raw.*` é aceito apenas ao abrir fontes
 antigas e não aparece no autocomplete, na documentação de escrita nem na saída do decompilador.
 
-## Edição visual sincronizada
+## Visualização derivada e conversão explícita
 
-As abas **Blocos** e **Dividido** montam o workspace oficial de `scratch-gui`, ligado ao mesmo `vm.blockListener` usado pelo TurboWarp. Não existe uma segunda cópia do grafo: texto e Blockly alteram os blocos reais do alvo.
+As abas **Blocos** e **Dividido** montam o workspace oficial de `scratch-gui`, ligado ao mesmo `scratch-vm`. Não
+existe uma segunda cópia do grafo. Em **Dividido**, Blockly é uma prévia derivada somente leitura. Em **Blocos**, a
+autoridade visual é explícita: mudanças deixam a fonte desatualizada, mas nunca voltam ao Monaco automaticamente.
 
-O sincronizador compara versões independentes do texto e do grafo. A opção automática vale nos dois sentidos; com
-ela desligada, o indicador continua mostrando blocos divergentes. **Comparar versões** decompila o alvo novamente e
-calcula diferenças por unidade. Uma mesclagem semântica de três vias preserva edições independentes e transforma a
-perda potencial de comentários internos em conflito explícito.
+**Comparar versões** decompila o alvo novamente e calcula diferenças por unidade sem aplicar nada. **Blocos para
+texto** é a única operação que aceita edições visuais como nova fonte; ela usa mesclagem semântica de três vias,
+preserva unidades independentes e transforma a possível perda de comentários internos em conflito explícito.
 
 Arrastar stacks no workspace não reordena unidades que o sincronizador consegue associar pela identidade. Uma mudança dentro de um stack substitui somente a unidade correspondente; comentários e formatação de outras unidades ficam intactos. Hats duplicados do mesmo tipo continuam sendo associados pela ocorrência, e uma troca de posição entre eles pode exigir a ordem canônica. Alterações estruturais nas declarações de variáveis, que não possuem IDs de linha no Scratch, também usam a forma canônica do módulo.
 
@@ -456,8 +469,8 @@ A classificação canônica e o histórico dos riscos altos corrigidos estão em
   código de terceiros sem que a extensão seja carregada e autorizada;
 - compilação, descompilação e comparação interativas usam um Worker cancelável; somente a aplicação transacional
   final toca a VM na thread principal;
-- a conversão automática é limitada a 100.000 caracteres ou 10.000 blocos; módulos maiores continuam convertíveis
-  por comando explícito, evitando bloquear a digitação e eventos visuais;
+- a análise rápida durante a digitação é suspensa acima de 100.000 caracteres; módulos maiores continuam
+  compiláveis por comando explícito, sem reintroduzir conversão automática nem bloquear cada tecla;
 - atores com breakpoint usam o interpretador e ficam mais lentos; atores sem breakpoint continuam no JIT. Uma thread JIT pausada preserva o gerador e avança por frame, enquanto o passo por bloco exige o interpretador;
 - procedimentos com retorno são um recurso do TurboWarp e geram aviso de compatibilidade. Para publicar no site oficial do Scratch, use procedimentos de comando sem `-> tipo` e sem `return`, pois o Scratch oficial não implementa `procedures_return` nem chamadas de procedimento como repórter;
 - se uma ferramenta externa remover os atributos TextWarp e também regenerar os IDs dos parâmetros, os encaixes `%s` voltam ao tipo seguro `any`; retornos redondos também voltam a `any` se `textwarp_return_type` for removido, pois o formato Scratch distingue apenas retorno redondo e booleano.

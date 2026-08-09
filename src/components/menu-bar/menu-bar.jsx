@@ -18,13 +18,14 @@ import ProjectWatcher from '../../containers/project-watcher.jsx';
 import MenuBarMenu from './menu-bar-menu.jsx';
 import MenuLabel from './tw-menu-label.jsx';
 import {MenuItem, MenuSection} from '../menu/menu.jsx';
-import ProjectTitleInput from './project-title-input.jsx';
+import ProjectContext from './project-context.jsx';
 import AuthorInfo from './author-info.jsx';
 import SB3Downloader from '../../containers/sb3-downloader.jsx';
 import DeletionRestorer from '../../containers/deletion-restorer.jsx';
 import TurboMode from '../../containers/turbo-mode.jsx';
 import MenuBarHOC from '../../containers/menu-bar-hoc.jsx';
 import LanguageMenu from './language-menu.jsx';
+import InterfaceIcon from '../textwarp-editor/interface-icon.jsx';
 
 import FramerateChanger from '../../containers/tw-framerate-changer.jsx';
 import ChangeUsername from '../../containers/tw-change-username.jsx';
@@ -33,7 +34,7 @@ import TWSaveStatus from './tw-save-status.jsx';
 import TWNews from './tw-news.jsx';
 
 import {openTipsLibrary, openSettingsModal, openRestorePointModal} from '../../reducers/modals';
-import {setPlayer} from '../../reducers/mode';
+import {setFullScreen, setPlayer} from '../../reducers/mode';
 import {isTimeTravel2020, isTimeTravelNow, setTimeTravel} from '../../reducers/time-travel';
 import {
     autoUpdateProject,
@@ -96,6 +97,51 @@ const twMessages = defineMessages({
         id: 'tw.menuBar.compileError',
         defaultMessage: '{sprite}: {error}',
         description: 'Error message in error menu'
+    },
+    commandPalette: {
+        id: 'tw.menuBar.commandPalette',
+        defaultMessage: 'Search commands…',
+        description: 'Button that opens the TextWarp command palette'
+    },
+    runProject: {
+        id: 'tw.menuBar.runProject',
+        defaultMessage: 'Run',
+        description: 'Button that builds and runs the TextWarp project'
+    },
+    stopProject: {
+        id: 'tw.menuBar.stopProject',
+        defaultMessage: 'Stop',
+        description: 'Button that stops the TextWarp project'
+    },
+    fullScreen: {
+        id: 'tw.menuBar.fullScreen',
+        defaultMessage: 'Full screen game preview',
+        description: 'Button that opens the game preview in full screen'
+    },
+    toggleActivityBar: {
+        id: 'tw.layout.toggleActivityBar',
+        defaultMessage: 'Toggle activity bar',
+        description: 'Layout control that toggles the activity bar'
+    },
+    toggleLeftSidebar: {
+        id: 'tw.layout.toggleLeftSidebar',
+        defaultMessage: 'Toggle left sidebar',
+        description: 'Layout control that toggles the primary sidebar'
+    },
+    toggleBottomPanel: {
+        id: 'tw.layout.toggleBottomPanel',
+        defaultMessage: 'Toggle bottom panel',
+        description: 'Layout control that toggles the bottom panel'
+    },
+    toggleRightSidebar: {
+        id: 'tw.layout.toggleRightSidebar',
+        defaultMessage: 'Toggle right sidebar',
+        description: 'Layout control that toggles the stage and targets sidebar'
+    },
+    layoutControls: {
+        id: 'tw.layout.controls',
+        defaultMessage: 'Layout controls',
+        description: 'Accessible label for the workspace layout control group'
     }
 });
 
@@ -173,6 +219,10 @@ MenuItemLink.propTypes = {
 class MenuBar extends React.Component {
     constructor (props) {
         super(props);
+        this.state = {
+            bottomPanelVisible: true,
+            leftSidebarVisible: true
+        };
         bindAll(this, [
             'handleClickSeeInside',
             'handleClickNew',
@@ -188,6 +238,11 @@ class MenuBar extends React.Component {
             'handleClickSaveTextwarpAs',
             'handleClickTextwarpPreferences',
             'handleClickAdvancedSettings',
+            'handleOpenCommandPalette',
+            'handleRunProject',
+            'handleLayoutState',
+            'handleToggleBottomPanel',
+            'handleToggleLeftSidebar',
             'handleClickAddonSettings',
             'handleClickSeeCommunity',
             'handleClickShare',
@@ -200,9 +255,12 @@ class MenuBar extends React.Component {
     }
     componentDidMount () {
         document.addEventListener('keydown', this.handleKeyPress);
+        document.addEventListener('textwarp-layout-state', this.handleLayoutState);
+        setTimeout(() => document.dispatchEvent(new CustomEvent('textwarp-request-layout-state')), 0);
     }
     componentWillUnmount () {
         document.removeEventListener('keydown', this.handleKeyPress);
+        document.removeEventListener('textwarp-layout-state', this.handleLayoutState);
     }
     handleClickNew () {
         // if the project is dirty, and user owns the project, we will autosave.
@@ -246,6 +304,37 @@ class MenuBar extends React.Component {
     handleClickRestorePoints () {
         this.props.onClickRestorePoints();
         this.props.onRequestCloseFile();
+    }
+    handleOpenCommandPalette () {
+        this.props.onActivateTab(0);
+        setTimeout(() => document.dispatchEvent(new CustomEvent('textwarp-open-command-palette')), 0);
+    }
+    handleRunProject () {
+        this.props.onActivateTab(0);
+        const eventName = this.props.projectRunning ? 'textwarp-stop-project' : 'textwarp-run-project';
+        setTimeout(() => document.dispatchEvent(new CustomEvent(eventName)), 0);
+    }
+    handleLayoutState (event) {
+        const detail = event && event.detail;
+        if (!detail) return;
+        this.setState(state => ({
+            bottomPanelVisible: typeof detail.bottomPanelVisible === 'boolean' ?
+                detail.bottomPanelVisible : state.bottomPanelVisible,
+            leftSidebarVisible: typeof detail.leftSidebarVisible === 'boolean' ?
+                detail.leftSidebarVisible : state.leftSidebarVisible
+        }));
+    }
+    handleToggleBottomPanel () {
+        this.props.onActivateTab(0);
+        setTimeout(() => document.dispatchEvent(new CustomEvent('textwarp-toggle-layout', {
+            detail: {area: 'bottom-panel'}
+        })), 0);
+    }
+    handleToggleLeftSidebar () {
+        this.props.onActivateTab(0);
+        setTimeout(() => document.dispatchEvent(new CustomEvent('textwarp-toggle-layout', {
+            detail: {area: 'left-sidebar'}
+        })), 0);
     }
     handleClickOpenTextwarp () {
         this.props.onRequestTextwarpUiCommand(TEXTWARP_UI_COMMANDS.OPEN);
@@ -1019,7 +1108,7 @@ class MenuBar extends React.Component {
                                 enable
                                 id="title-field"
                             >
-                                <ProjectTitleInput
+                                <ProjectContext
                                     className={classNames(styles.titleFieldGrowable)}
                                 />
                             </MenuBarItemTooltip>
@@ -1034,6 +1123,17 @@ class MenuBar extends React.Component {
                             username={this.props.authorUsername}
                         />
                     ) : null)}
+                    <button
+                        aria-keyshortcuts="Control+Shift+P"
+                        className={styles.commandPaletteButton}
+                        title={`${this.props.intl.formatMessage(twMessages.commandPalette)} (Ctrl+Shift+P)`}
+                        type="button"
+                        onClick={this.handleOpenCommandPalette}
+                    >
+                        <span aria-hidden="true">{'⌕'}</span>
+                        <span>{this.props.intl.formatMessage(twMessages.commandPalette)}</span>
+                        <kbd>{'Ctrl ⇧ P'}</kbd>
+                    </button>
                     {this.props.canShare ? (
                         (this.props.isShowingProject || this.props.isUpdating) && (
                             <div className={classNames(styles.menuBarItem)}>
@@ -1080,6 +1180,68 @@ class MenuBar extends React.Component {
                     <TWSaveStatus
                         showSaveFilePicker={this.props.showSaveFilePicker}
                     />
+                    <div className={styles.workspaceControls}>
+                        <button
+                            aria-pressed={this.props.projectRunning}
+                            className={classNames(
+                                styles.runProjectButton,
+                                this.props.projectRunning && styles.stopProjectButton
+                            )}
+                            title={this.props.intl.formatMessage(
+                                this.props.projectRunning ? twMessages.stopProject : twMessages.runProject
+                            )}
+                            type="button"
+                            onClick={this.handleRunProject}
+                        >
+                            <span aria-hidden="true">{this.props.projectRunning ? '■' : '▶'}</span>
+                            <span>{this.props.intl.formatMessage(
+                                this.props.projectRunning ? twMessages.stopProject : twMessages.runProject
+                            )}</span>
+                        </button>
+                        <button
+                            aria-label={this.props.intl.formatMessage(twMessages.fullScreen)}
+                            className={styles.workspaceIconButton}
+                            title={this.props.intl.formatMessage(twMessages.fullScreen)}
+                            type="button"
+                            onClick={this.props.onSetStageFullScreen}
+                        >
+                            <InterfaceIcon name="fullscreen" />
+                        </button>
+                        <div
+                            aria-label={this.props.intl.formatMessage(twMessages.layoutControls)}
+                            className={styles.layoutControls}
+                            role="group"
+                        >
+                            {[
+                                ['layout-activity', twMessages.toggleActivityBar,
+                                    this.props.activityBarVisible, this.props.onToggleActivityBar],
+                                ['layout-primary', twMessages.toggleLeftSidebar,
+                                    this.state.leftSidebarVisible, this.handleToggleLeftSidebar],
+                                ['layout-panel', twMessages.toggleBottomPanel,
+                                    this.state.bottomPanelVisible, this.handleToggleBottomPanel],
+                                ['layout-secondary', twMessages.toggleRightSidebar,
+                                    this.props.rightSidebarVisible, this.props.onToggleRightSidebar]
+                            ].map(([icon, message, visible, onClick]) => {
+                                const label = this.props.intl.formatMessage(message);
+                                return (
+                                    <button
+                                        aria-label={label}
+                                        aria-pressed={visible}
+                                        className={classNames(
+                                            styles.workspaceIconButton,
+                                            visible && styles.layoutControlActive
+                                        )}
+                                        key={icon}
+                                        title={label}
+                                        type="button"
+                                        onClick={onClick}
+                                    >
+                                        <InterfaceIcon name={icon} />
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
             </Box>
         );
@@ -1094,9 +1256,11 @@ class MenuBar extends React.Component {
 }
 
 MenuBar.propTypes = {
+    activityBarVisible: PropTypes.bool.isRequired,
     advancedMenuOpen: PropTypes.bool,
     enableSeeInside: PropTypes.bool,
     onClickSeeInside: PropTypes.func,
+    onActivateTab: PropTypes.func.isRequired,
     aboutMenuOpen: PropTypes.bool,
     authorId: PropTypes.oneOfType([PropTypes.string, PropTypes.bool]),
     authorThumbnailUrl: PropTypes.string,
@@ -1170,11 +1334,16 @@ MenuBar.propTypes = {
     onRequestOpenAbout: PropTypes.func,
     onRequestTextwarpUiCommand: PropTypes.func,
     onSeeCommunity: PropTypes.func,
+    onSetStageFullScreen: PropTypes.func.isRequired,
     onSetTimeTravelMode: PropTypes.func,
     onShare: PropTypes.func,
     onStartSelectingFileUpload: PropTypes.func,
+    onToggleActivityBar: PropTypes.func.isRequired,
+    onToggleRightSidebar: PropTypes.func.isRequired,
     projectId: PropTypes.string,
+    projectRunning: PropTypes.bool.isRequired,
     projectTitle: PropTypes.string,
+    rightSidebarVisible: PropTypes.bool.isRequired,
     shouldSaveBeforeTransition: PropTypes.func,
     showSaveFilePicker: PropTypes.func,
     showComingSoon: PropTypes.bool,
@@ -1210,6 +1379,7 @@ const mapStateToProps = state => {
         isShowingProject: getIsShowingProject(loadingState),
         locale: state.locales.locale,
         modeMenuOpen: modeMenuOpen(state),
+        projectRunning: state.scratchGui.vmStatus.running,
         projectTitle: state.scratchGui.projectTitle,
         textwarpUiOperation: state.scratchGui.tw.textwarpUiOperation || {
             command: null,
@@ -1225,6 +1395,7 @@ const mapStateToProps = state => {
 
 const mapDispatchToProps = dispatch => ({
     onClickSeeInside: () => dispatch(setPlayer(false)),
+    onSetStageFullScreen: () => dispatch(setFullScreen(true)),
     autoUpdateProject: () => dispatch(autoUpdateProject()),
     onOpenTipLibrary: () => dispatch(openTipsLibrary()),
     onClickAdvanced: () => dispatch(openAdvancedMenu()),

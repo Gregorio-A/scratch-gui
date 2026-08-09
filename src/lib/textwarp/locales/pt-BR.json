@@ -1,0 +1,2125 @@
+{
+  "syntax.actor": {
+    "preferred": "ator",
+    "aliases": [
+      "ator",
+      "actor"
+    ]
+  },
+  "syntax.branch": {
+    "preferred": "ramo",
+    "aliases": [
+      "ramo",
+      "branch"
+    ]
+  },
+  "syntax.global": {
+    "preferred": "global",
+    "aliases": [
+      "global"
+    ]
+  },
+  "syntax.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "syntax.on": {
+    "preferred": "ao",
+    "aliases": [
+      "ao",
+      "on"
+    ]
+  },
+  "syntax.pass": {
+    "preferred": "passe",
+    "aliases": [
+      "passe",
+      "pass"
+    ]
+  },
+  "syntax.procedure": {
+    "preferred": "procedimento",
+    "aliases": [
+      "procedimento",
+      "procedure"
+    ]
+  },
+  "syntax.reporter": {
+    "preferred": "reportador",
+    "aliases": [
+      "reportador",
+      "reporter"
+    ]
+  },
+  "syntax.return": {
+    "preferred": "retorne",
+    "aliases": [
+      "retorne",
+      "return"
+    ]
+  },
+  "syntax.stack": {
+    "preferred": "pilha",
+    "aliases": [
+      "pilha",
+      "stack"
+    ]
+  },
+  "syntax.stage": {
+    "preferred": "palco",
+    "aliases": [
+      "palco",
+      "stage"
+    ]
+  },
+  "syntax.variable": {
+    "preferred": "variavel",
+    "aliases": [
+      "variavel",
+      "variável",
+      "variable"
+    ]
+  },
+  "syntax.warp": {
+    "preferred": "warp",
+    "aliases": [
+      "warp"
+    ]
+  },
+  "control.else": {
+    "preferred": "senao",
+    "aliases": [
+      "senao",
+      "senão",
+      "else"
+    ]
+  },
+  "control.forever": {
+    "preferred": "para_sempre",
+    "aliases": [
+      "para_sempre",
+      "forever"
+    ]
+  },
+  "control.if": {
+    "preferred": "se",
+    "aliases": [
+      "se",
+      "if"
+    ]
+  },
+  "control.if_else": {
+    "preferred": "se_senao",
+    "aliases": [
+      "se_senao",
+      "if_else"
+    ]
+  },
+  "control.repeat": {
+    "preferred": "repita",
+    "aliases": [
+      "repita",
+      "repeat"
+    ]
+  },
+  "control.repeat_until": {
+    "preferred": "repita_ate",
+    "aliases": [
+      "repita_ate",
+      "repita_até",
+      "repeat_until"
+    ]
+  },
+  "control.while": {
+    "preferred": "enquanto",
+    "aliases": [
+      "enquanto",
+      "while"
+    ]
+  },
+  "operator.and": {
+    "preferred": "e",
+    "aliases": [
+      "e",
+      "and"
+    ]
+  },
+  "operator.not": {
+    "preferred": "nao",
+    "aliases": [
+      "nao",
+      "não",
+      "not"
+    ]
+  },
+  "operator.or": {
+    "preferred": "ou",
+    "aliases": [
+      "ou",
+      "or"
+    ]
+  },
+  "literal.false": {
+    "preferred": "falso",
+    "aliases": [
+      "falso",
+      "false"
+    ]
+  },
+  "literal.true": {
+    "preferred": "verdadeiro",
+    "aliases": [
+      "verdadeiro",
+      "true"
+    ]
+  },
+  "type.any": {
+    "preferred": "qualquer",
+    "aliases": [
+      "qualquer",
+      "any"
+    ]
+  },
+  "type.boolean": {
+    "preferred": "booleano",
+    "aliases": [
+      "booleano",
+      "boolean"
+    ]
+  },
+  "type.number": {
+    "preferred": "numero",
+    "aliases": [
+      "numero",
+      "número",
+      "number"
+    ]
+  },
+  "type.string": {
+    "preferred": "texto",
+    "aliases": [
+      "texto",
+      "string"
+    ]
+  },
+  "event.backdrop_switches": {
+    "preferred": "cenario_muda_para",
+    "aliases": [
+      "cenario_muda_para",
+      "backdrop_switches"
+    ]
+  },
+  "event.backdrop_switches.backdrop": {
+    "preferred": "cenario",
+    "aliases": [
+      "cenario",
+      "backdrop"
+    ]
+  },
+  "event.clicked": {
+    "preferred": "clicado",
+    "aliases": [
+      "clicado",
+      "clicked"
+    ]
+  },
+  "event.clone_started": {
+    "preferred": "clone_iniciado",
+    "aliases": [
+      "clone_iniciado",
+      "clone_started"
+    ]
+  },
+  "event.green_flag": {
+    "preferred": "bandeira_verde",
+    "aliases": [
+      "bandeira_verde",
+      "green_flag"
+    ]
+  },
+  "event.key_pressed": {
+    "preferred": "tecla_pressionada",
+    "aliases": [
+      "tecla_pressionada",
+      "key_pressed"
+    ]
+  },
+  "event.key_pressed.key": {
+    "preferred": "tecla",
+    "aliases": [
+      "tecla",
+      "key"
+    ]
+  },
+  "event.loudness_greater_than": {
+    "preferred": "intensidade_maior_que",
+    "aliases": [
+      "intensidade_maior_que",
+      "loudness_greater_than"
+    ]
+  },
+  "event.loudness_greater_than.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "event.receive": {
+    "preferred": "receba",
+    "aliases": [
+      "receba",
+      "receive"
+    ]
+  },
+  "event.receive.message": {
+    "preferred": "mensagem",
+    "aliases": [
+      "mensagem",
+      "message"
+    ]
+  },
+  "event.timer_greater_than": {
+    "preferred": "cronometro_maior_que",
+    "aliases": [
+      "cronometro_maior_que",
+      "timer_greater_than"
+    ]
+  },
+  "event.timer_greater_than.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "event.touching_object": {
+    "preferred": "tocando_objeto",
+    "aliases": [
+      "tocando_objeto",
+      "touching_object"
+    ]
+  },
+  "event.touching_object.object": {
+    "preferred": "objeto",
+    "aliases": [
+      "objeto",
+      "object"
+    ]
+  },
+  "function.align_scene": {
+    "preferred": "alinhe_cena",
+    "aliases": [
+      "alinhe_cena",
+      "align_scene"
+    ]
+  },
+  "function.align_scene.alignment": {
+    "preferred": "alinhamento",
+    "aliases": [
+      "alinhamento",
+      "alignment"
+    ]
+  },
+  "function.all_at_once": {
+    "preferred": "tudo_de_uma_vez",
+    "aliases": [
+      "tudo_de_uma_vez",
+      "all_at_once"
+    ]
+  },
+  "function.answer": {
+    "preferred": "resposta",
+    "aliases": [
+      "resposta",
+      "answer"
+    ]
+  },
+  "function.ask": {
+    "preferred": "pergunte",
+    "aliases": [
+      "pergunte",
+      "ask"
+    ]
+  },
+  "function.ask.question": {
+    "preferred": "pergunta",
+    "aliases": [
+      "pergunta",
+      "question"
+    ]
+  },
+  "function.backdrop_number_name": {
+    "preferred": "numero_nome_cenario",
+    "aliases": [
+      "numero_nome_cenario",
+      "backdrop_number_name"
+    ]
+  },
+  "function.backdrop_number_name.property": {
+    "preferred": "propriedade",
+    "aliases": [
+      "propriedade",
+      "property"
+    ]
+  },
+  "function.broadcast": {
+    "preferred": "transmita",
+    "aliases": [
+      "transmita",
+      "broadcast"
+    ]
+  },
+  "function.broadcast_wait": {
+    "preferred": "transmita_e_espere",
+    "aliases": [
+      "transmita_e_espere",
+      "broadcast_wait"
+    ]
+  },
+  "function.broadcast_wait.message": {
+    "preferred": "mensagem",
+    "aliases": [
+      "mensagem",
+      "message"
+    ]
+  },
+  "function.broadcast.message": {
+    "preferred": "mensagem",
+    "aliases": [
+      "mensagem",
+      "message"
+    ]
+  },
+  "function.change_looks_effect": {
+    "preferred": "mude_efeito_visual",
+    "aliases": [
+      "mude_efeito_visual",
+      "change_looks_effect"
+    ]
+  },
+  "function.change_looks_effect.amount": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "amount"
+    ]
+  },
+  "function.change_looks_effect.effect": {
+    "preferred": "efeito",
+    "aliases": [
+      "efeito",
+      "effect"
+    ]
+  },
+  "function.change_size": {
+    "preferred": "mude_tamanho",
+    "aliases": [
+      "mude_tamanho",
+      "change_size"
+    ]
+  },
+  "function.change_size.amount": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "amount"
+    ]
+  },
+  "function.change_sound_effect": {
+    "preferred": "mude_efeito_sonoro",
+    "aliases": [
+      "mude_efeito_sonoro",
+      "change_sound_effect"
+    ]
+  },
+  "function.change_sound_effect.amount": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "amount"
+    ]
+  },
+  "function.change_sound_effect.effect": {
+    "preferred": "efeito",
+    "aliases": [
+      "efeito",
+      "effect"
+    ]
+  },
+  "function.change_stretch": {
+    "preferred": "mude_estiramento",
+    "aliases": [
+      "mude_estiramento",
+      "change_stretch"
+    ]
+  },
+  "function.change_stretch.amount": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "amount"
+    ]
+  },
+  "function.change_volume": {
+    "preferred": "mude_volume",
+    "aliases": [
+      "mude_volume",
+      "change_volume"
+    ]
+  },
+  "function.change_volume.amount": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "amount"
+    ]
+  },
+  "function.change_x": {
+    "preferred": "mude_x",
+    "aliases": [
+      "mude_x",
+      "change_x"
+    ]
+  },
+  "function.change_x.amount": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "amount"
+    ]
+  },
+  "function.change_y": {
+    "preferred": "mude_y",
+    "aliases": [
+      "mude_y",
+      "change_y"
+    ]
+  },
+  "function.change_y.amount": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "amount"
+    ]
+  },
+  "function.clear_counter": {
+    "preferred": "zere_contador",
+    "aliases": [
+      "zere_contador",
+      "clear_counter"
+    ]
+  },
+  "function.clear_looks_effects": {
+    "preferred": "remova_efeitos_visuais",
+    "aliases": [
+      "remova_efeitos_visuais",
+      "clear_looks_effects"
+    ]
+  },
+  "function.clear_sound_effects": {
+    "preferred": "remova_efeitos_sonoros",
+    "aliases": [
+      "remova_efeitos_sonoros",
+      "clear_sound_effects"
+    ]
+  },
+  "function.color_touching_color": {
+    "preferred": "cor_tocando_cor",
+    "aliases": [
+      "cor_tocando_cor",
+      "color_touching_color"
+    ]
+  },
+  "function.color_touching_color.color": {
+    "preferred": "cor",
+    "aliases": [
+      "cor",
+      "color"
+    ]
+  },
+  "function.color_touching_color.target_color": {
+    "preferred": "cor_alvo",
+    "aliases": [
+      "cor_alvo",
+      "target_color"
+    ]
+  },
+  "function.contains": {
+    "preferred": "contem",
+    "aliases": [
+      "contem",
+      "contains"
+    ]
+  },
+  "function.contains.part": {
+    "preferred": "parte",
+    "aliases": [
+      "parte",
+      "part"
+    ]
+  },
+  "function.contains.text": {
+    "preferred": "texto",
+    "aliases": [
+      "texto",
+      "text"
+    ]
+  },
+  "function.costume_number_name": {
+    "preferred": "numero_nome_fantasia",
+    "aliases": [
+      "numero_nome_fantasia",
+      "costume_number_name"
+    ]
+  },
+  "function.costume_number_name.property": {
+    "preferred": "propriedade",
+    "aliases": [
+      "propriedade",
+      "property"
+    ]
+  },
+  "function.counter": {
+    "preferred": "contador",
+    "aliases": [
+      "contador",
+      "counter"
+    ]
+  },
+  "function.create_clone": {
+    "preferred": "crie_clone",
+    "aliases": [
+      "crie_clone",
+      "create_clone"
+    ]
+  },
+  "function.create_clone.actor": {
+    "preferred": "ator",
+    "aliases": [
+      "ator",
+      "actor"
+    ]
+  },
+  "function.current": {
+    "preferred": "atual",
+    "aliases": [
+      "atual",
+      "current"
+    ]
+  },
+  "function.current.unit": {
+    "preferred": "unidade",
+    "aliases": [
+      "unidade",
+      "unit"
+    ]
+  },
+  "function.days_since_2000": {
+    "preferred": "dias_desde_2000",
+    "aliases": [
+      "dias_desde_2000",
+      "days_since_2000"
+    ]
+  },
+  "function.delete_clone": {
+    "preferred": "apague_clone",
+    "aliases": [
+      "apague_clone",
+      "delete_clone"
+    ]
+  },
+  "function.direction": {
+    "preferred": "direcao",
+    "aliases": [
+      "direcao",
+      "direction"
+    ]
+  },
+  "function.distance_to": {
+    "preferred": "distancia_ate",
+    "aliases": [
+      "distancia_ate",
+      "distance_to"
+    ]
+  },
+  "function.distance_to.object": {
+    "preferred": "objeto",
+    "aliases": [
+      "objeto",
+      "object"
+    ]
+  },
+  "function.for_each": {
+    "preferred": "para_cada",
+    "aliases": [
+      "para_cada",
+      "for_each"
+    ]
+  },
+  "function.for_each.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.for_each.variable": {
+    "preferred": "variavel",
+    "aliases": [
+      "variavel",
+      "variable"
+    ]
+  },
+  "function.glide_to": {
+    "preferred": "deslize_para",
+    "aliases": [
+      "deslize_para",
+      "glide_to"
+    ]
+  },
+  "function.glide_to_target": {
+    "preferred": "deslize_para_alvo",
+    "aliases": [
+      "deslize_para_alvo",
+      "glide_to_target"
+    ]
+  },
+  "function.glide_to_target.seconds": {
+    "preferred": "segundos",
+    "aliases": [
+      "segundos",
+      "seconds"
+    ]
+  },
+  "function.glide_to_target.target": {
+    "preferred": "alvo",
+    "aliases": [
+      "alvo",
+      "target"
+    ]
+  },
+  "function.glide_to.seconds": {
+    "preferred": "segundos",
+    "aliases": [
+      "segundos",
+      "seconds"
+    ]
+  },
+  "function.glide_to.x": {
+    "preferred": "x",
+    "aliases": [
+      "x"
+    ]
+  },
+  "function.glide_to.y": {
+    "preferred": "y",
+    "aliases": [
+      "y"
+    ]
+  },
+  "function.go_to": {
+    "preferred": "va_para",
+    "aliases": [
+      "va_para",
+      "go_to"
+    ]
+  },
+  "function.go_to_layer": {
+    "preferred": "va_para_camada",
+    "aliases": [
+      "va_para_camada",
+      "go_to_layer"
+    ]
+  },
+  "function.go_to_layer.layer": {
+    "preferred": "camada",
+    "aliases": [
+      "camada",
+      "layer"
+    ]
+  },
+  "function.go_to_target": {
+    "preferred": "va_para_alvo",
+    "aliases": [
+      "va_para_alvo",
+      "go_to_target"
+    ]
+  },
+  "function.go_to_target.target": {
+    "preferred": "alvo",
+    "aliases": [
+      "alvo",
+      "target"
+    ]
+  },
+  "function.go_to.x": {
+    "preferred": "x",
+    "aliases": [
+      "x"
+    ]
+  },
+  "function.go_to.y": {
+    "preferred": "y",
+    "aliases": [
+      "y"
+    ]
+  },
+  "function.hide": {
+    "preferred": "esconda",
+    "aliases": [
+      "esconda",
+      "hide"
+    ]
+  },
+  "function.hide_all_sprites": {
+    "preferred": "esconda_todos_atores",
+    "aliases": [
+      "esconda_todos_atores",
+      "hide_all_sprites"
+    ]
+  },
+  "function.hide_list": {
+    "preferred": "esconda_lista",
+    "aliases": [
+      "esconda_lista",
+      "hide_list"
+    ]
+  },
+  "function.hide_list.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.hide_variable": {
+    "preferred": "esconda_variavel",
+    "aliases": [
+      "esconda_variavel",
+      "hide_variable"
+    ]
+  },
+  "function.hide_variable.variable": {
+    "preferred": "variavel",
+    "aliases": [
+      "variavel",
+      "variable"
+    ]
+  },
+  "function.if_on_edge_bounce": {
+    "preferred": "rebata_na_borda",
+    "aliases": [
+      "rebata_na_borda",
+      "if_on_edge_bounce"
+    ]
+  },
+  "function.increment_counter": {
+    "preferred": "incremente_contador",
+    "aliases": [
+      "incremente_contador",
+      "increment_counter"
+    ]
+  },
+  "function.join": {
+    "preferred": "junte",
+    "aliases": [
+      "junte",
+      "join"
+    ]
+  },
+  "function.join.left": {
+    "preferred": "esquerdo",
+    "aliases": [
+      "esquerdo",
+      "left"
+    ]
+  },
+  "function.join.right": {
+    "preferred": "direito",
+    "aliases": [
+      "direito",
+      "right"
+    ]
+  },
+  "function.key_pressed": {
+    "preferred": "tecla_pressionada",
+    "aliases": [
+      "tecla_pressionada",
+      "key_pressed"
+    ]
+  },
+  "function.key_pressed.key": {
+    "preferred": "tecla",
+    "aliases": [
+      "tecla",
+      "key"
+    ]
+  },
+  "function.length": {
+    "preferred": "comprimento",
+    "aliases": [
+      "comprimento",
+      "length"
+    ]
+  },
+  "function.length.text": {
+    "preferred": "texto",
+    "aliases": [
+      "texto",
+      "text"
+    ]
+  },
+  "function.letter": {
+    "preferred": "letra",
+    "aliases": [
+      "letra",
+      "letter"
+    ]
+  },
+  "function.letter.index": {
+    "preferred": "indice",
+    "aliases": [
+      "indice",
+      "index"
+    ]
+  },
+  "function.letter.text": {
+    "preferred": "texto",
+    "aliases": [
+      "texto",
+      "text"
+    ]
+  },
+  "function.list_add": {
+    "preferred": "adicione_a_lista",
+    "aliases": [
+      "adicione_a_lista",
+      "list_add"
+    ]
+  },
+  "function.list_add.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_add.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.list_clear": {
+    "preferred": "limpe_lista",
+    "aliases": [
+      "limpe_lista",
+      "list_clear"
+    ]
+  },
+  "function.list_clear.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_contains": {
+    "preferred": "lista_contem",
+    "aliases": [
+      "lista_contem",
+      "list_contains"
+    ]
+  },
+  "function.list_contains.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_contains.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.list_delete": {
+    "preferred": "apague_da_lista",
+    "aliases": [
+      "apague_da_lista",
+      "list_delete"
+    ]
+  },
+  "function.list_delete.index": {
+    "preferred": "indice",
+    "aliases": [
+      "indice",
+      "index"
+    ]
+  },
+  "function.list_delete.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_index": {
+    "preferred": "indice_da_lista",
+    "aliases": [
+      "indice_da_lista",
+      "list_index"
+    ]
+  },
+  "function.list_index.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_index.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.list_insert": {
+    "preferred": "insira_na_lista",
+    "aliases": [
+      "insira_na_lista",
+      "list_insert"
+    ]
+  },
+  "function.list_insert.index": {
+    "preferred": "indice",
+    "aliases": [
+      "indice",
+      "index"
+    ]
+  },
+  "function.list_insert.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_insert.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.list_item": {
+    "preferred": "item_da_lista",
+    "aliases": [
+      "item_da_lista",
+      "list_item"
+    ]
+  },
+  "function.list_item.index": {
+    "preferred": "indice",
+    "aliases": [
+      "indice",
+      "index"
+    ]
+  },
+  "function.list_item.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_length": {
+    "preferred": "tamanho_da_lista",
+    "aliases": [
+      "tamanho_da_lista",
+      "list_length"
+    ]
+  },
+  "function.list_length.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_replace": {
+    "preferred": "substitua_na_lista",
+    "aliases": [
+      "substitua_na_lista",
+      "list_replace"
+    ]
+  },
+  "function.list_replace.index": {
+    "preferred": "indice",
+    "aliases": [
+      "indice",
+      "index"
+    ]
+  },
+  "function.list_replace.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.list_replace.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.loud": {
+    "preferred": "som_alto",
+    "aliases": [
+      "som_alto",
+      "loud"
+    ]
+  },
+  "function.loudness": {
+    "preferred": "intensidade_som",
+    "aliases": [
+      "intensidade_som",
+      "loudness"
+    ]
+  },
+  "function.math": {
+    "preferred": "matematica",
+    "aliases": [
+      "matematica",
+      "math"
+    ]
+  },
+  "function.math.operation": {
+    "preferred": "operacao",
+    "aliases": [
+      "operacao",
+      "operation"
+    ]
+  },
+  "function.math.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.mouse_down": {
+    "preferred": "mouse_pressionado",
+    "aliases": [
+      "mouse_pressionado",
+      "mouse_down"
+    ]
+  },
+  "function.mouse_x": {
+    "preferred": "mouse_x",
+    "aliases": [
+      "mouse_x"
+    ]
+  },
+  "function.mouse_y": {
+    "preferred": "mouse_y",
+    "aliases": [
+      "mouse_y"
+    ]
+  },
+  "function.move": {
+    "preferred": "mova",
+    "aliases": [
+      "mova",
+      "move"
+    ]
+  },
+  "function.move_layers": {
+    "preferred": "mova_camadas",
+    "aliases": [
+      "mova_camadas",
+      "move_layers"
+    ]
+  },
+  "function.move_layers.count": {
+    "preferred": "quantidade",
+    "aliases": [
+      "quantidade",
+      "count"
+    ]
+  },
+  "function.move_layers.direction": {
+    "preferred": "direcao",
+    "aliases": [
+      "direcao",
+      "direction"
+    ]
+  },
+  "function.move.steps": {
+    "preferred": "passos",
+    "aliases": [
+      "passos",
+      "steps"
+    ]
+  },
+  "function.next_backdrop": {
+    "preferred": "proximo_cenario",
+    "aliases": [
+      "proximo_cenario",
+      "next_backdrop"
+    ]
+  },
+  "function.next_costume": {
+    "preferred": "proxima_fantasia",
+    "aliases": [
+      "proxima_fantasia",
+      "next_costume"
+    ]
+  },
+  "function.online": {
+    "preferred": "conectado",
+    "aliases": [
+      "conectado",
+      "online"
+    ]
+  },
+  "function.play_sound": {
+    "preferred": "toque_som",
+    "aliases": [
+      "toque_som",
+      "play_sound"
+    ]
+  },
+  "function.play_sound_until_done": {
+    "preferred": "toque_som_ate_fim",
+    "aliases": [
+      "toque_som_ate_fim",
+      "play_sound_until_done"
+    ]
+  },
+  "function.play_sound_until_done.sound": {
+    "preferred": "som",
+    "aliases": [
+      "som",
+      "sound"
+    ]
+  },
+  "function.play_sound.sound": {
+    "preferred": "som",
+    "aliases": [
+      "som",
+      "sound"
+    ]
+  },
+  "function.point_in_direction": {
+    "preferred": "aponte_na_direcao",
+    "aliases": [
+      "aponte_na_direcao",
+      "point_in_direction"
+    ]
+  },
+  "function.point_in_direction.direction": {
+    "preferred": "direcao",
+    "aliases": [
+      "direcao",
+      "direction"
+    ]
+  },
+  "function.point_towards": {
+    "preferred": "aponte_para",
+    "aliases": [
+      "aponte_para",
+      "point_towards"
+    ]
+  },
+  "function.point_towards.target": {
+    "preferred": "alvo",
+    "aliases": [
+      "alvo",
+      "target"
+    ]
+  },
+  "function.property_of": {
+    "preferred": "propriedade_de",
+    "aliases": [
+      "propriedade_de",
+      "property_of"
+    ]
+  },
+  "function.property_of.object": {
+    "preferred": "objeto",
+    "aliases": [
+      "objeto",
+      "object"
+    ]
+  },
+  "function.property_of.property": {
+    "preferred": "propriedade",
+    "aliases": [
+      "propriedade",
+      "property"
+    ]
+  },
+  "function.random": {
+    "preferred": "aleatorio",
+    "aliases": [
+      "aleatorio",
+      "random"
+    ]
+  },
+  "function.random.from": {
+    "preferred": "de",
+    "aliases": [
+      "de",
+      "from"
+    ]
+  },
+  "function.random.to": {
+    "preferred": "ate",
+    "aliases": [
+      "ate",
+      "to"
+    ]
+  },
+  "function.reset_timer": {
+    "preferred": "zere_cronometro",
+    "aliases": [
+      "zere_cronometro",
+      "reset_timer"
+    ]
+  },
+  "function.round": {
+    "preferred": "arredonde",
+    "aliases": [
+      "arredonde",
+      "round"
+    ]
+  },
+  "function.round.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.say": {
+    "preferred": "diga",
+    "aliases": [
+      "diga",
+      "say"
+    ]
+  },
+  "function.say_for": {
+    "preferred": "diga_por",
+    "aliases": [
+      "diga_por",
+      "say_for"
+    ]
+  },
+  "function.say_for.message": {
+    "preferred": "mensagem",
+    "aliases": [
+      "mensagem",
+      "message"
+    ]
+  },
+  "function.say_for.seconds": {
+    "preferred": "segundos",
+    "aliases": [
+      "segundos",
+      "seconds"
+    ]
+  },
+  "function.say.message": {
+    "preferred": "mensagem",
+    "aliases": [
+      "mensagem",
+      "message"
+    ]
+  },
+  "function.scroll_right": {
+    "preferred": "role_direita",
+    "aliases": [
+      "role_direita",
+      "scroll_right"
+    ]
+  },
+  "function.scroll_right.distance": {
+    "preferred": "distancia",
+    "aliases": [
+      "distancia",
+      "distance"
+    ]
+  },
+  "function.scroll_up": {
+    "preferred": "role_cima",
+    "aliases": [
+      "role_cima",
+      "scroll_up"
+    ]
+  },
+  "function.scroll_up.distance": {
+    "preferred": "distancia",
+    "aliases": [
+      "distancia",
+      "distance"
+    ]
+  },
+  "function.set_drag_mode": {
+    "preferred": "defina_modo_arrastar",
+    "aliases": [
+      "defina_modo_arrastar",
+      "set_drag_mode"
+    ]
+  },
+  "function.set_drag_mode.mode": {
+    "preferred": "modo",
+    "aliases": [
+      "modo",
+      "mode"
+    ]
+  },
+  "function.set_looks_effect": {
+    "preferred": "defina_efeito_visual",
+    "aliases": [
+      "defina_efeito_visual",
+      "set_looks_effect"
+    ]
+  },
+  "function.set_looks_effect.effect": {
+    "preferred": "efeito",
+    "aliases": [
+      "efeito",
+      "effect"
+    ]
+  },
+  "function.set_looks_effect.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.set_rotation_style": {
+    "preferred": "defina_estilo_rotacao",
+    "aliases": [
+      "defina_estilo_rotacao",
+      "set_rotation_style"
+    ]
+  },
+  "function.set_rotation_style.style": {
+    "preferred": "estilo",
+    "aliases": [
+      "estilo",
+      "style"
+    ]
+  },
+  "function.set_size": {
+    "preferred": "defina_tamanho",
+    "aliases": [
+      "defina_tamanho",
+      "set_size"
+    ]
+  },
+  "function.set_size.percent": {
+    "preferred": "percentual",
+    "aliases": [
+      "percentual",
+      "percent"
+    ]
+  },
+  "function.set_sound_effect": {
+    "preferred": "defina_efeito_sonoro",
+    "aliases": [
+      "defina_efeito_sonoro",
+      "set_sound_effect"
+    ]
+  },
+  "function.set_sound_effect.effect": {
+    "preferred": "efeito",
+    "aliases": [
+      "efeito",
+      "effect"
+    ]
+  },
+  "function.set_sound_effect.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.set_stretch": {
+    "preferred": "defina_estiramento",
+    "aliases": [
+      "defina_estiramento",
+      "set_stretch"
+    ]
+  },
+  "function.set_stretch.percent": {
+    "preferred": "percentual",
+    "aliases": [
+      "percentual",
+      "percent"
+    ]
+  },
+  "function.set_volume": {
+    "preferred": "defina_volume",
+    "aliases": [
+      "defina_volume",
+      "set_volume"
+    ]
+  },
+  "function.set_volume.percent": {
+    "preferred": "percentual",
+    "aliases": [
+      "percentual",
+      "percent"
+    ]
+  },
+  "function.set_x": {
+    "preferred": "defina_x",
+    "aliases": [
+      "defina_x",
+      "set_x"
+    ]
+  },
+  "function.set_x.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.set_y": {
+    "preferred": "defina_y",
+    "aliases": [
+      "defina_y",
+      "set_y"
+    ]
+  },
+  "function.set_y.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "function.show": {
+    "preferred": "mostre",
+    "aliases": [
+      "mostre",
+      "show"
+    ]
+  },
+  "function.show_list": {
+    "preferred": "mostre_lista",
+    "aliases": [
+      "mostre_lista",
+      "show_list"
+    ]
+  },
+  "function.show_list.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "function.show_variable": {
+    "preferred": "mostre_variavel",
+    "aliases": [
+      "mostre_variavel",
+      "show_variable"
+    ]
+  },
+  "function.show_variable.variable": {
+    "preferred": "variavel",
+    "aliases": [
+      "variavel",
+      "variable"
+    ]
+  },
+  "function.size": {
+    "preferred": "tamanho",
+    "aliases": [
+      "tamanho",
+      "size"
+    ]
+  },
+  "function.stop_all": {
+    "preferred": "pare_tudo",
+    "aliases": [
+      "pare_tudo",
+      "stop_all"
+    ]
+  },
+  "function.stop_all_sounds": {
+    "preferred": "pare_todos_sons",
+    "aliases": [
+      "pare_todos_sons",
+      "stop_all_sounds"
+    ]
+  },
+  "function.stop_other_scripts": {
+    "preferred": "pare_outros_scripts",
+    "aliases": [
+      "pare_outros_scripts",
+      "stop_other_scripts"
+    ]
+  },
+  "function.stop_this_script": {
+    "preferred": "pare_este_script",
+    "aliases": [
+      "pare_este_script",
+      "stop_this_script"
+    ]
+  },
+  "function.switch_backdrop": {
+    "preferred": "mude_cenario",
+    "aliases": [
+      "mude_cenario",
+      "switch_backdrop"
+    ]
+  },
+  "function.switch_backdrop_wait": {
+    "preferred": "mude_cenario_e_espere",
+    "aliases": [
+      "mude_cenario_e_espere",
+      "switch_backdrop_wait"
+    ]
+  },
+  "function.switch_backdrop_wait.backdrop": {
+    "preferred": "cenario",
+    "aliases": [
+      "cenario",
+      "backdrop"
+    ]
+  },
+  "function.switch_backdrop.backdrop": {
+    "preferred": "cenario",
+    "aliases": [
+      "cenario",
+      "backdrop"
+    ]
+  },
+  "function.switch_costume": {
+    "preferred": "mude_fantasia",
+    "aliases": [
+      "mude_fantasia",
+      "switch_costume"
+    ]
+  },
+  "function.switch_costume.costume": {
+    "preferred": "fantasia",
+    "aliases": [
+      "fantasia",
+      "costume"
+    ]
+  },
+  "function.think": {
+    "preferred": "pense",
+    "aliases": [
+      "pense",
+      "think"
+    ]
+  },
+  "function.think_for": {
+    "preferred": "pense_por",
+    "aliases": [
+      "pense_por",
+      "think_for"
+    ]
+  },
+  "function.think_for.message": {
+    "preferred": "mensagem",
+    "aliases": [
+      "mensagem",
+      "message"
+    ]
+  },
+  "function.think_for.seconds": {
+    "preferred": "segundos",
+    "aliases": [
+      "segundos",
+      "seconds"
+    ]
+  },
+  "function.think.message": {
+    "preferred": "mensagem",
+    "aliases": [
+      "mensagem",
+      "message"
+    ]
+  },
+  "function.timer": {
+    "preferred": "cronometro",
+    "aliases": [
+      "cronometro",
+      "timer"
+    ]
+  },
+  "function.touching": {
+    "preferred": "tocando",
+    "aliases": [
+      "tocando",
+      "touching"
+    ]
+  },
+  "function.touching_color": {
+    "preferred": "tocando_cor",
+    "aliases": [
+      "tocando_cor",
+      "touching_color"
+    ]
+  },
+  "function.touching_color.color": {
+    "preferred": "cor",
+    "aliases": [
+      "cor",
+      "color"
+    ]
+  },
+  "function.touching.object": {
+    "preferred": "objeto",
+    "aliases": [
+      "objeto",
+      "object"
+    ]
+  },
+  "function.turn_left": {
+    "preferred": "gire_esquerda",
+    "aliases": [
+      "gire_esquerda",
+      "turn_left"
+    ]
+  },
+  "function.turn_left.degrees": {
+    "preferred": "graus",
+    "aliases": [
+      "graus",
+      "degrees"
+    ]
+  },
+  "function.turn_right": {
+    "preferred": "gire_direita",
+    "aliases": [
+      "gire_direita",
+      "turn_right"
+    ]
+  },
+  "function.turn_right.degrees": {
+    "preferred": "graus",
+    "aliases": [
+      "graus",
+      "degrees"
+    ]
+  },
+  "function.user_id": {
+    "preferred": "id_usuario",
+    "aliases": [
+      "id_usuario",
+      "user_id"
+    ]
+  },
+  "function.username": {
+    "preferred": "nome_usuario",
+    "aliases": [
+      "nome_usuario",
+      "username"
+    ]
+  },
+  "function.volume": {
+    "preferred": "volume",
+    "aliases": [
+      "volume"
+    ]
+  },
+  "function.wait": {
+    "preferred": "espere",
+    "aliases": [
+      "espere",
+      "wait"
+    ]
+  },
+  "function.wait_until": {
+    "preferred": "espere_ate",
+    "aliases": [
+      "espere_ate",
+      "wait_until"
+    ]
+  },
+  "function.wait_until.condition": {
+    "preferred": "condicao",
+    "aliases": [
+      "condicao",
+      "condition"
+    ]
+  },
+  "function.wait.seconds": {
+    "preferred": "segundos",
+    "aliases": [
+      "segundos",
+      "seconds"
+    ]
+  },
+  "function.x_position": {
+    "preferred": "posicao_x",
+    "aliases": [
+      "posicao_x",
+      "x_position"
+    ]
+  },
+  "function.x_scroll": {
+    "preferred": "rolagem_x",
+    "aliases": [
+      "rolagem_x",
+      "x_scroll"
+    ]
+  },
+  "function.y_position": {
+    "preferred": "posicao_y",
+    "aliases": [
+      "posicao_y",
+      "y_position"
+    ]
+  },
+  "function.y_scroll": {
+    "preferred": "rolagem_y",
+    "aliases": [
+      "rolagem_y",
+      "y_scroll"
+    ]
+  },
+  "argument.actor": {
+    "preferred": "ator",
+    "aliases": [
+      "ator",
+      "actor"
+    ]
+  },
+  "argument.alignment": {
+    "preferred": "alinhamento",
+    "aliases": [
+      "alinhamento",
+      "alignment"
+    ]
+  },
+  "argument.amount": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "amount"
+    ]
+  },
+  "argument.backdrop": {
+    "preferred": "cenario",
+    "aliases": [
+      "cenario",
+      "backdrop"
+    ]
+  },
+  "argument.color": {
+    "preferred": "cor",
+    "aliases": [
+      "cor",
+      "color"
+    ]
+  },
+  "argument.condition": {
+    "preferred": "condicao",
+    "aliases": [
+      "condicao",
+      "condition"
+    ]
+  },
+  "argument.costume": {
+    "preferred": "fantasia",
+    "aliases": [
+      "fantasia",
+      "costume"
+    ]
+  },
+  "argument.count": {
+    "preferred": "quantidade",
+    "aliases": [
+      "quantidade",
+      "count"
+    ]
+  },
+  "argument.degrees": {
+    "preferred": "graus",
+    "aliases": [
+      "graus",
+      "degrees"
+    ]
+  },
+  "argument.direction": {
+    "preferred": "direcao",
+    "aliases": [
+      "direcao",
+      "direction"
+    ]
+  },
+  "argument.distance": {
+    "preferred": "distancia",
+    "aliases": [
+      "distancia",
+      "distance"
+    ]
+  },
+  "argument.effect": {
+    "preferred": "efeito",
+    "aliases": [
+      "efeito",
+      "effect"
+    ]
+  },
+  "argument.from": {
+    "preferred": "de",
+    "aliases": [
+      "de",
+      "from"
+    ]
+  },
+  "argument.index": {
+    "preferred": "indice",
+    "aliases": [
+      "indice",
+      "index"
+    ]
+  },
+  "argument.key": {
+    "preferred": "tecla",
+    "aliases": [
+      "tecla",
+      "key"
+    ]
+  },
+  "argument.layer": {
+    "preferred": "camada",
+    "aliases": [
+      "camada",
+      "layer"
+    ]
+  },
+  "argument.left": {
+    "preferred": "esquerdo",
+    "aliases": [
+      "esquerdo",
+      "left"
+    ]
+  },
+  "argument.list": {
+    "preferred": "lista",
+    "aliases": [
+      "lista",
+      "list"
+    ]
+  },
+  "argument.message": {
+    "preferred": "mensagem",
+    "aliases": [
+      "mensagem",
+      "message"
+    ]
+  },
+  "argument.mode": {
+    "preferred": "modo",
+    "aliases": [
+      "modo",
+      "mode"
+    ]
+  },
+  "argument.object": {
+    "preferred": "objeto",
+    "aliases": [
+      "objeto",
+      "object"
+    ]
+  },
+  "argument.operation": {
+    "preferred": "operacao",
+    "aliases": [
+      "operacao",
+      "operation"
+    ]
+  },
+  "argument.part": {
+    "preferred": "parte",
+    "aliases": [
+      "parte",
+      "part"
+    ]
+  },
+  "argument.percent": {
+    "preferred": "percentual",
+    "aliases": [
+      "percentual",
+      "percent"
+    ]
+  },
+  "argument.property": {
+    "preferred": "propriedade",
+    "aliases": [
+      "propriedade",
+      "property"
+    ]
+  },
+  "argument.question": {
+    "preferred": "pergunta",
+    "aliases": [
+      "pergunta",
+      "question"
+    ]
+  },
+  "argument.right": {
+    "preferred": "direito",
+    "aliases": [
+      "direito",
+      "right"
+    ]
+  },
+  "argument.seconds": {
+    "preferred": "segundos",
+    "aliases": [
+      "segundos",
+      "seconds"
+    ]
+  },
+  "argument.sound": {
+    "preferred": "som",
+    "aliases": [
+      "som",
+      "sound"
+    ]
+  },
+  "argument.steps": {
+    "preferred": "passos",
+    "aliases": [
+      "passos",
+      "steps"
+    ]
+  },
+  "argument.style": {
+    "preferred": "estilo",
+    "aliases": [
+      "estilo",
+      "style"
+    ]
+  },
+  "argument.target": {
+    "preferred": "alvo",
+    "aliases": [
+      "alvo",
+      "target"
+    ]
+  },
+  "argument.target_color": {
+    "preferred": "cor_alvo",
+    "aliases": [
+      "cor_alvo",
+      "target_color"
+    ]
+  },
+  "argument.text": {
+    "preferred": "texto",
+    "aliases": [
+      "texto",
+      "text"
+    ]
+  },
+  "argument.to": {
+    "preferred": "ate",
+    "aliases": [
+      "ate",
+      "to"
+    ]
+  },
+  "argument.unit": {
+    "preferred": "unidade",
+    "aliases": [
+      "unidade",
+      "unit"
+    ]
+  },
+  "argument.value": {
+    "preferred": "valor",
+    "aliases": [
+      "valor",
+      "value"
+    ]
+  },
+  "argument.variable": {
+    "preferred": "variavel",
+    "aliases": [
+      "variavel",
+      "variable"
+    ]
+  },
+  "argument.x": {
+    "preferred": "x",
+    "aliases": [
+      "x"
+    ]
+  },
+  "argument.y": {
+    "preferred": "y",
+    "aliases": [
+      "y"
+    ]
+  },
+  "key.any": {
+    "preferred": "qualquer_tecla",
+    "aliases": [
+      "qualquer_tecla",
+      "any_key"
+    ]
+  },
+  "key.down": {
+    "preferred": "seta_baixo",
+    "aliases": [
+      "seta_baixo",
+      "down_arrow"
+    ]
+  },
+  "key.left": {
+    "preferred": "seta_esquerda",
+    "aliases": [
+      "seta_esquerda",
+      "left_arrow"
+    ]
+  },
+  "key.right": {
+    "preferred": "seta_direita",
+    "aliases": [
+      "seta_direita",
+      "right_arrow"
+    ]
+  },
+  "key.space": {
+    "preferred": "espaco",
+    "aliases": [
+      "espaco",
+      "espaço",
+      "space"
+    ]
+  },
+  "key.up": {
+    "preferred": "seta_cima",
+    "aliases": [
+      "seta_cima",
+      "up_arrow"
+    ]
+  }
+}

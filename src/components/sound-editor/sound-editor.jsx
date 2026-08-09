@@ -137,6 +137,17 @@ const messages = defineMessages({
         id: 'gui.soundEditor.mute',
         description: 'Title of the button to apply the mute effect',
         defaultMessage: 'Mute'
+    },
+    effects: {id: 'tw.soundEditor.effects', description: 'Sound effects menu', defaultMessage: 'Effects'},
+    speed: {id: 'tw.soundEditor.speed', description: 'Sound speed effects', defaultMessage: 'Speed'},
+    volume: {id: 'tw.soundEditor.volume', description: 'Sound volume effects', defaultMessage: 'Volume'},
+    fade: {id: 'tw.soundEditor.fade', description: 'Sound fade effects', defaultMessage: 'Fade'},
+    transform: {id: 'tw.soundEditor.transform', description: 'Sound transform effects', defaultMessage: 'Transform'},
+    selection: {id: 'tw.soundEditor.selection', description: 'Selected sound range', defaultMessage: 'Selection'},
+    noSelection: {
+        id: 'tw.soundEditor.noSelection',
+        description: 'No sound range selected',
+        defaultMessage: 'No selection'
     }
 });
 
@@ -251,6 +262,14 @@ const SoundEditor = props => (
         </div>
         <div className={styles.row}>
             <div className={styles.waveformContainer}>
+                <div
+                    aria-hidden="true"
+                    className={styles.timelineRuler}
+                >
+                    {[0, 0.25, 0.5, 0.75, 1].map(position => (
+                        <span key={position}>{formatTime(props.duration * position)}</span>
+                    ))}
+                </div>
                 <Waveform
                     data={props.chunkLevels}
                     height={160}
@@ -292,69 +311,78 @@ const SoundEditor = props => (
                     </button>
                 )}
             </div>
-            <div className={styles.effects}>
-                <IconButton
-                    className={styles.effectButton}
-                    img={fasterIcon}
-                    title={<FormattedMessage {...messages.faster} />}
-                    onClick={props.onFaster}
-                />
-                <IconButton
-                    className={styles.effectButton}
-                    img={slowerIcon}
-                    title={<FormattedMessage {...messages.slower} />}
-                    onClick={props.onSlower}
-                />
-                <IconButton
-                    disabled={props.tooLoud}
-                    className={classNames(styles.effectButton, styles.flipInRtl)}
-                    img={louderIcon}
-                    title={<FormattedMessage {...messages.louder} />}
-                    onClick={props.onLouder}
-                />
-                <IconButton
-                    className={classNames(styles.effectButton, styles.flipInRtl)}
-                    img={softerIcon}
-                    title={<FormattedMessage {...messages.softer} />}
-                    onClick={props.onSofter}
-                />
-                <IconButton
-                    className={classNames(styles.effectButton, styles.flipInRtl)}
-                    img={muteIcon}
-                    title={<FormattedMessage {...messages.mute} />}
-                    onClick={props.onMute}
-                />
-                <IconButton
-                    className={styles.effectButton}
-                    img={fadeInIcon}
-                    title={<FormattedMessage {...messages.fadeIn} />}
-                    onClick={props.onFadeIn}
-                />
-                <IconButton
-                    className={styles.effectButton}
-                    img={fadeOutIcon}
-                    title={<FormattedMessage {...messages.fadeOut} />}
-                    onClick={props.onFadeOut}
-                />
-                <IconButton
-                    className={styles.effectButton}
-                    img={reverseIcon}
-                    title={<FormattedMessage {...messages.reverse} />}
-                    onClick={props.onReverse}
-                />
-                <IconButton
-                    className={styles.effectButton}
-                    img={robotIcon}
-                    title={<FormattedMessage {...messages.robot} />}
-                    onClick={props.onRobot}
-                />
-                <IconButton
-                    className={styles.effectButton}
-                    img={echoIcon}
-                    title={<FormattedMessage {...messages.echo} />}
-                    onClick={props.onEcho}
-                />
-            </div>
+            <details className={styles.effects}>
+                <summary>{props.intl.formatMessage(messages.effects)}</summary>
+                <section><h3>{props.intl.formatMessage(messages.speed)}</h3>
+                    <IconButton
+                        className={styles.effectButton}
+                        img={fasterIcon}
+                        title={<FormattedMessage {...messages.faster} />}
+                        onClick={props.onFaster}
+                    />
+                    <IconButton
+                        className={styles.effectButton}
+                        img={slowerIcon}
+                        title={<FormattedMessage {...messages.slower} />}
+                        onClick={props.onSlower}
+                    />
+                </section>
+                <section><h3>{props.intl.formatMessage(messages.volume)}</h3>
+                    <IconButton
+                        disabled={props.tooLoud}
+                        className={classNames(styles.effectButton, styles.flipInRtl)}
+                        img={louderIcon}
+                        title={<FormattedMessage {...messages.louder} />}
+                        onClick={props.onLouder}
+                    />
+                    <IconButton
+                        className={classNames(styles.effectButton, styles.flipInRtl)}
+                        img={softerIcon}
+                        title={<FormattedMessage {...messages.softer} />}
+                        onClick={props.onSofter}
+                    />
+                    <IconButton
+                        className={classNames(styles.effectButton, styles.flipInRtl)}
+                        img={muteIcon}
+                        title={<FormattedMessage {...messages.mute} />}
+                        onClick={props.onMute}
+                    />
+                </section>
+                <section><h3>{props.intl.formatMessage(messages.fade)}</h3>
+                    <IconButton
+                        className={styles.effectButton}
+                        img={fadeInIcon}
+                        title={<FormattedMessage {...messages.fadeIn} />}
+                        onClick={props.onFadeIn}
+                    />
+                    <IconButton
+                        className={styles.effectButton}
+                        img={fadeOutIcon}
+                        title={<FormattedMessage {...messages.fadeOut} />}
+                        onClick={props.onFadeOut}
+                    />
+                </section>
+                <section><h3>{props.intl.formatMessage(messages.transform)}</h3>
+                    <IconButton
+                        className={styles.effectButton}
+                        img={reverseIcon}
+                        title={<FormattedMessage {...messages.reverse} />}
+                        onClick={props.onReverse}
+                    />
+                    <IconButton
+                        className={styles.effectButton}
+                        img={robotIcon}
+                        title={<FormattedMessage {...messages.robot} />}
+                        onClick={props.onRobot}
+                    />
+                    <IconButton
+                        className={styles.effectButton}
+                        img={echoIcon}
+                        title={<FormattedMessage {...messages.echo} />}
+                        onClick={props.onEcho}
+                    />
+                </section>
+            </details>
         </div>
         <div className={styles.infoRow}>
             <div className={styles.duration}>
@@ -374,7 +402,15 @@ const SoundEditor = props => (
                         id="tw.mono"
                     />
                 )}
-                {` (${formatSoundSize(props.size)})`}
+                {` · ${Math.round(props.sampleRate / 100) / 10} kHz · ${formatSoundSize(props.size)}`}
+            </div>
+            <div className={styles.selectionInfo}>
+                <strong>{props.intl.formatMessage(messages.selection)}</strong>{' '}
+                {props.trimStart === null ? props.intl.formatMessage(messages.noSelection) :
+                    `${formatTime(props.trimStart * props.duration)} — ${
+                        formatTime(props.trimEnd * props.duration)
+                    } · ${formatTime((props.trimEnd - props.trimStart) * props.duration)
+                    }`}
             </div>
         </div>
         {/* TODO: don't know whether this should be > or >=. Using >= for now to be safe */}
@@ -403,6 +439,7 @@ SoundEditor.propTypes = {
     isStereo: PropTypes.bool.isRequired,
     duration: PropTypes.number.isRequired,
     size: PropTypes.number.isRequired,
+    sampleRate: PropTypes.number.isRequired,
     canPaste: PropTypes.bool.isRequired,
     canRedo: PropTypes.bool.isRequired,
     canUndo: PropTypes.bool.isRequired,

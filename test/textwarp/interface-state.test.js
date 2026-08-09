@@ -68,3 +68,7 @@ test('persisted interface state accepts only known views and panels', () => {
         viewMode: 'code'
     });
 });
+
+test('commands is a persistent sidebar panel', () => {
+    assert.equal(normalizeUiState({sidebarPanel: 'commands'}).sidebarPanel, 'commands');
+});

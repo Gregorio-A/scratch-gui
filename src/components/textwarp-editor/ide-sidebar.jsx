@@ -26,6 +26,23 @@ const formatTime = (timestamp, locale) => {
         date.toLocaleTimeString(locale || [], {hour: '2-digit', minute: '2-digit'});
 };
 
+const COMMAND_CATEGORIES = [
+    'motion', 'looks', 'sound', 'events', 'control', 'sensing', 'operators', 'variables', 'functions', 'extensions'
+];
+const PANELS = [
+    ['explorer', 'files'],
+    ['commands', 'commands'],
+    ['search', 'search'],
+    ['actors', 'actor'],
+    ['extensions', 'extensions'],
+    ['symbols', 'files'],
+    ['history', 'reset']
+];
+const normalizeSearch = value => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
 const PagedList = ({children, items, label, moreLabel}) => {
     const [limit, setLimit] = React.useState(DEFAULT_LIST_LIMIT);
     React.useEffect(() => setLimit(DEFAULT_LIST_LIMIT), [items.length]);
@@ -58,16 +75,89 @@ PagedList.propTypes = {
     moreLabel: PropTypes.string.isRequired
 };
 
+const CommandCard = ({command, onInsert, t}) => (
+    <article
+        className={styles.commandCard}
+        style={{borderLeftColor: command.color}}
+    >
+        <button
+            aria-label={t('insertCommand', {name: command.label})}
+            className={styles.commandInsert}
+            title={command.documentation || command.label}
+            type="button"
+            onClick={() => onInsert(command)}
+        >
+            <code>{command.label}</code>
+            <small>{command.documentation}</small>
+        </button>
+        <details className={styles.commandContext}>
+            <summary>{t('commandContext')}</summary>
+            <div className={styles.commandPreview}>
+                <span>{t('commandExample')}</span>
+                <pre>{command.preview || command.snippet}</pre>
+            </div>
+            {command.arguments && command.arguments.length ? command.arguments.map((argument, index) => (
+                <div
+                    className={styles.commandArgument}
+                    key={`${argument.name}:${index}`}
+                >
+                    <div>
+                        <strong>{argument.name}</strong>
+                        <span>{argument.type}</span>
+                    </div>
+                    {argument.options && argument.options.length > 0 && (
+                        <div className={styles.argumentOptions}>
+                            <span>{t('commandOptions')}</span>
+                            <div>
+                                {argument.options.map(option => (
+                                    <code key={`${String(option.value)}:${option.label}`}>{option.label}</code>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )) : <p>{t('commandNoArguments')}</p>}
+        </details>
+    </article>
+);
+
+CommandCard.propTypes = {
+    command: PropTypes.shape({
+        arguments: PropTypes.arrayOf(PropTypes.shape({})),
+        color: PropTypes.string,
+        documentation: PropTypes.string,
+        label: PropTypes.string.isRequired,
+        preview: PropTypes.string,
+        snippet: PropTypes.string.isRequired
+    }).isRequired,
+    onInsert: PropTypes.func.isRequired,
+    t: PropTypes.func.isRequired
+};
+
 const IdeSidebar = props => {
     const t = createTranslator(props.locale);
+    const [commandQuery, setCommandQuery] = React.useState('');
+    const [selectedCommandCategory, setSelectedCommandCategory] = React.useState('motion');
     const panelLabels = {
         actors: t('actors'),
+        commands: t('commands'),
         explorer: t('files'),
         extensions: t('extensions'),
         history: t('history'),
         search: t('search'),
         symbols: t('outline')
     };
+    const availableCommandCategories = COMMAND_CATEGORIES.filter(category =>
+        props.commands.some(command => command.category === category)
+    );
+    const activeCommandCategory = availableCommandCategories.includes(selectedCommandCategory) ?
+        selectedCommandCategory : availableCommandCategories[0];
+    const normalizedCommandQuery = normalizeSearch(commandQuery);
+    const visibleCommands = props.commands.filter(command => (
+        normalizedCommandQuery ? normalizeSearch(
+            `${command.label} ${command.searchText || ''} ${command.documentation || ''}`
+        ).includes(normalizedCommandQuery) : command.category === activeCommandCategory
+    ));
     const resources = props.workspace.resources.filter(resource => !['actor', 'stage'].includes(resource.kind));
     const actors = props.workspace.modules.filter(module => !module.isStage);
     const stages = props.workspace.modules.filter(module => module.isStage);
@@ -98,26 +188,22 @@ const IdeSidebar = props => {
             role={props.overlay ? 'dialog' : 'complementary'}
         >
             <div className={styles.sidebarHeader}>
-                <strong>{panelLabels[props.activePanel] || t('files')}</strong>
+                <select
+                    aria-label={t('editorNavigation')}
+                    title={panelLabels[props.activePanel] || t('files')}
+                    value={props.activePanel}
+                    onChange={event => props.onPanelChange(event.target.value)}
+                >
+                    {['explorer', 'commands', 'search', 'actors', 'extensions', 'symbols', 'history'].map(panel => (
+                        <option
+                            key={panel}
+                            value={panel}
+                        >
+                            {panelLabels[panel]}
+                        </option>
+                    ))}
+                </select>
                 <span>{props.activeFileName}</span>
-                <button
-                    aria-label={t('outline')}
-                    className={props.activePanel === 'symbols' ? styles.activeHeaderButton : ''}
-                    title={t('outline')}
-                    type="button"
-                    onClick={() => props.onPanelChange('symbols')}
-                >
-                    <InterfaceIcon name="files" />
-                </button>
-                <button
-                    aria-label={t('history')}
-                    className={props.activePanel === 'history' ? styles.activeHeaderButton : ''}
-                    title={t('history')}
-                    type="button"
-                    onClick={() => props.onPanelChange('history')}
-                >
-                    <InterfaceIcon name="reset" />
-                </button>
                 <button
                     aria-label={t('closeSidebar')}
                     type="button"
@@ -126,6 +212,24 @@ const IdeSidebar = props => {
                     <InterfaceIcon name="close" />
                 </button>
             </div>
+            <nav
+                aria-label={t('panelNavigation')}
+                className={styles.panelNavigation}
+            >
+                {PANELS.map(([panel, icon]) => (
+                    <button
+                        aria-current={props.activePanel === panel ? 'page' : null}
+                        aria-label={panelLabels[panel]}
+                        className={props.activePanel === panel ? styles.activePanel : ''}
+                        key={panel}
+                        title={panelLabels[panel]}
+                        type="button"
+                        onClick={() => props.onPanelChange(panel)}
+                    >
+                        <InterfaceIcon name={icon} />
+                    </button>
+                ))}
+            </nav>
             <div
                 aria-label={panelLabels[props.activePanel]}
                 className={styles.content}
@@ -252,6 +356,69 @@ const IdeSidebar = props => {
                                     <InterfaceIcon name="arrow-right" />
                                 </button>
                             ))}
+                        </div>
+                    </React.Fragment>
+                )}
+                {props.activePanel === 'commands' && (
+                    <React.Fragment>
+                        <label className={styles.commandSearch}>
+                            <span>{t('searchCommands')}</span>
+                            <input
+                                autoFocus
+                                placeholder={t('searchCommandsPlaceholder')}
+                                type="search"
+                                value={commandQuery}
+                                onChange={event => setCommandQuery(event.target.value)}
+                            />
+                        </label>
+                        <div
+                            aria-label={t('commandCategories')}
+                            className={styles.commandCategories}
+                            role="tablist"
+                        >
+                            {COMMAND_CATEGORIES.map(category => {
+                                const count = props.commands.filter(command => command.category === category).length;
+                                const sample = props.commands.find(command => command.category === category);
+                                const categoryLabel = t(
+                                    `commandCategory${category[0].toUpperCase()}${category.slice(1)}`
+                                );
+                                return (
+                                    <button
+                                        aria-selected={!normalizedCommandQuery && category === activeCommandCategory}
+                                        className={category === activeCommandCategory ?
+                                            styles.activeCommandCategory : ''}
+                                        disabled={!count}
+                                        key={category}
+                                        role="tab"
+                                        title={`${categoryLabel} (${count})`}
+                                        type="button"
+                                        onClick={() => {
+                                            setCommandQuery('');
+                                            setSelectedCommandCategory(category);
+                                        }}
+                                    >
+                                        <span style={{backgroundColor: sample && sample.color}} />
+                                        {categoryLabel}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className={styles.commandList}>
+                            <PagedList
+                                items={visibleCommands}
+                                label={t('showingItems')}
+                                moreLabel={t('showMoreItems')}
+                            >
+                                {command => (
+                                    <CommandCard
+                                        command={command}
+                                        key={`${command.id}:${command.snippet}`}
+                                        t={t}
+                                        onInsert={props.onInsertCommand}
+                                    />
+                                )}
+                            </PagedList>
+                            {!visibleCommands.length && <p>{t('noCommands')}</p>}
                         </div>
                     </React.Fragment>
                 )}
@@ -425,6 +592,15 @@ IdeSidebar.propTypes = {
     activeFileName: PropTypes.string,
     activePanel: PropTypes.string.isRequired,
     activeTargetId: PropTypes.string,
+    commands: PropTypes.arrayOf(PropTypes.shape({
+        arguments: PropTypes.arrayOf(PropTypes.shape({})),
+        category: PropTypes.string.isRequired,
+        color: PropTypes.string,
+        id: PropTypes.string.isRequired,
+        label: PropTypes.string.isRequired,
+        preview: PropTypes.string,
+        snippet: PropTypes.string.isRequired
+    })).isRequired,
     extensionSummary: PropTypes.shape({
         blockCount: PropTypes.number.isRequired,
         extensionCount: PropTypes.number.isRequired,
@@ -435,6 +611,7 @@ IdeSidebar.propTypes = {
     locale: PropTypes.string,
     onClose: PropTypes.func.isRequired,
     onInsertResource: PropTypes.func.isRequired,
+    onInsertCommand: PropTypes.func.isRequired,
     onOpenLocation: PropTypes.func.isRequired,
     onOpenExtensionLibrary: PropTypes.func,
     onOpenResource: PropTypes.func.isRequired,

@@ -3,6 +3,8 @@
 @import "../../css/filters.css";
 
 .sprite-info {
+    container-name: sprite-inspector;
+    container-type: inline-size;
     padding: 0.65rem;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     background-color: $ui-white;
@@ -51,9 +53,16 @@
 
 .row {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-end;
     justify-content: flex-start;
     gap: 0.7rem;
+}
+
+.row-secondary > .group,
+.row-secondary > .column {
+    min-width: 0;
+    flex: 1 1 5.25rem;
 }
 
 .row-primary {
@@ -185,12 +194,20 @@
     padding-right: 1.2rem;
 }
 
-@media (max-width: 520px) {
-    .sprite-info {
-        overflow-x: auto;
+@container sprite-inspector (max-width: 330px) {
+    .position-grid {
+        grid-template-columns: 1fr;
     }
 
-    .row {
-        min-width: 22rem;
+    .row-secondary > .group,
+    .row-secondary > .column {
+        flex-basis: calc(50% - 0.35rem);
+    }
+}
+
+@container sprite-inspector (max-width: 220px) {
+    .row-secondary > .group,
+    .row-secondary > .column {
+        flex-basis: 100%;
     }
 }

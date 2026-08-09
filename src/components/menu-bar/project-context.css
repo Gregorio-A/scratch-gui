@@ -1,0 +1,111 @@
+@import "../../css/colors.css";
+@import "../../css/units.css";
+@import "../../css/z-index.css";
+
+.root {
+    min-width: 8rem;
+    max-width: 30rem;
+    position: relative;
+    display: flex;
+    flex: 1;
+    align-items: stretch;
+}
+
+.title {
+    min-width: 3rem;
+    flex: 1;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.toggle {
+    min-width: 6.8rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0 0.45rem;
+    color: $menu-bar-foreground;
+    background: rgba(0, 0, 0, 0.14);
+    border: 1px dashed $ui-black-transparent;
+    border-left: 0;
+    border-radius: 0 $form-radius $form-radius 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.58rem;
+    white-space: nowrap;
+}
+
+.toggle:hover,
+.toggle:focus-visible,
+.toggle[aria-expanded="true"] {
+    background: $ui-black-transparent;
+    outline: 1px solid rgba(255, 255, 255, 0.55);
+    outline-offset: -2px;
+}
+
+.panel {
+    width: min(24rem, 90vw);
+    position: absolute;
+    z-index: $z-index-menu-bar;
+    top: calc(100% + 0.3rem);
+    left: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    padding: 0.8rem;
+    color: $text-primary;
+    background: $ui-white;
+    border: 1px solid $ui-black-transparent;
+    border-radius: $form-radius;
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.28);
+}
+
+.panel label {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.65rem;
+}
+
+.panel label > span {
+    color: $text-primary-transparent;
+    font-weight: 700;
+}
+
+.panel select {
+    width: 100%;
+    min-height: 2rem;
+    padding: 0 0.4rem;
+    color: $text-primary;
+    background: $input-background;
+    border: 1px solid $ui-black-transparent;
+    border-radius: $form-radius;
+    font: inherit;
+}
+
+.panel p {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: $text-primary-transparent;
+    font-size: 0.6rem;
+    font-weight: 400;
+    line-height: 1.4;
+}
+
+@media (max-width: 1099px) {
+    .root { min-width: 8rem; }
+    .toggle { min-width: 4.2rem; }
+    .toggle > span:nth-child(2),
+    .toggle > span:nth-child(3) { display: none; }
+}
+
+@media (max-width: 640px) {
+    .panel {
+        width: min(20rem, calc(100vw - 1rem));
+        grid-template-columns: 1fr;
+    }
+
+    .panel p { grid-column: 1; }
+}

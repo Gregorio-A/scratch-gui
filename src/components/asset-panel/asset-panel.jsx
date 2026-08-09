@@ -1,11 +1,15 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 
 import Box from '../box/box.jsx';
 import Selector from './selector.jsx';
 import styles from './asset-panel.css';
 
 const AssetPanel = props => (
-    <Box className={styles.wrapper}>
+    <Box
+        aria-label={props.title}
+        className={styles.wrapper}
+    >
         <Selector
             className={styles.selector}
             {...props}
@@ -17,7 +21,8 @@ const AssetPanel = props => (
 );
 
 AssetPanel.propTypes = {
-    ...Selector.propTypes
+    ...Selector.propTypes,
+    title: PropTypes.string.isRequired
 };
 
 export default AssetPanel;

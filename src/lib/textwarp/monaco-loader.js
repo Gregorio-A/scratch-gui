@@ -1,6 +1,7 @@
 'use strict';
 
-const {blockRegistry, eventRegistry, operatorRegistry} = require('./block-registry');
+const {operatorRegistry} = require('./block-registry');
+const {aliasesFor, canonicalEntries, CODE_LANGUAGES} = require('./language-registry');
 const {
     formatText,
     getCompletions,
@@ -120,6 +121,18 @@ const configureLanguage = monaco => {
         return disposable;
     };
 
+    const localizedTokens = predicate => Array.from(new Set(
+        Object.keys(canonicalEntries)
+            .filter(predicate)
+            .flatMap(semanticId => CODE_LANGUAGES.flatMap(language => aliasesFor(language, semanticId)))
+    ));
+    const keywords = localizedTokens(semanticId => /^(?:syntax|control|operator|literal|type|event)\./.test(
+        semanticId
+    ));
+    const commands = localizedTokens(semanticId => /^function\./.test(semanticId) &&
+        semanticId.split('.').length === 2
+    ).concat(Object.keys(operatorRegistry));
+
     register(monaco.languages.register({id: 'textwarp'}));
     register(monaco.languages.setLanguageConfiguration('textwarp', {
         comments: {lineComment: '#'},
@@ -138,28 +151,24 @@ const configureLanguage = monaco => {
         ],
         indentationRules: {
             increaseIndentPattern: /:\s*(?:#.*)?$/,
-            decreaseIndentPattern: /^\s*(?:else|branch\s+\d+)\s*:/
+            decreaseIndentPattern: /^\s*(?:(?:else|sen[aã]o)|(?:branch|ramo)\s+\d+)\s*:/i
         },
         onEnterRules: [{
             beforeText: /:\s*(?:#.*)?$/,
             action: {indentAction: monaco.languages.IndentAction.Indent}
         }, {
-            beforeText: /^\s*(?:else|branch\s+\d+)\s*:\s*(?:#.*)?$/,
+            beforeText: /^\s*(?:(?:else|sen[aã]o)|(?:branch|ramo)\s+\d+)\s*:\s*(?:#.*)?$/i,
             action: {indentAction: monaco.languages.IndentAction.Indent}
         }]
     }));
     register(monaco.languages.setMonarchTokensProvider('textwarp', {
-        keywords: [
-            'actor', 'stage', 'on', 'global', 'variable', 'list', 'procedure',
-            'if', 'else', 'repeat', 'repeat_until', 'while', 'forever',
-            'return', 'warp', 'branch', 'pass', 'stack', 'reporter', 'any', 'number', 'string', 'boolean',
-            'and', 'or', 'not', 'true', 'false'
-        ].concat(Object.keys(eventRegistry)),
-        commands: Object.keys(blockRegistry).concat(Object.keys(operatorRegistry)),
+        ignoreCase: true,
+        keywords,
+        commands,
         tokenizer: {
             root: [
                 [/#.*$/, 'comment'],
-                [/[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)*/, {
+                [/[A-Za-zÀ-ÖØ-öø-ÿ_][A-Za-zÀ-ÖØ-öø-ÿ0-9_]*(?:\.[A-Za-zÀ-ÖØ-öø-ÿ_][A-Za-zÀ-ÖØ-öø-ÿ0-9_]*)*/, {
                     cases: {
                         '@keywords': 'keyword',
                         '@commands': 'type.identifier',
@@ -359,7 +368,7 @@ const configureLanguage = monaco => {
     register(monaco.languages.registerDocumentFormattingEditProvider('textwarp', {
         provideDocumentFormattingEdits: (model, options, token) => {
             const snapshot = providerSnapshot(model);
-            const formatted = formatText(model.getValue());
+            const formatted = formatText(model.getValue(), snapshot.context);
             if (cancelledOrStale(model, snapshot, token) || formatted === model.getValue()) return [];
             return [{
                 range: model.getFullModelRange(),

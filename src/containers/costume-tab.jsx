@@ -37,6 +37,16 @@ import searchIcon from '../components/action-menu/icon--search.svg';
 import {getCostumeLibrary, getBackdropLibrary} from '../lib/libraries/tw-async-libraries';
 
 let messages = defineMessages({
+    costumesTitle: {
+        defaultMessage: 'Costumes',
+        description: 'Heading for the costume asset sidebar',
+        id: 'tw.costumeTab.costumesTitle'
+    },
+    backdropsTitle: {
+        defaultMessage: 'Backdrops',
+        description: 'Heading for the backdrop asset sidebar',
+        id: 'tw.costumeTab.backdropsTitle'
+    },
     addLibraryBackdropMsg: {
         defaultMessage: 'Choose a Backdrop',
         description: 'Button to add a backdrop in the editor tab',
@@ -275,6 +285,7 @@ class CostumeTab extends React.Component {
         })) : [];
         return (
             <AssetPanel
+                title={intl.formatMessage(isStage ? messages.backdropsTitle : messages.costumesTitle)}
                 buttons={[
                     {
                         title: intl.formatMessage(addLibraryMessage),

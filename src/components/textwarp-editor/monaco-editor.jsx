@@ -4,6 +4,7 @@ import React from 'react';
 import {createTranslator} from '../../lib/textwarp/i18n';
 import {
     clearDocumentIndexes,
+    getContextualValueControl,
     getDiagnosticSuggestion,
     getResourceAt
 } from '../../lib/textwarp/language-service';
@@ -17,11 +18,15 @@ import {
 } from '../../lib/textwarp/monaco-loader';
 import {parseKeybinding} from '../../lib/textwarp/shortcut-service';
 
+import styles from './monaco-editor.css';
+
 class MonacoEditor extends React.Component {
     constructor (props) {
         super(props);
-        this.state = {loadError: null};
+        this.state = {contextControl: null, loadError: null, loaded: false};
+        this.shell = null;
         this.container = null;
+        this.contextPanel = null;
         this.editor = null;
         this.monaco = null;
         this.models = new Map();
@@ -32,6 +37,7 @@ class MonacoEditor extends React.Component {
         this.cursorSubscription = null;
         this.focusSubscription = null;
         this.mouseSubscription = null;
+        this.scrollSubscription = null;
         this.modelChangeSubscription = null;
         this.editorOpenerDisposable = null;
         this.resizeObserver = null;
@@ -48,18 +54,29 @@ class MonacoEditor extends React.Component {
         this.setContainer = element => {
             this.container = element;
         };
+        this.setShell = element => {
+            this.shell = element;
+        };
+        this.setContextPanel = element => {
+            this.contextPanel = element;
+        };
         this.handleRetry = () => this.initializeMonaco(true);
         this.handleFallbackChange = event => this.props.onChange(event.target.value);
+        this.handleDocumentPointerDown = event => {
+            if (this.contextPanel && this.contextPanel.contains(event.target)) return;
+            if (this.state.contextControl) this.setState({contextControl: null});
+        };
     }
     componentDidMount () {
         this.mounted = true;
+        document.addEventListener('pointerdown', this.handleDocumentPointerDown, true);
         this.initializeMonaco(false);
     }
     // Initialization belongs next to mount because it is also the retry entrypoint.
     // eslint-disable-next-line react/sort-comp
     initializeMonaco (retry) {
         const initializationId = ++this.initializationId;
-        this.setState({loadError: null});
+        this.setState({contextControl: null, loadError: null, loaded: false});
         if (retry && this.props.onLoadError) this.props.onLoadError(null);
         const loader = retry ? retryMonaco() : loadMonaco();
         loader.then(monaco => {
@@ -96,6 +113,7 @@ class MonacoEditor extends React.Component {
             this.syncDocumentModels();
             this.changeSubscription = this.editor.onDidChangeModelContent(() => {
                 if (this.ignoreChanges) return;
+                if (this.state.contextControl) this.setState({contextControl: null});
                 const activeModel = this.editor.getModel();
                 const key = activeModel && this.modelKeysByUri.get(String(activeModel.uri));
                 const state = key && this.modelStates.get(key);
@@ -135,6 +153,7 @@ class MonacoEditor extends React.Component {
                     event.target.position
                 ) {
                     this.toggleBreakpoint(event.target.position.lineNumber);
+                    if (this.state.contextControl) this.setState({contextControl: null});
                     return;
                 }
                 const browserEvent = event.event && event.event.browserEvent;
@@ -150,19 +169,30 @@ class MonacoEditor extends React.Component {
                         this.getLanguageContext(this.props.modelKey)
                     );
                     if (resource) this.props.onNavigateResource(resource);
+                    if (this.state.contextControl) this.setState({contextControl: null});
+                    return;
                 }
+                if (!event.target.position || !browserEvent || browserEvent.button !== 0) {
+                    if (this.state.contextControl) this.setState({contextControl: null});
+                    return;
+                }
+                this.openContextControl(event.target.position, browserEvent);
+            });
+            this.scrollSubscription = this.editor.onDidScrollChange(() => {
+                if (this.state.contextControl) this.setState({contextControl: null});
             });
             this.registerActions();
             this.updateMarkers();
             this.updateDecorations();
             this.updateAdaptiveOptions();
+            this.setState({loaded: true});
             if (this.props.onLoadError) this.props.onLoadError(null);
             if (this.props.onReady) this.props.onReady(this);
         }).catch(error => {
             console.error(error);
             if (this.mounted && initializationId === this.initializationId) {
                 const message = error && error.message ? error.message : String(error);
-                this.setState({loadError: message});
+                this.setState({contextControl: null, loadError: message, loaded: false});
                 if (this.props.onLoadError) this.props.onLoadError(message);
             }
         });
@@ -245,10 +275,12 @@ class MonacoEditor extends React.Component {
     componentWillUnmount () {
         this.mounted = false;
         this.initializationId++;
+        document.removeEventListener('pointerdown', this.handleDocumentPointerDown, true);
         if (this.changeSubscription) this.changeSubscription.dispose();
         if (this.cursorSubscription) this.cursorSubscription.dispose();
         if (this.focusSubscription) this.focusSubscription.dispose();
         if (this.mouseSubscription) this.mouseSubscription.dispose();
+        if (this.scrollSubscription) this.scrollSubscription.dispose();
         if (this.modelChangeSubscription) this.modelChangeSubscription.dispose();
         if (this.editorOpenerDisposable) this.editorOpenerDisposable.dispose();
         if (this.resizeObserver) this.resizeObserver.disconnect();
@@ -288,6 +320,173 @@ class MonacoEditor extends React.Component {
             targetId: modelKey
         });
     }
+    openContextControl (position, browserEvent) {
+        if (!this.editor || !this.shell) return;
+        const control = getContextualValueControl(
+            this.editor.getValue(),
+            position.lineNumber,
+            position.column,
+            this.getLanguageContext(this.props.modelKey)
+        );
+        if (!control) {
+            if (this.state.contextControl) this.setState({contextControl: null});
+            return;
+        }
+        const bounds = this.shell.getBoundingClientRect();
+        const panelWidth = Math.min(280, Math.max(210, bounds.width - 16));
+        const left = Math.max(8, Math.min(bounds.width - panelWidth - 8, browserEvent.clientX - bounds.left));
+        const top = Math.max(8, Math.min(bounds.height - 130, browserEvent.clientY - bounds.top + 18));
+        this.setState({
+            contextControl: Object.assign({}, control, {
+                left,
+                numberDraft: control.kind === 'number' ? String(control.value) : null,
+                panelWidth,
+                top
+            })
+        });
+    }
+    applyContextValue (value, replacement) {
+        const control = this.state.contextControl;
+        if (!control || !this.editor) return;
+        const text = typeof replacement === 'function' ? replacement(value) : replacement;
+        if (typeof text !== 'string') return;
+        this.editor.executeEdits('textwarp-context-control', [{
+            range: control.range,
+            text,
+            forceMoveMarkers: true
+        }]);
+        this.setState({contextControl: null}, () => this.editor.focus());
+    }
+    /* eslint-disable react/jsx-no-bind */
+    renderContextControl () {
+        const control = this.state.contextControl;
+        if (!control) return null;
+        const t = createTranslator(this.props.locale);
+        const title = control.argumentName ?
+            `${t('contextualValue')}: ${control.argumentName}` : t('contextualValue');
+        return (
+            <div
+                aria-label={title}
+                className={styles.contextControl}
+                ref={this.setContextPanel}
+                role="dialog"
+                style={{left: control.left, top: control.top, width: control.panelWidth}}
+            >
+                <div className={styles.contextHeader}>
+                    <div>
+                        <strong>{title}</strong>
+                        {control.callName && <small>{control.callName}</small>}
+                    </div>
+                    <button
+                        aria-label={t('close')}
+                        type="button"
+                        onClick={() => this.setState({contextControl: null})}
+                    >
+                        {'×'}
+                    </button>
+                </div>
+                {control.kind === 'boolean' && (
+                    <div className={styles.booleanControl}>
+                        {control.values.map(item => (
+                            <button
+                                aria-pressed={control.value === item.value}
+                                key={String(item.value)}
+                                type="button"
+                                onClick={() => this.applyContextValue(item.value, item.replacement)}
+                            >
+                                {item.value ? t('trueValue') : t('falseValue')}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {control.kind === 'color' && (
+                    <label className={styles.colorControl}>
+                        <span>{t('chooseColor')}</span>
+                        <input
+                            aria-label={t('chooseColor')}
+                            type="color"
+                            value={control.value}
+                            onChange={event => this.applyContextValue(event.target.value, control.replacement)}
+                        />
+                        <code>{control.value}</code>
+                    </label>
+                )}
+                {control.kind === 'select' && (
+                    <label className={styles.selectControl}>
+                        <span>{t('chooseValue')}</span>
+                        <select
+                            autoFocus
+                            defaultValue={String(control.value)}
+                            onChange={event => {
+                                const option = control.options.find(item =>
+                                    String(item.value) === event.target.value
+                                );
+                                if (option) this.applyContextValue(option.value, option.replacement);
+                            }}
+                        >
+                            {!control.options.some(option => String(option.value) === String(control.value)) && (
+                                <option
+                                    disabled
+                                    value={String(control.value)}
+                                >
+                                    {String(control.value)}
+                                </option>
+                            )}
+                            {control.options.map((option, index) => (
+                                <option
+                                    key={`${String(option.value)}:${index}`}
+                                    value={String(option.value)}
+                                >
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                )}
+                {control.kind === 'number' && (
+                    <form
+                        className={styles.numberControl}
+                        onSubmit={event => {
+                            event.preventDefault();
+                            const value = Number(control.numberDraft);
+                            if (Number.isFinite(value)) this.applyContextValue(value, control.replacement);
+                        }}
+                    >
+                        <button
+                            aria-label={t('decreaseValue')}
+                            type="button"
+                            onClick={() => this.applyContextValue(control.value - control.step, control.replacement)}
+                        >
+                            {'−'}
+                        </button>
+                        <input
+                            aria-label={t('numberValue')}
+                            step={control.step}
+                            type="number"
+                            value={control.numberDraft}
+                            onChange={event => this.setState({
+                                contextControl: Object.assign({}, control, {numberDraft: event.target.value})
+                            })}
+                        />
+                        <button
+                            aria-label={t('increaseValue')}
+                            type="button"
+                            onClick={() => this.applyContextValue(control.value + control.step, control.replacement)}
+                        >
+                            {'+'}
+                        </button>
+                        <button
+                            className={styles.applyValue}
+                            type="submit"
+                        >
+                            {t('apply')}
+                        </button>
+                    </form>
+                )}
+            </div>
+        );
+    }
+    /* eslint-enable react/jsx-no-bind */
     getModel (key, value) {
         if (this.models.has(key)) {
             const existing = this.models.get(key);
@@ -516,6 +715,11 @@ class MonacoEditor extends React.Component {
         this.editor.executeEdits('textwarp-resource', [{range: selection, text, forceMoveMarkers: true}]);
         this.editor.focus();
     }
+    insertSnippet (snippet) {
+        if (!this.editor) return;
+        this.editor.focus();
+        this.editor.trigger('textwarp-commands', 'editor.action.insertSnippet', {snippet});
+    }
     focus () {
         if (this.editor) this.editor.focus();
     }
@@ -703,10 +907,16 @@ class MonacoEditor extends React.Component {
         }
         return (
             <div
-                ref={this.setContainer}
-                style={{width: '100%', height: '100%'}}
+                className={styles.root}
+                ref={this.setShell}
             >
-                {t('editorLoading')}
+                <div
+                    aria-busy={!this.state.loaded}
+                    className={styles.host}
+                    ref={this.setContainer}
+                />
+                {!this.state.loaded && <div className={styles.loading}>{t('editorLoading')}</div>}
+                {this.renderContextControl()}
             </div>
         );
     }

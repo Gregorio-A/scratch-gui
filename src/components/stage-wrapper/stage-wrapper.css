@@ -3,6 +3,8 @@
 @import "../../css/z-index.css";
 
 .stage-wrapper {
+    width: 100%;
+    min-width: 0;
     position: relative;
 }
 
@@ -11,12 +13,11 @@
 }
 
 .stage-canvas-wrapper {
+    min-width: 0;
+    display: flex;
+    justify-content: center;
     /* Hides negative space between edge of rounded corners + container, when selected */
     user-select: none;
-}
-
-.offset-controls .stage-canvas-wrapper {
-    padding-top: 44px;
 }
 
 .stage-wrapper.full-screen {

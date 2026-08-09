@@ -2,49 +2,53 @@
 @import "../../css/units.css";
 
 .wrapper {
-    width: 150px;
+    width: clamp(11.25rem, 16vw, 18rem);
+    min-width: 11.25rem;
+    max-width: 26rem;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
     position: relative;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     background: $ui-tertiary;
+    resize: horizontal;
+    overflow: hidden;
 }
 
-.new-buttons {
-    position: absolute;
-    bottom: 0;
+.asset-header {
+    min-height: 2.4rem;
     width: 100%;
-
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: space-around;
-    padding: 0.75rem 0;
+    justify-content: space-between;
+    padding: 0.25rem 0.5rem;
     color: $looks-secondary;
-    text-align: center;
-    background: none;
+    background: $ui-secondary;
+    border-bottom: 1px solid $ui-black-transparent;
 }
 
-$fade-out-distance: 100px;
-
-.new-buttons:before {
-    content: "";
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right:0;
-    width: 100%;
-    pointer-events: none;
+.asset-header h2 {
+    margin: 0;
+    overflow: hidden;
+    color: $text-primary;
+    font-size: 0.72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.new-buttons > button + button {
-    margin-top: 0.75rem;
+.asset-header > button {
+    transform: scale(0.78);
+    transform-origin: right center;
 }
 
 .list-area {
     /* Must have some height (recalculated by flex-grow) in order to scroll */
     height: 0;
     flex-grow: 1;
+    min-height: 0;
+    overscroll-behavior: contain;
     overflow-y: auto;
     overflow-x: hidden;
     display: flex;
@@ -68,9 +72,7 @@ $fade-out-distance: 100px;
 }
 
 @media only screen and (max-width: $full-size-paint) {
-    .wrapper {
-        width: 80px;
-    }
+    .wrapper { width: 6rem; min-width: 6rem; resize: none; }
 
     .list-item {
         width: 4rem;

@@ -10,12 +10,18 @@ const PATHS = {
     'chevron-down': 'm5 9 7 7 7-7',
     'chevron-up': 'm5 15 7-7 7 7',
     'close': 'M5 5l14 14M19 5 5 19',
+    'commands': 'M8 5 3 12l5 7M16 5l5 7-5 7M14 3l-4 18',
     'convert': 'M4 7h13m0 0-3-3m3 3-3 3M20 17H7m0 0 3-3m-3 3 3 3',
     'debug': 'M9 9h6m-7 4h8m-7 4h6M12 5V2m-7 9H2m20 0h-3M6 7 4 3m12-3-4 3M6 17l4-3m8 0 4 3' +
         'M7 12c0-4 2-7 5-7s5 3 5 7v3a5 5 0 0 1-10 0v-3Z',
     'extensions': 'M9.5 4H4v5.5a2.5 2.5 0 1 1 0 5V20h5.5a2.5 2.5 0 1 0 5 0H20v-5.5' +
         'a2.5 2.5 0 1 0 0-5V4h-5.5a2.5 2.5 0 1 0-5 0Z',
     'files': 'M4 5h6l2 2h8v12H4V5Zm0 4h16',
+    'fullscreen': 'M8 4H4v4M16 4h4v4M20 16v4h-4M4 16v4h4',
+    'layout-activity': 'M4 4h16v16H4V4Zm4 0v16M5.5 7h1M5.5 12h1M5.5 17h1',
+    'layout-panel': 'M4 4h16v16H4V4Zm0 11h16',
+    'layout-primary': 'M4 4h16v16H4V4Zm5 0v16',
+    'layout-secondary': 'M4 4h16v16H4V4Zm11 0v16',
     'menu': 'M4 7h16M4 12h16M4 17h16',
     'minus': 'M5 12h14',
     'more': 'M6 12h.01M12 12h.01M18 12h.01',

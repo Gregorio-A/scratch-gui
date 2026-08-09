@@ -8,6 +8,9 @@ const {
 } = require('./block-registry');
 const {resolveDynamicMetadata} = require('./extension-catalog');
 const {assignSourceNames, isIdentifier} = require('./identifier');
+const {canonicalizeSource, mapColumnBackThroughRanges} = require('./localized-syntax');
+const {DEFAULT_CODE_LANGUAGE, normalizeCodeLanguage} = require('./language-registry');
+const {localizeDiagnostics} = require('./diagnostic-localizer');
 const {parseText} = require('./parser');
 const {encodeParameterId, encodeProcedureTypes} = require('./procedure-metadata');
 
@@ -366,8 +369,47 @@ const analyzeAndBuildIR = (ast, options = {}) => {
             expression.metadata.valueType || 'any';
         return 'any';
     };
+    const orderArguments = (name, expected, argumentNodes, location, code = 'invalid-named-argument') => {
+        const ordered = [];
+        const named = new Map();
+        let sawNamed = false;
+        argumentNodes.forEach(node => {
+            if (node && node.type === 'NamedArgument') {
+                sawNamed = true;
+                if (named.has(node.name)) diagnostics.push(semanticDiagnostic(
+                    `O argumento nomeado "${node.name}" foi informado mais de uma vez.`,
+                    location,
+                    'duplicate-named-argument'
+                ));
+                named.set(node.name, node.value);
+            } else {
+                if (sawNamed) diagnostics.push(semanticDiagnostic(
+                    'Argumentos posicionais devem vir antes dos argumentos nomeados.',
+                    location,
+                    'positional-after-named'
+                ));
+                ordered.push(node);
+            }
+        });
+        named.forEach((value, argumentName) => {
+            const index = expected.findIndex(argument => argument.name === argumentName);
+            if (index < 0) diagnostics.push(semanticDiagnostic(
+                `"${name}" não possui um argumento chamado "${argumentName}".`,
+                location,
+                code
+            ));
+            else if (ordered[index]) diagnostics.push(semanticDiagnostic(
+                `O argumento "${argumentName}" foi informado por posição e por nome.`,
+                location,
+                'duplicate-named-argument'
+            ));
+            else ordered[index] = value;
+        });
+        return ordered;
+    };
     const convertArguments = (name, metadata, argumentNodes, parameters, location) => {
         const expected = metadata.arguments || [];
+        argumentNodes = orderArguments(name, expected, argumentNodes, location);
         if (argumentNodes.length !== expected.length) diagnostics.push(semanticDiagnostic(
             `"${name}" recebe ${expected.length} argumento(s), mas recebeu ${argumentNodes.length}.`,
             location,
@@ -480,6 +522,13 @@ const analyzeAndBuildIR = (ast, options = {}) => {
     };
 
     const convertProcedureArguments = (procedure, argumentNodes, parameters, location) => {
+        argumentNodes = orderArguments(
+            procedure.name,
+            procedure.parameters,
+            argumentNodes,
+            location,
+            'invalid-procedure-named-argument'
+        );
         if (argumentNodes.length !== procedure.parameters.length) diagnostics.push(semanticDiagnostic(
             `"${procedure.name}" recebe ${procedure.parameters.length} parâmetro(s), mas recebeu ${argumentNodes.length}.`,
             location,
@@ -569,7 +618,10 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                 location: node.location
             };
             const procedure = proceduresByName.get(node.callee);
-            if (procedure) {
+            const metadata = resolveMetadata(node.callee);
+            const procedureMatches = procedure && node.arguments.length === procedure.parameters.length;
+            const metadataMatches = metadata && node.arguments.length === (metadata.arguments || []).length;
+            if (procedure && (procedureMatches || !metadataMatches)) {
                 if (!procedure.returnType) {
                     diagnostics.push(semanticDiagnostic(
                         `O procedimento "${node.callee}" é um comando e não pode ser usado como expressão. Declare "-> tipo" para fazê-lo retornar um valor.`,
@@ -593,7 +645,6 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                     location: node.location
                 };
             }
-            const metadata = resolveMetadata(node.callee);
             if (!metadata) {
                 diagnostics.push(semanticDiagnostic(`A função "${node.callee}" não existe no catálogo.`, node.location, 'unknown-call'));
                 return literal(0, 'number', node.location);
@@ -642,7 +693,32 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                 payload: decodeRawPayload(call, statement.location, 'command'),
                 location: statement.location
             };
+            const procedure = proceduresByName.get(call.callee);
             const metadata = resolveMetadata(call.callee);
+            const procedureMatches = procedure && call.arguments.length === procedure.parameters.length;
+            const metadataMatches = metadata && call.arguments.length === (metadata.arguments || []).length;
+            if (procedure && (procedureMatches || !metadataMatches)) {
+                if (procedure.returnType) {
+                    diagnostics.push(semanticDiagnostic(
+                        `"${call.callee}" retorna um valor e precisa ser usado em uma expressão.`,
+                        statement.location,
+                        'procedure-reporter-used-as-command'
+                    ));
+                }
+                return {
+                    type: 'ProcedureCall',
+                    procedure: {
+                        name: procedure.name,
+                        proccode: procedure.proccode,
+                        parameters: procedure.parameters,
+                        returnType: procedure.returnType,
+                        warp: procedure.warp,
+                        mutation: procedure.mutation
+                    },
+                    arguments: convertProcedureArguments(procedure, call.arguments, parameters, statement.location),
+                    location: statement.location
+                };
+            }
             if (metadata) {
                 validateAvailability(call.callee, metadata, statement.location);
                 if (metadata.kind === 'conditional' || metadata.kind === 'loop') diagnostics.push(semanticDiagnostic(
@@ -665,7 +741,6 @@ const analyzeAndBuildIR = (ast, options = {}) => {
                     location: statement.location
                 };
             }
-            const procedure = proceduresByName.get(call.callee);
             if (!procedure) {
                 diagnostics.push(semanticDiagnostic(`O comando ou procedimento "${call.callee}" não existe.`, statement.location, 'unknown-call'));
                 return null;
@@ -1475,27 +1550,56 @@ const generateGraph = ir => {
 };
 
 const compileText = (source, options = {}) => {
+    const sourceLanguage = normalizeCodeLanguage(
+        options.codeLanguage || options.sourceLanguage || DEFAULT_CODE_LANGUAGE
+    );
     try {
-        const parsed = parseText(source);
+        const localized = canonicalizeSource(source, sourceLanguage);
+        const parsed = parseText(localized.source);
         const semantic = analyzeAndBuildIR(parsed.ast, options);
-        const diagnostics = parsed.diagnostics.concat(semantic.diagnostics);
+        const diagnostics = parsed.diagnostics.concat(semantic.diagnostics).map(item => Object.assign({}, item, {
+            column: mapColumnBackThroughRanges(localized.ranges, item.line, item.column),
+            endColumn: mapColumnBackThroughRanges(
+                localized.ranges,
+                item.endLine || item.line,
+                item.endColumn || item.column + 1
+            )
+        }));
         const success = !hasErrors(diagnostics);
+        const graph = success && !options.analysisOnly ? generateGraph(semantic.ir) : null;
         return {
             source,
+            canonicalSource: localized.source,
+            sourceLanguage,
+            translationRanges: localized.ranges,
+            cst: Object.assign({}, parsed.cst, {translationRanges: localized.ranges}),
             ast: parsed.ast,
             ir: semantic.ir,
-            graph: success ? generateGraph(semantic.ir) : null,
-            diagnostics,
+            textwarpIR: semantic.ir,
+            graph,
+            scratchIR: graph,
+            diagnostics: localizeDiagnostics(diagnostics.map(item => Object.assign({
+                id: `diagnostic.${item.code || 'unknown'}`,
+                values: {},
+                defaultMessage: item.message
+            }, item)), sourceLanguage),
             success
         };
     } catch (error) {
         return {
             source,
+            canonicalSource: source,
+            sourceLanguage,
+            cst: null,
             ast: null,
             ir: null,
+            textwarpIR: null,
             graph: null,
-            diagnostics: [{
-                message: error instanceof RangeError ?
+            scratchIR: null,
+            diagnostics: localizeDiagnostics([{
+                id: `diagnostic.${error instanceof RangeError ? 'conversion-depth-limit' : 'conversion-internal-error'}`,
+                values: {message: error.message},
+                defaultMessage: error instanceof RangeError ?
                     'A conversão excedeu o limite seguro de complexidade ou aninhamento.' :
                     `A conversão falhou de forma controlada: ${error.message}.`,
                 line: 1,
@@ -1504,7 +1608,7 @@ const compileText = (source, options = {}) => {
                 endColumn: 2,
                 severity: 'error',
                 code: error instanceof RangeError ? 'conversion-depth-limit' : 'conversion-internal-error'
-            }],
+            }], sourceLanguage),
             success: false
         };
     }

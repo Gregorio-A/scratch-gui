@@ -4,17 +4,59 @@
 
 .page-wrapper {
     height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .body-wrapper {
+    min-height: 0;
     flex-grow: 1;
+    overflow: hidden;
     background-color: $ui-primary;
 }
 
 .body-wrapper * {
     box-sizing: border-box;
+}
+
+/*
+    Keep workspace scrolling quiet and local. Firefox uses scrollbar-color;
+    Chromium/WebKit use the pseudo elements below. The thumb becomes easier
+    to see only while the scrollable region is hovered or focused.
+*/
+.page-wrapper * {
+    scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
+}
+
+.page-wrapper *:hover,
+.page-wrapper *:focus-within {
+    scrollbar-color: rgba(87, 94, 104, 0.55) transparent;
+}
+
+.page-wrapper *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.page-wrapper *::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.page-wrapper *::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+}
+
+.page-wrapper *:hover::-webkit-scrollbar-thumb,
+.page-wrapper *:focus-within::-webkit-scrollbar-thumb {
+    background: rgba(87, 94, 104, 0.55);
+}
+
+.page-wrapper *::-webkit-scrollbar-thumb:hover {
+    background: rgba(87, 94, 104, 0.8);
 }
 
 .flex-wrapper {
@@ -36,6 +78,15 @@
     overflow: hidden;
 }
 
+.visually-hidden-tabs {
+    width: 1px !important;
+    height: 1px !important;
+    position: absolute !important;
+    overflow: hidden !important;
+    clip: rect(0 0 0 0) !important;
+    white-space: nowrap !important;
+}
+
 .editor-wrapper {
     /*
         This is carefully balanced--  the minimum width at which the GUI will be displayed is 1024px.
@@ -51,6 +102,7 @@
     flex-grow: 1;
     flex-shrink: 1;
     min-width: 0;
+    min-height: 0;
     position: relative;
 
     display: flex;
@@ -180,6 +232,7 @@
 .tabs {
     position: relative;
     flex-grow: 1;
+    min-height: 0;
     min-width: 0;
     width: 100%;
     display: flex;
@@ -189,6 +242,7 @@
 .tab-panel {
     position: relative;
     flex-grow: 1;
+    min-height: 0;
     min-width: 0;
     width: 100%;
     display: none;
@@ -433,17 +487,19 @@ $fade-out-distance: 15px;
 .stage-dock {
     width: var(--textwarp-stage-pane-width, 510px);
     max-width: min(72vw, 720px);
+    height: 100%;
+    min-height: 0;
     position: relative;
     flex-basis: var(--textwarp-stage-pane-width, 510px);
     padding-right: $space;
     padding-left: calc($space + 6px);
-    overflow: auto;
+    overflow: hidden;
     background: $ui-primary;
     border-left: 1px solid $ui-black-transparent;
 }
 
 .stage-dock > :nth-child(2) {
-    align-self: center;
+    align-self: stretch;
 }
 
 .stage-resize-handle {
@@ -462,51 +518,9 @@ $fade-out-distance: 15px;
     background: $motion-primary;
 }
 
-.stage-resize-handle button {
-    position: absolute;
-    top: calc($stage-menu-height + 0.4rem);
-    left: -0.55rem;
-    width: 1.25rem;
-    height: 2.4rem;
-    padding: 0;
-    color: $text-primary;
-    background: $ui-white;
-    border: 1px solid $ui-black-transparent;
-    border-radius: 0.35rem;
-    cursor: pointer;
-    font-weight: 800;
-}
-
-.collapsed-stage-dock {
-    width: 2.6rem;
-    display: flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    background: $ui-primary;
-    border-left: 1px solid $ui-black-transparent;
-}
-
-.collapsed-stage-dock button {
-    width: 2.2rem;
-    min-height: 7rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    padding: 0.5rem 0;
-    color: $text-primary;
-    background: $ui-secondary;
-    border: 1px solid $ui-black-transparent;
-    border-radius: 0.4rem;
-    cursor: pointer;
-    font-size: 0.62rem;
-    font-weight: 700;
-    writing-mode: vertical-rl;
-}
-
 .stage-dock .target-wrapper {
-    min-height: 14rem;
+    min-height: 0;
+    overflow: hidden;
     padding-top: $space;
 }
 
@@ -518,6 +532,14 @@ $fade-out-distance: 15px;
     font-size: 0.66rem;
 }
 
+@media (max-width: 1099px) {
+    .stage-dock {
+        width: clamp(300px, 36vw, 420px);
+        max-width: 42vw;
+        flex-basis: clamp(300px, 36vw, 420px);
+    }
+}
+
 @media (max-width: 800px) {
     .tab {
         min-width: 0;
@@ -527,6 +549,12 @@ $fade-out-distance: 15px;
 
     .tab img {
         display: none;
+    }
+
+    .stage-dock {
+        width: min(var(--textwarp-stage-pane-width, 510px), 42vw);
+        max-width: 42vw;
+        flex-basis: min(var(--textwarp-stage-pane-width, 510px), 42vw);
     }
 }
 
@@ -555,30 +583,8 @@ $fade-out-distance: 15px;
         cursor: row-resize;
     }
 
-    .stage-resize-handle button {
-        top: -0.55rem;
-        left: calc(50% - 1.2rem);
-        width: 2.4rem;
-        height: 1.25rem;
-        transform: rotate(90deg);
-    }
-
-    .collapsed-stage-dock {
-        width: 100%;
-        height: 2.75rem;
-        border-top: 1px solid $ui-black-transparent;
-        border-left: 0;
-    }
-
-    .collapsed-stage-dock button {
-        width: auto;
-        min-height: 2.2rem;
-        padding: 0 0.8rem;
-        writing-mode: horizontal-tb;
-    }
-
     .stage-dock .target-wrapper {
-        min-height: 10rem;
+        min-height: 0;
         padding-top: $space;
         padding-left: 0;
     }

@@ -1,5 +1,5 @@
 .root {
-    --textwarp-control-height: 2.25rem;
+    --textwarp-control-height: 2rem;
     --textwarp-control-radius: 0.35rem;
     --textwarp-control-gap: 0.3rem;
     width: 100%;
@@ -619,6 +619,10 @@
     height: 100%;
 }
 
+.derived-blocks-pane {
+    pointer-events: none;
+}
+
 .documentation-pane {
     overflow: hidden;
     background: var(--ui-white);
@@ -1073,6 +1077,19 @@
     padding: 0.15rem 0;
     line-height: 1.25;
     align-items: center;
+}
+
+.open-tabs-region > .view-tabs {
+    min-height: var(--textwarp-control-height);
+    align-self: stretch;
+    flex: none;
+    border-left: 1px solid var(--ui-black-transparent);
+}
+
+.open-tabs-region > .view-tabs button {
+    min-height: var(--textwarp-control-height);
+    padding: 0 0.5rem;
+    font-size: 0.62rem;
 }
 
 .diagnostic > button:first-child {
@@ -1797,7 +1814,7 @@
 }
 
 .convert-menu-trigger {
-    min-width: 6.9rem;
+    min-width: 5.8rem;
     color: white;
     background: var(--motion-primary);
     border: 0;
@@ -1912,8 +1929,7 @@
 }
 
 .bottom-panel-collapsed {
-    height: var(--textwarp-control-height);
-    min-height: var(--textwarp-control-height);
+    display: none;
 }
 
 .panel-tabs {
@@ -2053,7 +2069,8 @@
 }
 
 .narrow-layout .view-tabs {
-    width: 100%;
+    width: auto;
+    max-width: 16rem;
     height: var(--textwarp-control-height);
 }
 
@@ -2096,6 +2113,17 @@
 .narrow-layout .action-menu-trigger {
     width: var(--textwarp-control-height);
     padding: 0;
+}
+
+@media (max-width: 380px) {
+    .narrow-layout .view-tabs button:nth-child(n+3) {
+        display: none;
+    }
+
+    .narrow-layout .action-menu-popup {
+        width: min(12rem, calc(100vw - 0.7rem));
+        min-width: 0;
+    }
 }
 
 .narrow-layout .panel-tabs {

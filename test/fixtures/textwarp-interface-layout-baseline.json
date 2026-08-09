@@ -1,32 +1,32 @@
 {
-    "320": {
-        "actionRows": 1,
-        "directActionCount": 4,
-        "maximumActionBarHeight": 53,
+  "320": {
+    "actionRows": 2,
+    "directActionCount": 5,
+        "maximumActionBarHeight": 55,
         "minimumControlHeight": 44
     },
     "600": {
         "actionRows": 1,
-        "directActionCount": 4,
-        "maximumActionBarHeight": 45,
-        "minimumControlHeight": 36
+        "directActionCount": 7,
+        "maximumActionBarHeight": 33,
+        "minimumControlHeight": 32
     },
     "768": {
-        "actionRows": 1,
-        "directActionCount": 4,
-        "maximumActionBarHeight": 45,
-        "minimumControlHeight": 36
+        "actionRows": 2,
+        "directActionCount": 7,
+        "maximumActionBarHeight": 55,
+        "minimumControlHeight": 44
     },
     "1024": {
         "actionRows": 1,
-        "directActionCount": 4,
-        "maximumActionBarHeight": 45,
-        "minimumControlHeight": 36
+        "directActionCount": 7,
+        "maximumActionBarHeight": 33,
+        "minimumControlHeight": 32
     },
     "1440": {
         "actionRows": 1,
-        "directActionCount": 4,
-        "maximumActionBarHeight": 45,
-        "minimumControlHeight": 36
+        "directActionCount": 7,
+        "maximumActionBarHeight": 33,
+        "minimumControlHeight": 32
     }
 }

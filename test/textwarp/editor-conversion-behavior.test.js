@@ -118,16 +118,14 @@ const disposeEditor = editor => {
 
 const waitForAutomaticConversion = () => new Promise(resolve => setTimeout(resolve, 520));
 
-test('production editor honors bidirectional automatic synchronization and exact undo', async () => {
+test('typing never mutates blocks and explicit compilation retains exact undo', async () => {
     const {editor, target, vm} = await createEditor();
     try {
-        editor.state.autoSync = false;
         editor.handleChange('actor Player\non green_flag:\n    move(10)');
         await waitForAutomaticConversion();
         assert.equal(Object.keys(target.blocks._blocks).length, 0);
         assert.equal(readSourceRecord(target).hasDraft, true);
 
-        editor.state.autoSync = true;
         vm.runtime.getMonitorState().set('monitor-one', {
             id: 'monitor-one',
             opcode: 'data_variable',
@@ -138,6 +136,9 @@ test('production editor honors bidirectional automatic synchronization and exact
         });
         editor.handleChange('actor Player\non green_flag:\n    say("automatic")');
         await waitForAutomaticConversion();
+        assert.equal(Object.keys(target.blocks._blocks).length, 0);
+
+        await editor.handleCompile();
         assert.ok(Object.values(target.blocks._blocks).some(block => block.opcode === 'looks_say'));
         assert.ok(editor.state.lastConversion);
         vm.runtime.getMonitorState().set('monitor-one', {sliderMax: 999, visible: false});
@@ -228,7 +229,7 @@ test('production editor queues live conversion until Scratch execution stops', a
     }
 });
 
-test('automatic Text to Blocks requires an explicit scope for unowned visual roots', async () => {
+test('explicit Text to Blocks requires a scope for unowned visual roots', async () => {
     const {editor, target} = await createEditor();
     try {
         target.blocks.createBlock({
@@ -243,12 +244,14 @@ test('automatic Text to Blocks requires an explicit scope for unowned visual roo
             x: 20,
             y: 30
         });
-        editor.state.autoSync = true;
         editor.handleChange('actor Player\non green_flag:\n    move(10)');
         await waitForAutomaticConversion();
 
         assert.ok(target.blocks.getBlock('manual-event'));
         assert.equal(Object.keys(target.blocks._blocks).length, 1);
+        assert.equal(editor.state.conversionScopePrompt, null);
+
+        await editor.handleCompile();
         assert.ok(editor.state.conversionScopePrompt);
         assert.deepEqual(editor.state.conversionScopePrompt.matchingRootIds, ['manual-event']);
 

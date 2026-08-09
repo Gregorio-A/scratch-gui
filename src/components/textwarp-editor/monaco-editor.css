@@ -1,0 +1,167 @@
+.root {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+.host {
+    width: 100%;
+    height: 100%;
+}
+
+.loading {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--text-primary-transparent);
+    background: var(--input-background);
+    font: 0.72rem "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.context-control {
+    position: absolute;
+    z-index: 20;
+    max-width: calc(100% - 16px);
+    padding: 0.45rem;
+    color: var(--text-primary);
+    background: var(--ui-secondary);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.45rem;
+    box-shadow: 0 0.45rem 1.2rem rgba(0, 0, 0, 0.28);
+    font: 0.68rem "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.context-header {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.45rem;
+}
+
+.context-header > div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.context-header strong,
+.context-header small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.context-header small {
+    color: var(--text-primary-transparent);
+    font-family: monospace;
+    font-size: 0.58rem;
+}
+
+.context-header > button,
+.boolean-control button,
+.number-control button {
+    min-width: 1.8rem;
+    min-height: 1.8rem;
+    color: var(--text-primary);
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.3rem;
+    cursor: pointer;
+    font: inherit;
+}
+
+.context-header > button {
+    flex: none;
+    padding: 0;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.boolean-control,
+.number-control {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.boolean-control button {
+    flex: 1;
+    padding: 0.35rem 0.5rem;
+}
+
+.boolean-control button[aria-pressed="true"] {
+    color: white;
+    background: var(--motion-primary);
+    border-color: var(--motion-primary);
+}
+
+.color-control,
+.select-control {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.color-control input {
+    width: 100%;
+    min-width: 3rem;
+    height: 2rem;
+    padding: 0.15rem;
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.3rem;
+    cursor: pointer;
+}
+
+.color-control code {
+    color: var(--text-primary-transparent);
+    font-size: 0.6rem;
+}
+
+.select-control {
+    grid-template-columns: auto minmax(0, 1fr);
+}
+
+.select-control select,
+.number-control input {
+    min-width: 0;
+    min-height: 1.8rem;
+    padding: 0.25rem 0.4rem;
+    color: var(--text-primary);
+    background: var(--input-background);
+    border: 1px solid var(--ui-black-transparent);
+    border-radius: 0.3rem;
+    font: inherit;
+}
+
+.select-control select {
+    width: 100%;
+}
+
+.number-control input {
+    flex: 1;
+}
+
+.number-control .apply-value {
+    width: auto;
+    padding: 0.3rem 0.55rem;
+    color: white;
+    background: var(--motion-primary);
+    border-color: var(--motion-primary);
+}
+
+.context-control button:hover,
+.context-control button:focus-visible,
+.context-control input:focus-visible,
+.context-control select:focus-visible {
+    outline: 2px solid var(--motion-primary);
+    outline-offset: 1px;
+}
